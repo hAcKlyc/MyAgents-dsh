@@ -1,6 +1,7 @@
+import { Buffer } from "node:buffer";
 import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
-import { copyFileSync, existsSync, mkdirSync, readFileSync, realpathSync, statSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, realpathSync, statSync, writeFileSync } from "node:fs";
 import { resolve } from "node:path";
 import process from "node:process";
 
@@ -40,7 +41,9 @@ export function nativeReleaseTarget(platform = process.platform, arch = process.
 
 export function buildNativeHandoff({ work, source, piAiSource, credentialEnv, artifact }) {
   const target = nativeReleaseTarget();
-  if (!process.env[credentialEnv]) throw new Error(`${credentialEnv} is required for the native campaign`);
+  if (credentialEnv && !process.env[credentialEnv]) {
+    throw new Error(`${credentialEnv} is required for the native campaign`);
+  }
   const npmCache = realpathSync(capture("npm", ["config", "get", "cache"]));
   const expected = JSON.parse(readFileSync(resolve(root,
     "packages/product-profile/manifests/accepted-patched-dsh-artifact-v1.json"), "utf8")).manifestSha256;
@@ -60,29 +63,36 @@ export function buildNativeHandoff({ work, source, piAiSource, credentialEnv, ar
     "--expected-manifest-sha256", expected, "--npm-cache", npmCache,
     "--pi-ai-source", piAiSource, "--runtime-artifact-out", runtime]);
   const runtimeSha = sha256(readFileSync(resolve(runtime, "runtime-artifact-v1.json")));
-  const campaign = resolve(work, "native-campaign");
-  run("npm", ["run", "e2e:native", "--", "--artifact", runtime,
-    "--expected-manifest-sha256", runtimeSha,
-    "--route-config", resolve(root, "packages/dynamic-e2e/routes/deepseek-official-v4-flash.json"),
-    "--compaction-route-config", resolve(root, "packages/dynamic-e2e/routes/deepseek-official-v4-flash-compaction.json"),
-    "--credential-env", credentialEnv, "--npm-cache", npmCache, "--out", campaign]);
-  const report = readFileSync(resolve(campaign, "native-campaign.json"));
-  const native = JSON.parse(report);
-  if (native.outcome !== "passed" || native.target !== target
-    || native.artifact?.manifestSha256 !== runtimeSha) {
-    throw new Error("Native campaign did not pass against this target Runtime");
+  const claim = credentialEnv ? "verified" : "implementation-complete_pending-native-validation";
+  let report;
+  if (credentialEnv) {
+    const campaign = resolve(work, "native-campaign");
+    run("npm", ["run", "e2e:native", "--", "--artifact", runtime,
+      "--expected-manifest-sha256", runtimeSha,
+      "--route-config", resolve(root, "packages/dynamic-e2e/routes/deepseek-official-v4-flash.json"),
+      "--compaction-route-config", resolve(root, "packages/dynamic-e2e/routes/deepseek-official-v4-flash-compaction.json"),
+      "--credential-env", credentialEnv, "--npm-cache", npmCache, "--out", campaign]);
+    report = readFileSync(resolve(campaign, "native-campaign.json"));
+    const native = JSON.parse(report);
+    if (native.outcome !== "passed" || native.target !== target
+      || native.artifact?.manifestSha256 !== runtimeSha) {
+      throw new Error("Native campaign did not pass against this target Runtime");
+    }
+  } else {
+    report = Buffer.from(`${JSON.stringify({ schemaVersion: 1, target, claim,
+      artifact: { manifestSha256: runtimeSha } }, null, 2)}\n`);
   }
   const evidenceSha = sha256(report);
   const evidence = resolve(work, "platform-evidence");
   mkdirSync(evidence);
-  copyFileSync(resolve(campaign, "native-campaign.json"), resolve(evidence, `${evidenceSha}.json`));
+  writeFileSync(resolve(evidence, `${evidenceSha}.json`), report);
   const platformInput = resolve(work, "platforms.json");
   writeFileSync(platformInput, `${JSON.stringify({ schemaVersion: 1,
-    platforms: [{ target, claim: "verified", evidenceSha256: [evidenceSha] }] }, null, 2)}\n`);
+    platforms: [{ target, claim, evidenceSha256: [evidenceSha] }] }, null, 2)}\n`);
   const handoff = resolve(work, "handoff");
   run("npm", ["run", "build:batch-3-integration-handoff", "--", "--artifact", runtime,
     "--expected-manifest-sha256", runtimeSha, "--platforms", platformInput,
     "--platform-evidence-dir", evidence, "--out", handoff]);
   const handoffSha256 = sha256(readFileSync(resolve(handoff, "batch-3-integration-handoff-v1.json")));
-  return { target, handoff, handoffSha256 };
+  return { target, claim, handoff, handoffSha256 };
 }

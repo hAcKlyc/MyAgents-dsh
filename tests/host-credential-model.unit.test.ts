@@ -258,7 +258,7 @@ describe("Host credential and model route", () => {
   it("resolves child models from explicit Host authority without ambiguous names or role overrides", () => {
     const parent = { provider: profile.providerRouteId, model: profile.modelId };
     const inherited = new AgentCollaborationPolicy(profile);
-    expect(inherited.config).toMatchObject({ maxDepth: 1, maxActiveChildren: 32, messageDelivery: "realtime" });
+    expect(inherited.config).toMatchObject({ maxDepth: 2, maxActiveChildren: 32, messageDelivery: "realtime" });
     expect(inherited.select(parent, "general")).toMatchObject({ profile, selection: "inherit" });
     const second: ModelExecutionProfile = { ...profile, revision: "child-profile", providerRouteId: "other-provider-route" };
     const third = { ...profile, revision: "third-profile", modelId: "third-model" };
@@ -303,7 +303,6 @@ describe("Host credential and model route", () => {
     }));
     Object.assign(context, {
       agents: { get: (id: string) => id === "child-session" ? child : id === "runtime-session-1" ? primary : undefined },
-      productWork: { createChildModelRequestAuthority: childAuthority },
     });
     harness.pair.host.registerRequestHandler("host/credential/resolve", (params) => {
       if (params.subject !== "provider") throw new Error("unexpected credential subject");
@@ -312,6 +311,7 @@ describe("Host credential and model route", () => {
         : { authoritativeCredentialRevision: "credential-v1", kind: "material" as const,
             material: { [credentialValueField]: `synthetic-${params.profileRevision}` } };
     });
+    harness.root.provide("productWork", { createChildModelRequestAuthority: childAuthority } as never);
     const attachmentScope = new AsyncLocalStorage<string>();
     const authority = new HostDeepSeekModelAuthority(context, harness.credentialController,
       { resolveUserId: () => "00000000-0000-4000-8000-000000000001" }, (input) => {
@@ -443,8 +443,6 @@ describe("Host credential and model route", () => {
       const childProfile = { ...profile, revision: "web-child-profile", modelId: "web-child-model" };
       const selected = origin === "root" ? profile : childProfile;
       const modelContext = fakeModelContext(harness.root);
-      const childToolAuthority = vi.fn(() => ({}));
-      Object.assign(modelContext, { productWork: { resolveActiveChildToolOperation: childToolAuthority } });
       const authority = new HostDeepSeekModelAuthority(modelContext, harness.credentialController,
         { resolveUserId: () => "00000000-0000-4000-8000-000000000001" });
       authority.bindHostCapabilities({ webSearchAdapters: ["myagents-host-canonical-web-v1"] } as Parameters<typeof authority.bindHostCapabilities>[0]);
@@ -474,7 +472,6 @@ describe("Host credential and model route", () => {
         "WebSearch", { query: "fixture" })).resolves.toEqual({ fixture: true });
       expect(hostRequests.at(-1)).toMatchObject({ authority: { runtimeSessionId: "runtime-session-1", callId: "web-child-call" } });
       expect(credentialRequests.at(-1)).toMatchObject({ profileRevision: selected.revision });
-      if (origin !== "root") expect(childToolAuthority).toHaveBeenCalled();
       const wrong = { ...context, rootAgent: { id: "another-root" } as ProductToolContext["agent"], agent: { ...context.agent, options: { provider: selected.providerRouteId, model: selected.modelId } } as ProductToolContext["agent"] };
       await expect(authority.runHostWebRequest(wrong, () => Promise.resolve(true))).rejects.toMatchObject({ code: "provider_request_stale" });
       await expect(authority.runWebSearchRequest(wrong, () => Promise.resolve(true))).rejects.toMatchObject({ code: "provider_request_stale" });
@@ -500,6 +497,26 @@ describe("Host credential and model route", () => {
     await expect(harness.credentials.describe(profile.credentialRef as CredentialRef))
       .resolves.toEqual({ configured: false, writable: false });
     expect(() => authority.currentProfile()).toThrow("not ready");
+  });
+
+  it("exposes only the admitted collaboration limits and restores them on rollback", async () => {
+    const harness = await createHarness();
+    harness.pair.host.registerRequestHandler("host/credential/resolve", () => ({
+      authoritativeCredentialRevision: "credential-v1", available: true, kind: "availability" as const,
+    }));
+    const authority = new HostDeepSeekModelAuthority(fakeModelContext(harness.root), harness.credentialController,
+      { resolveUserId: () => "00000000-0000-4000-8000-000000000001" });
+    expect(authority.collaborationConfig()).toBeUndefined();
+    const request = sessionRequest();
+    await authority.preflight(request);
+    authority.assertAdmission(request);
+    expect(authority.collaborationConfig()?.maxDepth).toBe(2);
+    const next = { ...request, params: { ...request.params, configRevision: "config-v2",
+      collaboration: { ...new AgentCollaborationPolicy(profile).config, maxDepth: 1, maxActiveChildren: 4 } } };
+    await authority.preflight(next);
+    expect(authority.collaborationConfig()).toMatchObject({ maxDepth: 1, maxActiveChildren: 4 });
+    await authority.rollbackAdmission("config-v2", "runtime-session-1");
+    expect(authority.collaborationConfig()).toMatchObject({ maxDepth: 2, maxActiveChildren: 32 });
   });
 
   it("keeps product credential controllers outside the public Cordis service surface", async () => {

@@ -488,6 +488,15 @@ const validateRecoveryWake = (value: unknown): ProductOperationRecoveryWake => {
   });
 };
 
+const validateNativeChildMessageOperation = (value: unknown) => {
+  const event = exactOwnDataObject(value, ["messageId", "clientOperationId", "productTurnId"], [], "native child message operation");
+  return Object.freeze({
+    messageId: boundedIdentifier(event.messageId, "native child message identity"),
+    clientOperationId: boundedIdentifier(event.clientOperationId, "native child operation identity"),
+    productTurnId: boundedIdentifier(event.productTurnId, "native child product turn identity"),
+  });
+};
+
 const operationPayloadValidators = Object.freeze({
   "myagents/operation/accepted": validateAccepted,
   "myagents/operation/message": validateMessage,
@@ -496,6 +505,7 @@ const operationPayloadValidators = Object.freeze({
   "myagents/operation/limit": validateLimit,
   "myagents/operation/terminal": validateTerminal,
   "myagents/operation/recovery-wake": validateRecoveryWake,
+  "myagents/native-child-message-operation": validateNativeChildMessageOperation,
 } satisfies Record<ProductOperationEventType, (value: unknown) => unknown>);
 
 /** Reuse the fold's exact payload validators at the durable storage boundary. */
@@ -633,7 +643,17 @@ const foldProductOperationsValue = (
       }) });
       message.delivered = true;
     }
+    const claimed = nativeContextClaims.get(message.messageId);
+    if (claimed !== undefined) {
+      removedClaimCandidates.set(message.messageId, { ...claimed, operationCorrelation: Object.freeze({
+        clientOperationId: operationId, clientMessageId: message.clientMessageId, delivery: message.kind,
+      }) });
+      message.delivered = true;
+    }
   };
+  // Native child messages can already be claimed when the awaited pre-step
+  // seam admits their Product correlation. Keep their exact Inbox deletion.
+  const nativeContextClaims = new Map<string, RemovedClaimCandidate>();
   const removedClaimCandidates = new Map<string, RemovedClaimCandidate>();
   const removedDiscardCandidates = new Map<string, PendingInboxMessage>();
   let openTurn: number | undefined;
@@ -763,6 +783,7 @@ const foldProductOperationsValue = (
         message.state = "claimed";
         message.dshTurn = claim.dshTurn;
         removedClaimCandidates.delete(claim.messageId);
+        nativeContextClaims.delete(claim.messageId);
         break;
       }
       case "myagents/operation/request-context": {
@@ -965,6 +986,9 @@ const foldProductOperationsValue = (
             if (pending.operationCorrelation === undefined
               && (isNativeApprovalNotice(pending.source)
                 || ownsRootContextMessage(pending.source, pending.id))) {
+              if (ownsRootContextMessage(pending.source, pending.id)) {
+                nativeContextClaims.set(pending.id, { ...pending, dshTurn: openTurn });
+              }
               continue;
             }
             if (removedClaimCandidates.has(pending.id)) {
@@ -1044,12 +1068,21 @@ const foldProductOperationsValue = (
   }
 
   if (removedClaimCandidates.size > 0) {
-    if (liveClaim === undefined) {
+    // Session append observers can see the admission event before its matching
+    // claimed event. DSH has already claimed these catalog-owned messages;
+    // their exact native deletion remains valid within this open turn.
+    const nativeAdmissionPending = [...removedClaimCandidates.values()].every((candidate) => {
+      const kind: string | undefined = candidate.source?.kind;
+      return (kind === "agent-message" || kind === "subagent-settled")
+        && candidate.dshTurn === openTurn
+        && nativeContextClaims.get(candidate.id)?.dshTurn === candidate.dshTurn;
+    });
+    if (liveClaim === undefined && !nativeAdmissionPending) {
       return fail("DSH Inbox claim lacks durable product-operation ownership");
     }
-    const candidate = removedClaimCandidates.get(liveClaim.messageId);
-    if (candidate?.dshTurn !== liveClaim.dshTurn
-      || [...removedClaimCandidates.values()].some(({ dshTurn }) => dshTurn !== liveClaim.dshTurn)) {
+    const candidate = liveClaim === undefined ? undefined : removedClaimCandidates.get(liveClaim.messageId);
+    if (liveClaim !== undefined && (candidate?.dshTurn !== liveClaim.dshTurn
+      || [...removedClaimCandidates.values()].some(({ dshTurn }) => dshTurn !== liveClaim.dshTurn))) {
       return fail("DSH Inbox claim differs from the live claim boundary");
     }
   }

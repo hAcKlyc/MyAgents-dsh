@@ -50,7 +50,7 @@ The four permission modes, durable exact-rule lifecycle, blocking interaction pa
 
 ## 3. Canonical catalog and owners
 
-The Product contract catalog has twenty-four slots. The selected model catalog contains twenty-five implementation names under `dsh_first` because `read_image` is an additional official definition; one Shell dialect is unavailable on each platform, leaving twenty-four effective names. Under `ma_first`, the twenty-four contract names remain the implementation catalog, with twenty-three effective names per platform.
+The Product contract catalog has twenty-four policy slots. The selected model catalog contains twenty-seven implementation names under `dsh_first`: `read_image`, `fork_agent`, and `list_agents` add definitions beyond one-to-one replacements. One Shell dialect is unavailable on each platform, leaving twenty-six effective names. Under `ma_first`, the twenty-four contract names remain the implementation catalog, with twenty-three effective names per platform.
 
 ```text
 Read, Write, Edit, Glob, Grep, bash, pwsh, job_output, job_list, job_kill, ls,
@@ -67,12 +67,13 @@ TaskCreate, TaskGet, TaskList, TaskUpdate
 | Bash and managed process/search executor | `packages/tools-process/` |
 | Web tools | `packages/tools-web/` |
 | Questions and plan transitions | `packages/tools-interaction/` |
-| Skills, agents and background work tools | `packages/tools-agent/` |
+| Skills and legacy `ma_first` Agent tools | `packages/tools-agent/` |
+| Current `dsh_first` child tools | Locked DSH subagent plugins, configured in `packages/runtime-product/src/composition.ts` |
 | Durable task graph | `packages/task-graph/` |
 
 The generated `specs/contracts/canonical-tools-v1.md` describes the Product policy contracts, including the canonical names used for permission, checkpoint, and Plan decisions. `packages/protocol/src/tool-strategy.ts` maps those names to the selected model definitions. The build-specific effective catalog is the model visibility authority.
 
-TaskUpdate can omit model-input `owner` when entering `in_progress`. The root-Session TaskGraph serializes the transition and records the registered caller as owner only when the task is unassigned. New durable events bind `actorId` to the exact root/child origin; legacy events retain their historical fold and revision. Root or the current owner may explicitly transfer a nonterminal task to root or a registered child of that same root. A competing claimant, foreign/unregistered caller or target cannot publish a transition. This source change is covered by `tests/product-task-graph.unit.test.ts`; it does not change the current Write directory/checkpoint coverage.
+TaskCreate and TaskList default to the calling Agent's personal list. `list: "shared"` addresses the root's collaborative list. Root assignment or `offerTo` names a direct continuable DSH child. An offered child may atomically claim an unassigned, unblocked task; another Agent cannot take that owner away. Task IDs are unique within a list, not across all Agents. A child's shared view includes only tasks assigned or offered to it, so a root personal plan and unrelated shared work remain hidden. TaskUpdate commits before any native assignment notification; failed delivery is explicit in its result. Durable events bind list, Session and actor; older root events remain in the shared list. TaskUpdate follows Claude Code's correction and cleanup behavior: completed tasks can be edited or reopened; `status: "deleted"` removes a task and its incoming/outgoing dependency references, returning `task: null`. Deletion remains an append-only event; the list's creation high-water mark prevents ID reuse during replay. Empty/unchanged updates return `changedFields: []` and the existing revision without appending. The legacy `cancelled` value stays readable and does not satisfy dependencies; delete obsolete blockers instead. A child's `hasHiddenBlockers` reports only unresolved invisible dependencies, and all read/update results use the same full-list visibility projection. Metadata null removes a key. This behavior is covered by `tests/product-task-graph.unit.test.ts`.
 
 ## 4. State and concurrency
 
@@ -139,15 +140,11 @@ Plan mode has one product owner and contributes a monotonic guard to `ctx.tools`
 
 This restriction is part of the canonical Runtime tool contract, not a Provider-specific rewrite. The same non-recursive model-visible schema is sent through Anthropic Messages, OpenAI Chat Completions, and OpenAI Responses. Structured product meaning belongs in versioned named Task fields rather than an arbitrary nested metadata bag. The contract and TaskGraph packages own this rule; DSH Core supplies the common tool and Session seams but does not define Task metadata.
 
-### 5.2 Child roles and Product authority
+### 5.2 Child authority
 
-`Agent` creates a DSH child Session and records one immutable effective role. `general` inherits every eligible tool in the parent operation-frozen catalog except depth-one hard exclusions. `Explore` exposes Read, Glob, Grep, `ls`, Shell, WebFetch, WebSearch, Skill and read/coordination Task tools; dedicated Write, Edit, task mutation, Plan interaction and nested Agent creation are absent. Explore's Shell retains ordinary Product permissions and can mutate files or state; the persona does not promise read-only execution. The Runtime does not parse Shell commands or claim an OS read-only sandbox.
+In the current `dsh_first` build, official `subagent` and `fork_agent` create DSH child Sessions. Official `send_message` and `interrupt_agent` operate on DSH continuable children. MyAgents does not assign ProductWork roles, task IDs, epochs or subtree controls to those children. Its common tool and Host policy services still govern their model route, workspace, sandbox, Plan, permission and interactions. Child operations derive their Product authority from the DSH parent catalog and active turn. Managed-file checkpoint coverage remains root-origin Write/Edit only even when child writes use the governed file path. See [Child agents and background work](./child-agents-and-background-work.md).
 
-Declarative Agent roles may specify `tools`, `disallowedTools` and `maxTurns`. Omitted `tools` means inheritance; the allowlist can only select definitions already visible to the parent, and the denylist is applied afterward. Invocation selects a committed role name and cannot add an ad-hoc tool list.
-
-Root, foreground-child and background-child calls all remain in the one DSH `ctx.tools`/ToolRuntime and PreToolUse/PostToolUse Hook pipeline. Inherited canonical and component tools also pass through `ProductToolRuntime`, Plan/origin guards and permission service. Two child-scope coordination definitions are deliberate exceptions: child `TaskStop` and `SendMessage` authorize through exact WorkRegistry lineage rather than Product permission/PermissionRequest/Plan. The child authority binds the exact child Session, parent Product operation, component generation, tool catalog and active child DSH turn. Product-owned durable state—permission rules, Plan and TaskGraph—remains on the root Product Session. Permission UI identifies the executing child while `always_allow` persists the shared root-Session rule. Background interaction-only tools still fail their individual call; they do not terminate the child, root turn or unrelated components.
-
-`SendMessage` accepts `parent` as a reserved alias from a child. Background output is published incrementally to its retained output before terminal settlement. Managed-file checkpoint coverage remains root-origin Write/Edit only even though child writes use the same governed file and permission path.
+The optional `ma_first` build retains historical `Agent`, `TaskStop` and `SendMessage` ProductWork behavior for old deployments; those semantics do not apply to `dsh_first`.
 
 ## 6. Changes and verification
 
@@ -174,3 +171,5 @@ Grep/Glob use the existing ProductProcess authority and DSH subprocess pipe. The
 When Glob receives a `path` inside the workspace, slash-bearing patterns are matched relative to that selected path. The process owner prefixes the selected path before passing the pattern to the official ripgrep command, which still runs from the sealed workspace cwd; basename patterns keep their recursive matching behavior. A partial Read of the unchanged file preserves an earlier complete Read receipt for Edit. A changed file version or digest still invalidates that receipt.
 
 Structured DSH cancellation reasons are control records. Product tools convert non-Error cancellation into a readable ABORTED error and retain existing typed Error reasons; arbitrary objects are not serialized into model-visible error text. Missing Shell workdir errors identify the directory requirement. stdout and stderr preserve their own order only; child signals cannot be inferred solely from a parent Shell exit code.
+
+Task list reads consume a native Session projection containing only child-owned Task events, excluding fork-inherited parent task facts. The registry owns replay and watermarks; Session events remain the durable authority. Native collaborator validation reads DSH’s existing subagent catalog projection.

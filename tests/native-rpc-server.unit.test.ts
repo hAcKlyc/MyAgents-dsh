@@ -207,6 +207,7 @@ const createRoot = (
     snapshot: (session: Session) => Object.freeze({ asOfSeq: session.seq - 1, values: {} }),
   } as never);
   root.provide("productTaskGraph", {
+    onCommitted: () => () => undefined,
     snapshot: () => Object.freeze({ revision: digest, sequence: 0, tasks: [] }),
   } as never);
   root.provide("productWork", {

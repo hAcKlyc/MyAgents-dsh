@@ -305,10 +305,12 @@ const taskChangedField = Type.Union([
   Type.Literal("description"),
   Type.Literal("activeForm"),
   Type.Literal("owner"),
+  Type.Literal("offerTo"),
   Type.Literal("addBlocks"),
   Type.Literal("addBlockedBy"),
   Type.Literal("metadata"),
 ]);
+const taskList = Type.Union([Type.Literal("personal"), Type.Literal("shared")]);
 
 const agentOutput = Type.Union([
   strictObject({
@@ -786,14 +788,15 @@ export const CANONICAL_TOOL_CONTRACTS = deepFreeze({
   }),
   TaskCreate: contract({
     name: "TaskCreate",
-    description: "Creates a task in the current Runtime Session-local TaskGraph. It does not create a product task or scheduled automation.",
+    description: "Create a task for your own work. Without list, it belongs to this agent's personal list and other agents cannot access it through Task tools. Use meaningful steps for multi-step work, not trivial one-step answers. Only the root agent may use list: shared for collaborative work; shared tasks start unassigned and must be assigned or offered with TaskUpdate. This does not create a MyAgents product task, reminder, or scheduled automation.",
     inputSchema: strictObject({
       subject: Type.String({ minLength: 1, maxLength: 512 }),
       description: Type.String({ minLength: 1, maxLength: 65_536 }),
       activeForm: Type.Optional(Type.String({ maxLength: 512 })),
       metadata: Type.Optional(boundedTaskMetadata),
+      list: Type.Optional(taskList),
     }),
-    outputSchema: strictObject({ task: taskNode, revision }),
+    outputSchema: strictObject({ list: taskList, task: taskNode, revision }),
     concurrency: "session_serial",
     sideEffect: "session_state",
     timeoutMs: 30_000,
@@ -810,9 +813,9 @@ export const CANONICAL_TOOL_CONTRACTS = deepFreeze({
   }),
   TaskGet: contract({
     name: "TaskGet",
-    description: "Gets one task and its current dependency, owner, flat scalar metadata, and revision snapshot from the Session-local TaskGraph.",
-    inputSchema: strictObject({ taskId: boundedIdentifier }),
-    outputSchema: strictObject({ task: taskNode, revision }),
+    description: "Read one task by ID in your personal list by default, or pass list: shared for collaborative work. Read its requirements and blockers before changing it. You can read only your own personal tasks and shared tasks assigned or offered to you. Use TaskList in the same list to discover IDs. Missing and inaccessible tasks have the same not-found result.",
+    inputSchema: strictObject({ taskId: boundedIdentifier, list: Type.Optional(taskList) }),
+    outputSchema: strictObject({ list: taskList, task: taskNode, revision }),
     concurrency: "parallel",
     sideEffect: "read",
     timeoutMs: 30_000,
@@ -829,9 +832,10 @@ export const CANONICAL_TOOL_CONTRACTS = deepFreeze({
   }),
   TaskList: contract({
     name: "TaskList",
-    description: "Lists a bounded, stable snapshot of non-deleted tasks in the current Runtime collaboration domain.",
-    inputSchema: emptyStrictObject,
+    description: "List this agent's personal tasks by default. Use list: shared to inspect collaborative tasks assigned or offered to you. The root agent sees all shared tasks; a child sees only its own shared work. An empty shared result reveals nothing about other agents' tasks. After finishing shared work, list again to find newly unblocked work.",
+    inputSchema: strictObject({ list: Type.Optional(taskList) }),
     outputSchema: strictObject({
+      list: taskList,
       tasks: Type.Array(taskNode, { maxItems: 2_000 }),
       revision,
       truncated: Type.Boolean(),
@@ -852,22 +856,29 @@ export const CANONICAL_TOOL_CONTRACTS = deepFreeze({
   }),
   TaskUpdate: contract({
     name: "TaskUpdate",
-    description: "Atomically updates one Session-local task, including status, ownership, dependencies, text, and bounded flat scalar metadata. When starting an unassigned task, owner may be omitted: the Runtime assigns the actual calling Agent. An existing owner is preserved; the root or current owner may explicitly transfer to root or a registered child agentId in this Session. Dependencies must remain acyclic.",
+    description: "Update a task by ID in your personal list by default, or pass list: shared for collaborative work. Read its latest state with TaskGet first. Only the root agent may assign shared work to a continuable child or offer it to specific child IDs with offerTo. An offered child may claim an unassigned, unblocked task atomically. Do not claim someone else's task, change another agent's personal list, or mark unfinished work complete. Use the exact child runtime ID returned by subagent, fork_agent, or list_agents for owner/offerTo; owner: root names the root agent. Claim offered work with status: in_progress (owner is inferred). Normal statuses are pending, in_progress, completed; completed tasks may be corrected or reopened. Use status: deleted to remove obsolete work and clean all dependency references; deleted returns task: null. The legacy cancelled status is retained for compatibility and does not resolve blockers. An empty or unchanged update succeeds without changing the list revision. addBlocks/addBlockedBy add dependencies within the same list; cycles are rejected. metadata values of null remove keys. Results carry the list revision at the top level.",
     inputSchema: strictObject({
       taskId: boundedIdentifier,
-      status: Type.Optional(Type.Union([Type.Literal("pending"), Type.Literal("in_progress"), Type.Literal("completed"), Type.Literal("cancelled")])),
+      list: Type.Optional(taskList),
+      status: Type.Optional(Type.Union([Type.Literal("pending"), Type.Literal("in_progress"), Type.Literal("completed"), Type.Literal("cancelled"), Type.Literal("deleted")])),
       subject: Type.Optional(Type.String({ minLength: 1, maxLength: 512 })),
       description: Type.Optional(Type.String({ minLength: 1, maxLength: 65_536 })),
       activeForm: Type.Optional(Type.String({ maxLength: 512 })),
       owner: Type.Optional(boundedIdentifier),
+      offerTo: Type.Optional(Type.Array(boundedIdentifier, { maxItems: 32, uniqueItems: true })),
       addBlocks: Type.Optional(Type.Array(boundedIdentifier, { maxItems: 256, uniqueItems: true })),
       addBlockedBy: Type.Optional(Type.Array(boundedIdentifier, { maxItems: 256, uniqueItems: true })),
       metadata: Type.Optional(boundedTaskMetadata),
     }),
     outputSchema: strictObject({
-      task: taskNode,
+      list: taskList,
+      task: Type.Union([taskNode, Type.Null()]),
       revision,
-      changedFields: Type.Array(taskChangedField, { minItems: 1, maxItems: 8, uniqueItems: true }),
+      changedFields: Type.Array(taskChangedField, { minItems: 0, maxItems: 9, uniqueItems: true }),
+      notification: Type.Optional(strictObject({
+        deliveredTo: Type.Array(boundedIdentifier, { maxItems: 32, uniqueItems: true }),
+        failedTo: Type.Array(boundedIdentifier, { maxItems: 32, uniqueItems: true }),
+      })),
     }),
     concurrency: "session_serial",
     sideEffect: "session_state",
@@ -875,12 +886,11 @@ export const CANONICAL_TOOL_CONTRACTS = deepFreeze({
     outputLimits: outputLimits(65_536, 512),
     permissionClass: "task_graph.mutate",
     checkpoint: "none",
-    behaviorFixtureIds: ["status_and_text_update", "owner_and_metadata_update", "dependency_cycle_rejected", "terminal_transition_rejected", "append_snapshot_crash_recovery"],
+    behaviorFixtureIds: ["status_and_text_update", "owner_and_metadata_update", "dependency_cycle_rejected", "delete_and_reopen_task", "append_snapshot_crash_recovery"],
     resultSemantics: "Atomically update one task and dependency graph and return the committed task, graph revision, and changed fields.",
     errorCodes: errors(
       ["task_not_found", false, "The target task does not exist."],
       ["task_dependency_invalid", false, "A dependency is absent, cross-Session, self-referential, or cyclic."],
-      ["task_terminal_conflict", false, "The update attempts an invalid terminal transition."],
       ["task_graph_conflict", true, "The graph revision precondition fails."],
     ),
     lifecycle: lifecycle("bounded_executor", "allowed"),
@@ -1003,10 +1013,10 @@ export const CANONICAL_TOOL_SCHEMA_FIXTURES = deepFreeze({
   Agent: { input: { description: "Review fixture changes", prompt: "Review the fixture" }, output: { taskId: "work-1", agentId: "agent-1", state: "succeeded", result: "done", resultTruncated: false, usage: fixtureUsage, model: "fixture-model" } },
   TaskStop: { input: { task_id: "work-1" }, output: { taskId: "work-1", kind: "agent", terminal: "aborted", alreadyTerminal: false } },
   SendMessage: { input: { to: "agent-1", summary: "Fixture update", message: "done" }, output: { messageId: "message-1", recipient: "agent-1", state: "delivered", sequence: 1 } },
-  TaskCreate: { input: { subject: "Fixture task", description: "A deterministic fixture" }, output: { task: fixtureTask, revision: "task-graph-1" } },
-  TaskGet: { input: { taskId: "task-1" }, output: { task: fixtureTask, revision: "task-graph-1" } },
-  TaskList: { input: {}, output: { tasks: [fixtureTask], revision: "task-graph-1", truncated: false } },
-  TaskUpdate: { input: { taskId: "task-1", status: "in_progress" }, output: { task: { ...fixtureTask, status: "in_progress", updatedSequence: 2 }, revision: "task-graph-2", changedFields: ["status"] } },
+  TaskCreate: { input: { subject: "Fixture task", description: "A deterministic fixture" }, output: { list: "personal", task: fixtureTask, revision: "task-graph-1" } },
+  TaskGet: { input: { taskId: "task-1" }, output: { list: "personal", task: fixtureTask, revision: "task-graph-1" } },
+  TaskList: { input: {}, output: { list: "personal", tasks: [fixtureTask], revision: "task-graph-1", truncated: false } },
+  TaskUpdate: { input: { taskId: "task-1", status: "in_progress" }, output: { list: "personal", task: { ...fixtureTask, status: "in_progress", updatedSequence: 2 }, revision: "task-graph-2", changedFields: ["status"] } },
 } as const satisfies Record<CanonicalToolName, { readonly input: unknown; readonly output: unknown }>);
 
 export type CanonicalToolInput<Name extends CanonicalToolName> =

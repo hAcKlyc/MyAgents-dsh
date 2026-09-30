@@ -8179,7 +8179,7 @@
                 "type": "string"
               },
               "distributionVersion": {
-                "const": "0.1.10",
+                "const": "0.1.11",
                 "type": "string"
               },
               "name": {
@@ -8187,7 +8187,7 @@
                 "type": "string"
               },
               "version": {
-                "const": "0.1.7-rc.2.myagents.477b4f420553.8d5f1cfa482e",
+                "const": "0.2.0-rc.2.myagents.639ed0153972.7ac2652ae40f",
                 "type": "string"
               }
             },
@@ -8206,7 +8206,7 @@
             "type": "string"
           },
           "runtimeVersion": {
-            "const": "0.1.10",
+            "const": "0.1.11",
             "type": "string"
           },
           "schemaSha256": {
@@ -11008,7 +11008,7 @@
                 "additionalProperties": false,
                 "properties": {
                   "contractSha256": {
-                    "const": "7d7d7d67b5cf2e9e06c6886a8490896de6e6488dffb11f322e055e61a49d8d22",
+                    "const": "2328363c025a310a373d1b959b3c6cb33e864e2e63a86981c30e49c777f3437c",
                     "type": "string"
                   },
                   "diagnostics": {
@@ -13007,7 +13007,7 @@
                                     "type": "boolean"
                                   },
                                   "tool": {
-                                    "const": "Agent",
+                                    "const": "subagent",
                                     "type": "string"
                                   }
                                 },
@@ -13031,7 +13031,7 @@
                                     "type": "string"
                                   },
                                   "tool": {
-                                    "const": "Agent",
+                                    "const": "subagent",
                                     "type": "string"
                                   }
                                 },
@@ -13054,7 +13054,7 @@
                                     "type": "boolean"
                                   },
                                   "tool": {
-                                    "const": "TaskStop",
+                                    "const": "fork_agent",
                                     "type": "string"
                                   }
                                 },
@@ -13078,7 +13078,7 @@
                                     "type": "string"
                                   },
                                   "tool": {
-                                    "const": "TaskStop",
+                                    "const": "fork_agent",
                                     "type": "string"
                                   }
                                 },
@@ -13101,7 +13101,7 @@
                                     "type": "boolean"
                                   },
                                   "tool": {
-                                    "const": "SendMessage",
+                                    "const": "interrupt_agent",
                                     "type": "string"
                                   }
                                 },
@@ -13125,7 +13125,101 @@
                                     "type": "string"
                                   },
                                   "tool": {
-                                    "const": "SendMessage",
+                                    "const": "interrupt_agent",
+                                    "type": "string"
+                                  }
+                                },
+                                "required": [
+                                  "tool",
+                                  "available",
+                                  "reasonCode"
+                                ],
+                                "type": "object"
+                              }
+                            ]
+                          },
+                          {
+                            "anyOf": [
+                              {
+                                "additionalProperties": false,
+                                "properties": {
+                                  "available": {
+                                    "const": true,
+                                    "type": "boolean"
+                                  },
+                                  "tool": {
+                                    "const": "send_message",
+                                    "type": "string"
+                                  }
+                                },
+                                "required": [
+                                  "tool",
+                                  "available"
+                                ],
+                                "type": "object"
+                              },
+                              {
+                                "additionalProperties": false,
+                                "properties": {
+                                  "available": {
+                                    "const": false,
+                                    "type": "boolean"
+                                  },
+                                  "reasonCode": {
+                                    "maxLength": 256,
+                                    "minLength": 1,
+                                    "pattern": "^[^\\u0000-\\u001F\\u007F]+$",
+                                    "type": "string"
+                                  },
+                                  "tool": {
+                                    "const": "send_message",
+                                    "type": "string"
+                                  }
+                                },
+                                "required": [
+                                  "tool",
+                                  "available",
+                                  "reasonCode"
+                                ],
+                                "type": "object"
+                              }
+                            ]
+                          },
+                          {
+                            "anyOf": [
+                              {
+                                "additionalProperties": false,
+                                "properties": {
+                                  "available": {
+                                    "const": true,
+                                    "type": "boolean"
+                                  },
+                                  "tool": {
+                                    "const": "list_agents",
+                                    "type": "string"
+                                  }
+                                },
+                                "required": [
+                                  "tool",
+                                  "available"
+                                ],
+                                "type": "object"
+                              },
+                              {
+                                "additionalProperties": false,
+                                "properties": {
+                                  "available": {
+                                    "const": false,
+                                    "type": "boolean"
+                                  },
+                                  "reasonCode": {
+                                    "maxLength": 256,
+                                    "minLength": 1,
+                                    "pattern": "^[^\\u0000-\\u001F\\u007F]+$",
+                                    "type": "string"
+                                  },
+                                  "tool": {
+                                    "const": "list_agents",
                                     "type": "string"
                                   }
                                 },
@@ -13327,7 +13421,7 @@
                             ]
                           }
                         ],
-                        "minItems": 25,
+                        "minItems": 27,
                         "type": "array"
                       }
                     ]
@@ -13466,10 +13560,30 @@
                         {
                           "const": "web_search",
                           "type": "string"
+                        },
+                        {
+                          "const": "subagent",
+                          "type": "string"
+                        },
+                        {
+                          "const": "fork_agent",
+                          "type": "string"
+                        },
+                        {
+                          "const": "interrupt_agent",
+                          "type": "string"
+                        },
+                        {
+                          "const": "send_message",
+                          "type": "string"
+                        },
+                        {
+                          "const": "list_agents",
+                          "type": "string"
                         }
                       ]
                     },
-                    "maxItems": 25,
+                    "maxItems": 27,
                     "type": "array",
                     "uniqueItems": true
                   },
@@ -13658,15 +13772,23 @@
                             "type": "string"
                           },
                           {
-                            "const": "Agent",
+                            "const": "subagent",
                             "type": "string"
                           },
                           {
-                            "const": "TaskStop",
+                            "const": "fork_agent",
                             "type": "string"
                           },
                           {
-                            "const": "SendMessage",
+                            "const": "interrupt_agent",
+                            "type": "string"
+                          },
+                          {
+                            "const": "send_message",
+                            "type": "string"
+                          },
+                          {
+                            "const": "list_agents",
                             "type": "string"
                           },
                           {
@@ -13686,7 +13808,7 @@
                             "type": "string"
                           }
                         ],
-                        "minItems": 25,
+                        "minItems": 27,
                         "type": "array"
                       }
                     ]
@@ -16358,7 +16480,7 @@
                 "additionalProperties": false,
                 "properties": {
                   "contractSha256": {
-                    "const": "7d7d7d67b5cf2e9e06c6886a8490896de6e6488dffb11f322e055e61a49d8d22",
+                    "const": "2328363c025a310a373d1b959b3c6cb33e864e2e63a86981c30e49c777f3437c",
                     "type": "string"
                   },
                   "diagnostics": {
@@ -18357,7 +18479,7 @@
                                     "type": "boolean"
                                   },
                                   "tool": {
-                                    "const": "Agent",
+                                    "const": "subagent",
                                     "type": "string"
                                   }
                                 },
@@ -18381,7 +18503,7 @@
                                     "type": "string"
                                   },
                                   "tool": {
-                                    "const": "Agent",
+                                    "const": "subagent",
                                     "type": "string"
                                   }
                                 },
@@ -18404,7 +18526,7 @@
                                     "type": "boolean"
                                   },
                                   "tool": {
-                                    "const": "TaskStop",
+                                    "const": "fork_agent",
                                     "type": "string"
                                   }
                                 },
@@ -18428,7 +18550,7 @@
                                     "type": "string"
                                   },
                                   "tool": {
-                                    "const": "TaskStop",
+                                    "const": "fork_agent",
                                     "type": "string"
                                   }
                                 },
@@ -18451,7 +18573,7 @@
                                     "type": "boolean"
                                   },
                                   "tool": {
-                                    "const": "SendMessage",
+                                    "const": "interrupt_agent",
                                     "type": "string"
                                   }
                                 },
@@ -18475,7 +18597,101 @@
                                     "type": "string"
                                   },
                                   "tool": {
-                                    "const": "SendMessage",
+                                    "const": "interrupt_agent",
+                                    "type": "string"
+                                  }
+                                },
+                                "required": [
+                                  "tool",
+                                  "available",
+                                  "reasonCode"
+                                ],
+                                "type": "object"
+                              }
+                            ]
+                          },
+                          {
+                            "anyOf": [
+                              {
+                                "additionalProperties": false,
+                                "properties": {
+                                  "available": {
+                                    "const": true,
+                                    "type": "boolean"
+                                  },
+                                  "tool": {
+                                    "const": "send_message",
+                                    "type": "string"
+                                  }
+                                },
+                                "required": [
+                                  "tool",
+                                  "available"
+                                ],
+                                "type": "object"
+                              },
+                              {
+                                "additionalProperties": false,
+                                "properties": {
+                                  "available": {
+                                    "const": false,
+                                    "type": "boolean"
+                                  },
+                                  "reasonCode": {
+                                    "maxLength": 256,
+                                    "minLength": 1,
+                                    "pattern": "^[^\\u0000-\\u001F\\u007F]+$",
+                                    "type": "string"
+                                  },
+                                  "tool": {
+                                    "const": "send_message",
+                                    "type": "string"
+                                  }
+                                },
+                                "required": [
+                                  "tool",
+                                  "available",
+                                  "reasonCode"
+                                ],
+                                "type": "object"
+                              }
+                            ]
+                          },
+                          {
+                            "anyOf": [
+                              {
+                                "additionalProperties": false,
+                                "properties": {
+                                  "available": {
+                                    "const": true,
+                                    "type": "boolean"
+                                  },
+                                  "tool": {
+                                    "const": "list_agents",
+                                    "type": "string"
+                                  }
+                                },
+                                "required": [
+                                  "tool",
+                                  "available"
+                                ],
+                                "type": "object"
+                              },
+                              {
+                                "additionalProperties": false,
+                                "properties": {
+                                  "available": {
+                                    "const": false,
+                                    "type": "boolean"
+                                  },
+                                  "reasonCode": {
+                                    "maxLength": 256,
+                                    "minLength": 1,
+                                    "pattern": "^[^\\u0000-\\u001F\\u007F]+$",
+                                    "type": "string"
+                                  },
+                                  "tool": {
+                                    "const": "list_agents",
                                     "type": "string"
                                   }
                                 },
@@ -18677,7 +18893,7 @@
                             ]
                           }
                         ],
-                        "minItems": 25,
+                        "minItems": 27,
                         "type": "array"
                       }
                     ]
@@ -18816,10 +19032,30 @@
                         {
                           "const": "web_search",
                           "type": "string"
+                        },
+                        {
+                          "const": "subagent",
+                          "type": "string"
+                        },
+                        {
+                          "const": "fork_agent",
+                          "type": "string"
+                        },
+                        {
+                          "const": "interrupt_agent",
+                          "type": "string"
+                        },
+                        {
+                          "const": "send_message",
+                          "type": "string"
+                        },
+                        {
+                          "const": "list_agents",
+                          "type": "string"
                         }
                       ]
                     },
-                    "maxItems": 25,
+                    "maxItems": 27,
                     "type": "array",
                     "uniqueItems": true
                   },
@@ -19008,15 +19244,23 @@
                             "type": "string"
                           },
                           {
-                            "const": "Agent",
+                            "const": "subagent",
                             "type": "string"
                           },
                           {
-                            "const": "TaskStop",
+                            "const": "fork_agent",
                             "type": "string"
                           },
                           {
-                            "const": "SendMessage",
+                            "const": "interrupt_agent",
+                            "type": "string"
+                          },
+                          {
+                            "const": "send_message",
+                            "type": "string"
+                          },
+                          {
+                            "const": "list_agents",
                             "type": "string"
                           },
                           {
@@ -19036,7 +19280,7 @@
                             "type": "string"
                           }
                         ],
-                        "minItems": 25,
+                        "minItems": 27,
                         "type": "array"
                       }
                     ]
@@ -19504,6 +19748,315 @@
         "required": [
           "token",
           "state"
+        ],
+        "type": "object"
+      }
+    },
+    "subagent/interrupt": {
+      "direction": "host_to_runtime",
+      "params": {
+        "additionalProperties": false,
+        "properties": {
+          "agentId": {
+            "maxLength": 256,
+            "minLength": 1,
+            "pattern": "^[^\\u0000-\\u001F\\u007F]+$",
+            "type": "string"
+          }
+        },
+        "required": [
+          "agentId"
+        ],
+        "type": "object"
+      },
+      "result": {
+        "additionalProperties": false,
+        "properties": {
+          "ok": {
+            "const": true,
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "ok"
+        ],
+        "type": "object"
+      }
+    },
+    "subagent/list": {
+      "direction": "host_to_runtime",
+      "params": {
+        "additionalProperties": false,
+        "properties": {},
+        "type": "object"
+      },
+      "result": {
+        "additionalProperties": false,
+        "properties": {
+          "items": {
+            "items": {
+              "additionalProperties": false,
+              "properties": {
+                "activity": {
+                  "anyOf": [
+                    {
+                      "const": "running",
+                      "type": "string"
+                    },
+                    {
+                      "const": "inactive",
+                      "type": "string"
+                    }
+                  ]
+                },
+                "depth": {
+                  "maximum": 8,
+                  "minimum": 1,
+                  "type": "integer"
+                },
+                "id": {
+                  "maxLength": 256,
+                  "minLength": 1,
+                  "pattern": "^[^\\u0000-\\u001F\\u007F]+$",
+                  "type": "string"
+                },
+                "label": {
+                  "maxLength": 512,
+                  "type": "string"
+                },
+                "mode": {
+                  "anyOf": [
+                    {
+                      "const": "one-shot",
+                      "type": "string"
+                    },
+                    {
+                      "const": "continuable",
+                      "type": "string"
+                    }
+                  ]
+                },
+                "parentId": {
+                  "maxLength": 256,
+                  "minLength": 1,
+                  "pattern": "^[^\\u0000-\\u001F\\u007F]+$",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "id",
+                "parentId",
+                "depth",
+                "mode",
+                "activity"
+              ],
+              "type": "object"
+            },
+            "maxItems": 256,
+            "type": "array"
+          }
+        },
+        "required": [
+          "items"
+        ],
+        "type": "object"
+      }
+    },
+    "subagent/prompt": {
+      "direction": "host_to_runtime",
+      "params": {
+        "additionalProperties": false,
+        "properties": {
+          "agentId": {
+            "maxLength": 256,
+            "minLength": 1,
+            "pattern": "^[^\\u0000-\\u001F\\u007F]+$",
+            "type": "string"
+          },
+          "clientMessageId": {
+            "maxLength": 256,
+            "minLength": 1,
+            "pattern": "^[^\\u0000-\\u001F\\u007F]+$",
+            "type": "string"
+          },
+          "message": {
+            "maxLength": 12000,
+            "minLength": 1,
+            "type": "string"
+          }
+        },
+        "required": [
+          "agentId",
+          "clientMessageId",
+          "message"
+        ],
+        "type": "object"
+      },
+      "result": {
+        "additionalProperties": false,
+        "properties": {
+          "ok": {
+            "const": true,
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "ok"
+        ],
+        "type": "object"
+      }
+    },
+    "subagent/tasks": {
+      "direction": "host_to_runtime",
+      "params": {
+        "additionalProperties": false,
+        "properties": {
+          "agentId": {
+            "maxLength": 256,
+            "minLength": 1,
+            "pattern": "^[^\\u0000-\\u001F\\u007F]+$",
+            "type": "string"
+          },
+          "list": {
+            "anyOf": [
+              {
+                "const": "personal",
+                "type": "string"
+              },
+              {
+                "const": "shared",
+                "type": "string"
+              }
+            ]
+          }
+        },
+        "required": [
+          "agentId",
+          "list"
+        ],
+        "type": "object"
+      },
+      "result": {
+        "additionalProperties": false,
+        "properties": {
+          "agentId": {
+            "maxLength": 256,
+            "minLength": 1,
+            "pattern": "^[^\\u0000-\\u001F\\u007F]+$",
+            "type": "string"
+          },
+          "list": {
+            "anyOf": [
+              {
+                "const": "personal",
+                "type": "string"
+              },
+              {
+                "const": "shared",
+                "type": "string"
+              }
+            ]
+          },
+          "snapshot": {
+            "additionalProperties": false,
+            "properties": {
+              "revision": {
+                "maxLength": 256,
+                "minLength": 1,
+                "pattern": "^[^\\u0000-\\u001F\\u007F]+$",
+                "type": "string"
+              },
+              "tasks": {
+                "items": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "activeForm": {
+                      "maxLength": 512,
+                      "type": "string"
+                    },
+                    "blockedBy": {
+                      "items": {
+                        "maxLength": 256,
+                        "minLength": 1,
+                        "pattern": "^[^\\u0000-\\u001F\\u007F]+$",
+                        "type": "string"
+                      },
+                      "maxItems": 256,
+                      "type": "array"
+                    },
+                    "hasHiddenBlockers": {
+                      "type": "boolean"
+                    },
+                    "id": {
+                      "maxLength": 256,
+                      "minLength": 1,
+                      "pattern": "^[^\\u0000-\\u001F\\u007F]+$",
+                      "type": "string"
+                    },
+                    "offerTo": {
+                      "items": {
+                        "maxLength": 256,
+                        "minLength": 1,
+                        "pattern": "^[^\\u0000-\\u001F\\u007F]+$",
+                        "type": "string"
+                      },
+                      "maxItems": 32,
+                      "type": "array"
+                    },
+                    "owner": {
+                      "maxLength": 256,
+                      "minLength": 1,
+                      "pattern": "^[^\\u0000-\\u001F\\u007F]+$",
+                      "type": "string"
+                    },
+                    "status": {
+                      "anyOf": [
+                        {
+                          "const": "pending",
+                          "type": "string"
+                        },
+                        {
+                          "const": "in_progress",
+                          "type": "string"
+                        },
+                        {
+                          "const": "completed",
+                          "type": "string"
+                        },
+                        {
+                          "const": "cancelled",
+                          "type": "string"
+                        }
+                      ]
+                    },
+                    "subject": {
+                      "maxLength": 512,
+                      "minLength": 1,
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "id",
+                    "subject",
+                    "status"
+                  ],
+                  "type": "object"
+                },
+                "maxItems": 256,
+                "type": "array"
+              }
+            },
+            "required": [
+              "revision",
+              "tasks"
+            ],
+            "type": "object"
+          }
+        },
+        "required": [
+          "agentId",
+          "list",
+          "snapshot"
         ],
         "type": "object"
       }
@@ -24494,9 +25047,27 @@
               {
                 "additionalProperties": false,
                 "properties": {
+                  "agentId": {
+                    "maxLength": 256,
+                    "minLength": 1,
+                    "pattern": "^[^\\u0000-\\u001F\\u007F]+$",
+                    "type": "string"
+                  },
                   "kind": {
                     "const": "task_graph",
                     "type": "string"
+                  },
+                  "list": {
+                    "anyOf": [
+                      {
+                        "const": "personal",
+                        "type": "string"
+                      },
+                      {
+                        "const": "shared",
+                        "type": "string"
+                      }
+                    ]
                   },
                   "snapshot": {
                     "additionalProperties": false,
@@ -24515,7 +25086,36 @@
                               "maxLength": 512,
                               "type": "string"
                             },
+                            "blockedBy": {
+                              "items": {
+                                "maxLength": 256,
+                                "minLength": 1,
+                                "pattern": "^[^\\u0000-\\u001F\\u007F]+$",
+                                "type": "string"
+                              },
+                              "maxItems": 256,
+                              "type": "array"
+                            },
+                            "hasHiddenBlockers": {
+                              "type": "boolean"
+                            },
                             "id": {
+                              "maxLength": 256,
+                              "minLength": 1,
+                              "pattern": "^[^\\u0000-\\u001F\\u007F]+$",
+                              "type": "string"
+                            },
+                            "offerTo": {
+                              "items": {
+                                "maxLength": 256,
+                                "minLength": 1,
+                                "pattern": "^[^\\u0000-\\u001F\\u007F]+$",
+                                "type": "string"
+                              },
+                              "maxItems": 32,
+                              "type": "array"
+                            },
+                            "owner": {
                               "maxLength": 256,
                               "minLength": 1,
                               "pattern": "^[^\\u0000-\\u001F\\u007F]+$",

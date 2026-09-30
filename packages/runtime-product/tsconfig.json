@@ -1,32 +1,92 @@
 {
   "extends": "../../tsconfig.base.json",
   "compilerOptions": {
-    "lib": ["ES2024", "DOM", "DOM.Iterable"],
+    "lib": [
+      "ES2024",
+      "DOM",
+      "DOM.Iterable"
+    ],
     "rootDir": ".",
     "outDir": "../../dist/packages/runtime-product",
     "tsBuildInfoFile": "../../dist/packages/runtime-product/.tsbuildinfo"
   },
-  "files": ["src/collaboration-policy.ts", "src/composition.ts", "src/host-interaction.ts", "src/host-model.ts", "src/network-transport.ts", "src/host-settings.ts", "src/host-web-bridge.ts", "src/host-web-fetch.ts", "src/host-web-search.ts", "src/index.ts", "src/primary-session.ts", "src/system-context.ts", "src/utility.ts"],
+  "files": [
+    "src/collaboration-policy.ts",
+    "src/composition.ts",
+    "src/host-interaction.ts",
+    "src/host-model.ts",
+    "src/network-transport.ts",
+    "src/native-child-authority.ts",
+    "src/native-task-notification.ts",
+    "src/host-settings.ts",
+    "src/host-web-bridge.ts",
+    "src/host-web-fetch.ts",
+    "src/host-web-search.ts",
+    "src/index.ts",
+    "src/primary-session.ts",
+    "src/system-context.ts",
+    "src/utility.ts"
+  ],
   "references": [
-    { "path": "../checkpoint" },
-    { "path": "../component-runtime" },
-    { "path": "../components-agents" },
-    { "path": "../components-commands" },
-    { "path": "../components-host-tools" },
-    { "path": "../components-hooks" },
-    { "path": "../components-mcp" },
-    { "path": "../components-skills" },
-    { "path": "../host-ports" },
-    { "path": "../operation-runtime" },
-    { "path": "../persistence-product" },
-    { "path": "../product-profile" },
-    { "path": "../protocol" },
-    { "path": "../task-graph" },
-    { "path": "../tool-runtime-product" },
-    { "path": "../tools-agent" },
-    { "path": "../tools-fs" },
-    { "path": "../tools-interaction" },
-    { "path": "../tools-process" },
-    { "path": "../tools-web" }
+    {
+      "path": "../checkpoint"
+    },
+    {
+      "path": "../component-runtime"
+    },
+    {
+      "path": "../components-agents"
+    },
+    {
+      "path": "../components-commands"
+    },
+    {
+      "path": "../components-host-tools"
+    },
+    {
+      "path": "../components-hooks"
+    },
+    {
+      "path": "../components-mcp"
+    },
+    {
+      "path": "../components-skills"
+    },
+    {
+      "path": "../host-ports"
+    },
+    {
+      "path": "../operation-runtime"
+    },
+    {
+      "path": "../persistence-product"
+    },
+    {
+      "path": "../product-profile"
+    },
+    {
+      "path": "../protocol"
+    },
+    {
+      "path": "../task-graph"
+    },
+    {
+      "path": "../tool-runtime-product"
+    },
+    {
+      "path": "../tools-agent"
+    },
+    {
+      "path": "../tools-fs"
+    },
+    {
+      "path": "../tools-interaction"
+    },
+    {
+      "path": "../tools-process"
+    },
+    {
+      "path": "../tools-web"
+    }
   ]
 }

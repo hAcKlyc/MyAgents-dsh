@@ -1,6 +1,6 @@
 # ADR 0008 — Keep capacity-safe compaction inside the official DSH engine
 
-Current DSH `0.1.7-rc.2` disposition: retained as patch 0007; bounded structured compaction remains required. The [seam registry](../dsh/seam-decisions-v1.json) owns exact current patch identity; dated evidence below is historical.
+Current DSH `0.2.0-rc.2` disposition: retained as patch 0007; bounded structured compaction remains required. The [seam registry](../dsh/seam-decisions-v1.json) owns exact current patch identity; dated evidence below is historical.
 
 - Status: accepted
 - Date: 2026-08-29

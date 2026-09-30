@@ -1,6 +1,6 @@
 # ADR 0009 — Preserve external Prompt contributions as literal text
 
-Current DSH `0.1.7-rc.2` disposition: retained as patch 0008 for child persona and patch 0012 for literal runtime context. The [seam registry](../dsh/seam-decisions-v1.json) owns exact current patch identity; dated evidence below is historical.
+Current DSH `0.2.0-rc.2` disposition: retained as patch 0008 for child persona and patch 0012 for literal runtime context. The [seam registry](../dsh/seam-decisions-v1.json) owns exact current patch identity; dated evidence below is historical.
 
 RC2 upgrade (2026-09-25): official 0.1.7-rc.2 supplies literal `PromptSection.interpolate`. Patch 0008 now carries only child persona semantics; patch 0012 carries the still-missing literal dynamic context behavior. Both default to upstream interpolation when the flag is omitted. The fixed source, patch order and evidence are recorded in [the seam registry](../dsh/seam-decisions-v1.json).
 

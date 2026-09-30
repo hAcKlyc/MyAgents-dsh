@@ -16,6 +16,7 @@ import {
   writeSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
+import { createRequire } from "node:module";
 import { dirname, join, relative, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 import { parseArgs } from "node:util";
@@ -156,6 +157,8 @@ const runtimeCompositionSourcePaths = [
   "packages/runtime-product/src/host-web-fetch.ts",
   "packages/runtime-product/src/host-web-search.ts",
   "packages/runtime-product/src/index.ts",
+  "packages/runtime-product/src/native-child-authority.ts",
+  "packages/runtime-product/src/native-task-notification.ts",
   "packages/runtime-product/src/primary-session.ts",
   "packages/runtime-product/src/system-context.ts",
   "packages/runtime-product/src/utility.ts",
@@ -226,7 +229,6 @@ const runtimePackageWorkspaces = [
 ] as const;
 const runtimeVendoredExternalPackages = ["typebox", "@earendil-works/pi-ai"] as const;
 const runtimeVendoredExternalRoots = ["typebox@1.3.7", "@modelcontextprotocol/sdk@1.30.0"] as const;
-const officialPiAiTypeboxVersion = "1.3.7" as const;
 const runtimeNodeTypesVersion = "24.13.3" as const;
 const officialPiAiAdapterPackage = "@deepseek-ai/dsh-llm-pi-ai" as const;
 const officialPiAiAuthorizationPeerPackage = "@deepseek-ai/dsh-authorization" as const;
@@ -713,10 +715,10 @@ const cleanBuildRuntimeComposition = (
   return buildRoot;
 };
 
-const assertExactWorkspaceDependency = (
+const assertExactWorkspaceTypebox = (
   consumerRoot: string,
   workspaceDirectory: string,
-  packageName: string,
+  packageName: "typebox",
 ): void => {
   const workspaceManifest = exactObject(
     JSON.parse(readFileSync(resolve(repositoryRoot, workspaceDirectory, "package.json"), "utf8")) as unknown,
@@ -727,7 +729,13 @@ const assertExactWorkspaceDependency = (
   if (typeof expectedVersion !== "string") {
     throw new Error(`${workspaceDirectory} does not declare ${packageName}`);
   }
-  const source = realpathSync(resolve(repositoryRoot, "node_modules", ...packageName.split("/")));
+  const requireFromWorkspace = createRequire(resolve(repositoryRoot, workspaceDirectory, "package.json"));
+  let source = dirname(requireFromWorkspace.resolve("typebox"));
+  while (!existsSync(resolve(source, "package.json"))) {
+    const parent = dirname(source);
+    if (parent === source) throw new Error(`${packageName} has no installed package manifest`);
+    source = parent;
+  }
   const installedManifest = exactObject(
     JSON.parse(readFileSync(resolve(source, "package.json"), "utf8")) as unknown,
     `${packageName} installed manifest`,
@@ -751,21 +759,10 @@ const prepareRuntimeConsumerOverrides = (consumerRoot: string): void => {
     JSON.parse(readFileSync(manifestPath, "utf8")) as unknown,
     "patched DSH consumer manifest",
   );
-  const runtimeOverrides = projectRuntimeConsumerOverrides(manifest.overrides);
   writeFileSync(manifestPath, `${JSON.stringify({
     ...manifest,
-    overrides: runtimeOverrides,
+    overrides: { "@types/node": runtimeNodeTypesVersion },
   }, null, 2)}\n`);
-};
-
-export const projectRuntimeConsumerOverrides = (value: unknown): Record<string, unknown> => {
-  const overrides = exactObject(value, "patched DSH consumer overrides");
-  if (overrides.typebox !== officialPiAiTypeboxVersion) {
-    throw new Error("patched DSH consumer typebox override differs from the public pi-ai graph");
-  }
-  return {
-    "@types/node": runtimeNodeTypesVersion,
-  };
 };
 
 const runtimeBuilderInputPaths = Object.freeze(Array.from(new Set([
@@ -1232,7 +1229,7 @@ const main = (): void => {
       "packages/product-profile",
       "@myagents-dsh/product-profile",
     );
-    assertExactWorkspaceDependency(consumerRoot, "packages/tool-contracts", "typebox");
+    assertExactWorkspaceTypebox(consumerRoot, "packages/tool-contracts", "typebox");
     stageBuiltPackage(
       consumerRoot,
       buildRoot,

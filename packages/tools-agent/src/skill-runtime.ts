@@ -68,7 +68,7 @@ export interface StaticSkillCatalog {
 export interface ProductSkillServiceConfig {
   readonly catalog: StaticSkillCatalog;
   readonly registerDynamicController?: (controller: ProductDynamicSkillController) => void;
-  readonly resolveOperation?: (agent: Agent) => ProductToolOperationAuthority;
+  readonly resolveOperation?: (agent: Agent) => ProductToolOperationAuthority | undefined;
 }
 
 export interface DynamicSkillGenerationIdentity {
@@ -834,7 +834,7 @@ export class ProductSkillService extends Service {
   readonly #dynamicViewPermits = new WeakMap<AbortSignal, string>();
   readonly #installedDynamic = new WeakSet<object>();
   readonly #catalogProjectionByGeneration = new Map<string, string>();
-  readonly #resolveOperation: ((agent: Agent) => ProductToolOperationAuthority) | undefined;
+  readonly #resolveOperation: ((agent: Agent) => ProductToolOperationAuthority | undefined) | undefined;
   #invalidateDynamic: (() => void) | undefined;
 
   public constructor(ctx: Context, config: ProductSkillServiceConfig) {
@@ -851,7 +851,7 @@ export class ProductSkillService extends Service {
       && (typeof resolveOperation !== "function" || isProxy(resolveOperation))) {
       throw new TypeError("ProductSkillService operation resolver must be a non-proxy function");
     }
-    this.#resolveOperation = resolveOperation as ((agent: Agent) => ProductToolOperationAuthority) | undefined;
+    this.#resolveOperation = resolveOperation as ((agent: Agent) => ProductToolOperationAuthority | undefined) | undefined;
     const registerDynamicController = normalized.registerDynamicController;
     if (registerDynamicController !== undefined
       && (typeof registerDynamicController !== "function" || isProxy(registerDynamicController))) {
@@ -919,12 +919,13 @@ export class ProductSkillService extends Service {
     const agent = context.agent;
     if (agent === undefined || this.#resolveOperation === undefined
       || ctx.tools.get("Skill", context.scope) === undefined) return "";
-    let authority: ProductToolOperationAuthority;
+    let authority: ProductToolOperationAuthority | undefined;
     try {
       authority = this.#resolveOperation(agent);
     } catch {
       return "";
     }
+    if (authority === undefined) return "";
     if (authority.allowedTools !== undefined && !authority.allowedTools.includes("Skill")) return "";
     const catalogMethod = (ctx.productTools as unknown as { catalog?: () => {
       digest: string;
@@ -1103,9 +1104,7 @@ export class ProductSkillService extends Service {
     if ((resourceRoot === undefined) !== (sourcePath === undefined)) {
       throw new TypeError("dynamic Skill filesystem source must include both root and path");
     }
-    const parsed = resourceRoot === undefined
-      ? Object.freeze({ argumentNames: Object.freeze([]), body: content })
-      : parseWorkspaceSkillDocument(content);
+    const parsed = parseWorkspaceSkillDocument(content);
     const key = this.#generationKey(identity);
     const records = this.#dynamicByGeneration.get(key) ?? new Map<string, DynamicSkillRecord>();
     if (records.has(name)) throw new TypeError("dynamic Skill names must be unique within one generation");

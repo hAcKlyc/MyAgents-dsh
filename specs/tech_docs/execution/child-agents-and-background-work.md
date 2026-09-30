@@ -2,133 +2,44 @@
 type: technical-architecture
 status: implemented
 module: child-agents-and-background-work
-updated: 2026-09-12
+updated: 2026-09-30
 patch_authority: ../../dsh/seam-decisions-v1.json
 ---
 
 # Child agents and background work
 
-## 1. Purpose and authority
+## Current build (`dsh_first`)
 
-This guide explains how the canonical `Agent`, `SendMessage` and `TaskStop` tools project DSH subagents and local Jobs into durable Product work. DSH `SubagentRuntime`, in-process spawn and Jobs own native child/process primitives; `packages/tools-agent/src/work-runtime.ts` owns Product identity, role catalogs, foreground/background behavior, messaging, retained output and restart recovery.
+The build-time choice in `apps/runtime-server/src/tool-strategy.build.ts` selects DSH's model-facing `subagent`, `fork_agent`, `send_message`, and `interrupt_agent`. `list_agents` also uses the official public plugin; 0.2.0-rc.2 fixes its export, so the former distribution adapter is removed. DSH's SubagentRuntime, spawn/fork providers, Session, Inbox, and Jobs own child and background execution. MyAgents does not install ProductWork in this strategy.
 
-The rc.2 dev adaptation receives the unpublished child explicitly in the continuable setup
-callback. Cold inspection uses public read handles with guaranteed close; pending Inbox
-reconciliation restores the official AgentLoop-owned Session projection. Product does not
-instantiate a replacement Inbox. Descriptor version 5 and embedded attempt-stream accounting
-are the implemented path; exact lifecycle and restart acceptance requires matching Runtime,
-native and Host evidence.
+`subagent` creates a fresh child Session; `fork_agent` inherits the parent's completed history. Each supports the official one-shot or continuable mode. A one-shot child returns a result to its caller and cannot subsequently be assigned shared work by ID. A continuable child has a stable Session ID, accepts native follow-up messages, and may be interrupted during its current turn. Interrupting a turn does not close the child or its descendants. The model-visible schemas and cancellation semantics are those of the locked DSH packages; the Host does not add ProductWork task IDs, role names, or subtree-stop semantics.
 
-## 2. Relationships
+The Host's admitted collaboration config supplies the native runtime's `maxDepth` and `maxActiveSubagents` through read-only config references. Defaults are depth 2 (root 0, child 1, grandchild 2) and 32 active continuable children. The same service remains live across configuration changes; no child lifecycle is restarted or duplicated. Model admission rollback restores the prior effective limits. The client setting remains in Settings → About's existing hidden developer section. Retained-child capacity and legacy role/message settings are not native runtime capacity controls.
 
-- **Owns:** Product work identities, child descriptors/personas/catalogs, foreground or continuable mode, parent/child messaging, retained output and terminal/recovery projection.
-- **Depends on:** DSH Agent/Session/Subagent/Jobs services, operation-frozen model/tool/config authority, root permissions/TaskGraph and canonical tools.
-- **Consumed by:** root and child `Agent`, `SendMessage`, `TaskStop`, Host event projection and resume recovery.
-- **Does not own:** another AgentLoop, independent permission/task state, an OS sandbox or rollback for child file/process effects.
+The Host's model, approval, sandbox, workspace, permission, and execution-environment policy still applies to native children. The child publication callback inherits its parent's effective approval and sandbox mode before model execution.
 
-## 3. Child roles and capability boundary
+For continuations, the public `agent/inbox/inserted` callback records the sending operation identity before DSH wakes the child. The correlation event belongs to the existing Product operation event registry and payload validator, so the normal SQLite flush/reload path preserves it; its own `user/message` claims that identity. A queued message keeps its dispatch configuration even if another root turn starts before the child consumes it. This prevents a resumed child from retaining its creation-time permission/model revision. Each child pre-step synchronizes the native approval and sandbox policy with the Host primary Session. Product tool calls derive their root operation through native Session projections of these message facts, the DSH parent catalog and current child turn; the brief pre-catalog creation interval captures that operation identity without becoming a lifecycle ledger. Native delegation and control calls pass through Product Plan and permission policy. Root and child tool calls retain the shared DSH tool pipeline and Host interaction route.
 
-The Host-configured maximum depth defaults to one (root depth zero) and supports one through eight. ProductWork records every descendant in the root ledger while DSH retains its actual direct parent. It provides three built-in roles and may add dynamic Agent roles from the frozen effective component generation:
+A host-only native Session projection retains owned catalog and Inbox provenance facts across replay, excluding fork-inherited events. Native child `agent-message` relays and `subagent-settled` notices are authorized by DSH's parent catalog plus their exact Inbox insertion, without a ProductWork ledger. The awaited `agent/pre-step` seam correlates already-claimed native messages with the existing Product operation or creates a collaboration operation before automatic compaction and any model request consumer (`prepend: true`). DSH evaluates prompt contexts before that seam, so the Skill catalog uses the read-only operation lookup and omits its projection until admission; presentation must not fence a legitimate native claim. Execution still requires a registered operation. Native collaboration approval targets use the recipient ID and denial returns a normal tool error. This preserves DSH's native message source and wake scheduling, including reports arriving while the root is idle.
 
-| Role | Tool surface | Intended behavior |
-| --- | --- | --- |
-| `general` | eligible operation-frozen catalog minus hard child exclusions | delegated implementation or general work under normal Product permission/policy |
-| `Explore` | `Read`, `Glob`, `Grep`, `ls`, `bash`/`pwsh`, `job_output`, `job_list`, `job_kill`, `WebFetch`, `WebSearch`, `Skill`, `TaskGet`, `TaskList`, `SendMessage`, `TaskStop` when those tools are available | codebase research; Shell remains available under ordinary Product permissions and is capable of mutation |
-| `Plan` | the same bounded research tool surface as `Explore` | analysis and an actionable implementation/verification plan |
-| dynamic Agent role | deterministic intersection of its declared `tools`/`disallowedTools` and the effective operation catalog | component-owned persona, optional Skills and bounded `maxTurns`; an optional `modelProfileRef` participates in Host-authorized model selection before the child birth is persisted |
+Operation folds and event projectors pass the root Cordis context to the same provenance reader. Omitting that context would lose native Inbox ownership for Jobs notices and child reports; the reader's context argument is required so missing consumers fail at compilation.
 
-General and eligible dynamic roles may delegate below the configured maximum depth; their tool surface omits `Agent` at the limit. Explore and Plan retain fixed non-delegating research surfaces. Explore has Shell and does not claim an OS-level read-only sandbox; its persona states this explicitly.
+Append observers may read the admission event before its matching Product claim. The operation fold preserves that exact catalog-owned native Inbox deletion within the open DSH turn, so event projection accepts every intermediate prefix. A turn cannot close with an admitted message still missing its Product claim.
 
-The effective catalog can expose Web tools to a child. Provider and reverse-request identity now
-bind to the root Agent, while call identity and policy remain those of the executing child; see
-[Web and network](../boundaries/web-and-network.md) for backend selection and tested boundaries.
+The Task tools are separate from child lifecycle. Each Agent has a personal Task list in its own Session. The root Agent additionally owns the shared list; only explicitly assigned or offered tasks are visible to a child. A root assignment or offer is committed before the Runtime queues a native Host-origin notification to a direct continuable child. Notifications describe a change and ask the child to re-read current task authority; a later claim/deletion can make a queued notification stale. Notification failure is returned in TaskUpdate without reversing the durable task change. See [Tool runtime and policy](./tool-runtime-and-policy.md).
 
-Visibility and execution remain separate. Every child call re-enters the same DSH `ctx.tools`/PreToolUse/PostToolUse pipeline. Inherited canonical/component tools check their frozen catalog, workspace roots, origin, Plan, permission and hard policy. Child-scope `TaskStop` and `SendMessage` are coordination exceptions: they authorize through exact WorkRegistry lineage instead of Product permission/PermissionRequest/Plan. Root and children share one root-Session durable Plan, permission rules and TaskGraph; UI interactions identify the executing child.
+`subagent/list` reads DSH's persisted parent catalogs, including inactive children. `subagent/tasks` reads an Agent's personal list or the root shared list from the live Session or persisted owned event suffix; a fork's inherited parent events never become its personal tasks. `subagent/prompt` and `subagent/interrupt` address an exact continuable child through DSH's public control service. The MyAgents client projects this catalog as an Agent tree and presents the task lists separately. It does not infer native identity from historical ProductWork IDs or portray a turn interrupt as subtree disposal.
 
-`EnterPlanMode` remains root-only. `Agent` additionally requires an eligible frozen role catalog and available depth. Background children are also origin-policy denied `AskUserQuestion` and `ExitPlanMode` because they cannot synchronously own a Host interaction. A foreground child may reach otherwise eligible interaction tools; Provider availability, Product permission and the Agent-scoped single-flight interaction owner still decide the call. A permission prompt may therefore originate from a child even though any durable permission rule and the Plan remain root-owned.
+DSH Jobs remain the owner of Shell background processes and their `job_output`, `job_list`, and `job_kill` tools. They are distinct from delegated Agent Sessions.
 
-At birth, a background child's frozen tool filter removes canonical tools with the
-`no-background-child` origin policy, so its model does not see tools it cannot call. Host model
-selection errors carrying the trusted `child_model_*` protocol code retain their actionable
-message in the Agent result; unrelated exceptions keep their existing failure boundary.
+## Legacy `ma_first` build
 
-The Host-managed child publication seam uses official `setApprovalPolicy(session, "ask")` before model execution, replacing DSH delegation's default `never`. A child-scoped `system-prompt/assemble` waterfall replaces the existing `subagent:delegation` context with the actual Product policy; registering the same name again in that scope would throw. Creation and cold materialization use this same seam. The shared permission service applies Action defaults and durable Session-tree exact grants; remaining Shell/extension approvals reach the existing Host reverse port. No child-specific permission engine or upstream patch is involved.
+The optional legacy build strategy still installs `packages/tools-agent/src/work-runtime.ts` for the historical `Agent`, `TaskStop`, and `SendMessage` vocabulary. Its ProductWork records and `work/*` Host methods are compatibility surfaces, not the architecture used by the current `dsh_first` build. They do not define DSH's native child semantics. The current client reads the native catalog when that protocol method exists; older bound artifacts keep their legacy projection. Historical `myagents/work/*` events remain historical facts and are not migrated into the native child catalog.
 
-## 4. Work lifecycle
+## Implementation map
 
-```text
-Agent tool call with exact operation authority
-  -> choose role and foreground/background mode
-  -> select and freeze the Host-authorized Provider/model and role constraints
-  -> persist reserved Product identity, immutable birth and bounded output authority
-  -> wait in the root capacity FIFO if all execution slots are occupied
-  -> start the exact reserved DSH child identity and persist its initial Inbox boundary
-  -> stream/retain bounded output and usage
-  -> foreground: return terminal result to the call
-     background: return work id and continue independently
-  -> record one completed activation and deliver its bounded parent report
-  -> retain the child identity/context for follow-up; TaskStop closes the handle
-```
-
-Composition verifies a child completion against the public persistence provider when DSH has already flushed and disposed its Session handle before `subagent/end`. It requires the exact subagent header and complete captured event prefix; detached handles never re-enter SessionStore flush. Trusted builder adapters without a Host model plane inherit only the admitted root model profile through the same collaboration policy; they cannot select additional routes.
-
-Both modes use continuable DSH children. Omitted/true `run_in_background` returns a handle and retained output path; false waits for the first activation's durable result rather than handle closure. General, Explore, Plan and dynamic roles retain context after completion. Existing durable settlements remain closed facts. Protocol 2.6 source snapshots separate `activation` (stable child/start identity, ordinal and execution state) from `handleState` (open/stopping/closed). New reserved births use `myagents/work/created` before DSH materialization and `myagents/work/started` for the exact initial Inbox boundary. The initial activation identity is stable while queued; legacy child/start identities remain unchanged. Later native starts append `myagents/work/activated`, and durable epochs own completed output and usage. `myagents/work/phase` records the activation ordinal and queued/running/child/interaction/delivery wait transitions. An answered interaction may be queued for capacity before execution resumes. Closing an idle handle preserves the completed activation's result and timestamps.
-
-## 5. Messaging and stopping
-
-`Agent` accepts no caller-defined display name. Its result returns a `taskId` for `TaskStop` and a separate live `agentId` for `SendMessage`. A root or child addresses a known open collaborator anywhere in the same tree by that `agentId`; a child resolves the reserved literal `parent` to its actual direct parent. Durable ancestry is validated before cold materialization. TaskGraph owner claims use the same tree membership without exposing another branch's transcript. Task IDs, names, broadcasts, team aliases, cross-Session recipients and stopping/terminal Agents are not messaging identities. A `queued` result is ordered mailbox admission, not execution completion. New explicit child messages freeze the separate collaboration policy: realtime (default) uses the next DSH step boundary, turn uses the next child-turn boundary. Retries preserve the original timing. Intent and insertion identities are durable so replay cannot duplicate or redirect a message. A live follow-up starts another bounded child epoch; a report is correlated into the root Inbox and operation flow.
-
-`TaskStop` stops an owned child Agent or background process and waits for terminal cleanup. Stopping a node drains its complete subtree while preserving unrelated branches. A child cannot synchronously stop itself or an ancestor, since either action would destroy the active stop call. Process termination and child abort use different internal terminal vocabularies; Host presentation may normalize them, but recovery retains exact owner semantics.
-
-The first successful foreground activation returns its result through `Agent` without a second automatic Inbox report; its durable epoch and lifecycle remain intact. Failed foreground activations retain a detailed completion report because the tool error is bounded and generic. Later activations and background activations produce one bounded automatic completion report for its actual direct parent through the public quiet `inject`/DSH Inbox seam. A deterministic epoch-owned message intent precedes insertion; the existing delivery receipt records the exact DSH message identity. A closed ancestor cancels pending report delivery without reopening its Agent. Canceled explicit deliveries use `myagents/work/message-canceled`, so stopping queued work cannot permanently obstruct later messages. Reports identify child, task, epoch and outcome, and are distinct from explicit `SendMessage` content. Recovery reuses an existing insertion or completes the missing step, including when the resident child scope is absent. It does not wake a second AgentLoop. Host cold history reconstructs Provider activity and child lifecycle from native events, preserves original tool results, and marks timing unavailable when session/read omits event timestamps. User restoration of a closed context and operation-aware realtime report delivery remain open implementation work; source gates here do not claim packaged acceptance.
-
-## 6. Recovery and limits
-
-Resume reconstructs Product work records from root events, validates every child Session parent/origin/epoch boundary and correlates pending Inbox entries. Recoverable continuable work resumes through public DSH seams. `withContinuableAncestors` temporarily restores the exact direct-parent chain without adding prompts or starting ancestor activations. A committed ancestor stop also closes descendants whose individual stop receipts were interrupted by a crash. A reserved birth can recreate its not-yet-materialized child using the original durable tool call and frozen model, through the same bounded capacity FIFO; a legacy or started ProductWork owner whose required child Session is missing fences recovery; retained output from a pre-accept orphan is cleaned up instead of being promoted into a recovery claim. Ambiguous open turns, reused message identities or ownership drift also remain failures.
-
-The current generation-wide bounds are explicit:
-
-- child depth: default `1`, configurable through `8`;
-- actively executing children, including admitted starts: default/hard ceiling `32`; Host may lower it. Creation, cold recovery and follow-up share the same FIFO. Idle handles and children awaiting delegated work, delivery or human interaction release execution capacity and must reacquire it before continuing; cancellation/TaskStop of a queued birth closes it durably without waiting for capacity;
-- Product work items, including terminal records: `256` per root generation;
-- explicit collaboration messages: `1,024`, with at most `4 MiB` cumulative content; up to `1,280` additional epoch reports each bounded to `4 KiB` have separate capacity;
-- epochs: at most `1,025` per work item, additionally bounded by the role's `maxTurns`, and `1,280` total per generation;
-- retained background output: `8 MiB`;
-- inline terminal result: `256 KiB`.
-
-Managed-file rollback excludes child effects even though child file tools pass through ordinary policy. Failure of one background interaction-only call does not automatically terminate unrelated children or components.
-
-## 7. Architecture-correct change path
-
-Add a role as declarative capability policy plus a literal persona and deterministic catalog derivation. Keep child execution in DSH subagent services and Product orchestration in `ProductWorkService`. To make a role truly read-only against a hostile model, add an execution-time hard tool/argument policy or OS containment owner; prompt wording alone cannot provide that claim. Extend durable events/folds only when restart requires new state, and cover follow-up, stop, cancellation, crash and retained-output cleanup.
-
-## 8. Verification and implementation map
-
-| Concern | Source or evidence |
-| --- | --- |
-| Product roles/work/messaging/recovery | `packages/tools-agent/src/work-runtime.ts` |
-| Official child lifecycle | pinned `@deepseek-ai/dsh-subagent`, `dsh-subagent-spawn-in-process`, `dsh-jobs-local` |
-| Child publication gate | `packages/runtime-product/src/composition.ts`, `primary-session.ts` |
-| Canonical schemas | `packages/tool-contracts/` |
-| Patch dependencies | DSH patches `0001`, `0003`, `0004`, `0005`, `0008` and `specs/dsh/seam-decisions-v1.json` |
-| Tests | `tests/product-work-tools.unit.test.ts`, `tests/product-declarative-components.unit.test.ts`, packed Runtime recovery and dynamic campaigns |
-
-## Explicit Host control and continuation
-
-The trusted native `work/agent/resume` port appends `myagents/work/reopened`, naming the exact previous settlement and Host request identity. It preserves DSH Session identity, birth model, previous epochs and results; it opens the handle without injecting a prompt or waking closed descendants. Ancestors must be open and the selected model still authorized. `work/agent/message` supplies a separately identified follow-up; `work/agent/stop` rejects an obsolete handle revision after a user reopen. These are Host ports, never model-visible tools. Old automatic reports and SendMessage cannot clear a settlement. `handleRevision` is derived from durable lifecycle positions, allowing the client to distinguish an explicit reopen from an old open snapshot.
-
-Late descendant completion targets its actual direct parent through the native continuation seam, including a later parent activation when necessary. An idle Root report is admitted through the SDK operation service as collaboration-origin work, retaining its actual child source and exact native Inbox identity. Parent activation limits suppress further automatic activation with an explicit message cancellation. Human input and collaboration retain separate timing policies.
-
-### Host tree observation
-
-`work/list` reads only the published primary root's retained Work entries. Creation-order pages use the last included Task ID as the cursor; cursor ownership is checked against that root. At most four public SessionQuery observations are held concurrently and every lease is disposed. The response obeys negotiated frame limits, caps pages at 32 entries, and limits each result preview to 1,024 characters. Full retained output remains owned by the existing Work output path/tool. Model route and context facts come from the child birth and the official token/context projections; missing Provider usage stays unknown. The root Work index is disposable and incrementally rebuilt from native facts.
-
-Completed Agent usage excludes inherited events and is derived from official DSH turn-attempt accounting, with each compaction summary/repair aggregate added once. Missing provider buckets omit usage, including successful foreground results; they do not create zero totals or fail valid results. Live tree observations use official projections with inherited-prefix subtraction and report only provable complete bucket counts.
-
-Child setup registers the scope-local `product:child-identity` context through official SystemPrompt. Its literal JSON identifies the exact child and direct parent, frozen model/Provider/role, birth depth, current effective maximum depth and remaining depth. `canDelegate` also respects the frozen role tool surface. The same setup reconstructs this context on cold resume; it never derives the child model from the current root selection. Existing persisted completion intents are recovered even for legacy first foreground activations.
-
-## Completion results and output retention
-
-New epochs mark `completionFormat: final-message-v1` and persist the last nonempty visible assistant message as their result. Progress narration stays in accumulated output. Existing epochs keep their original completion format, so replay reproduces accepted Inbox intent hashes. The 4 KiB completion notification uses the available result space, preserves the end of a long final answer, and includes the retained output path when the envelope can hold it. The foreground result remains bounded at 256 KiB. Retained accumulated output keeps the newest 8 MiB with an omission notice; it is not an unlimited transcript. DSH Session events remain the conversation authority.
-
-`TaskStop.alreadyTerminal` means the handle was already closed, not merely that its last activation completed. Stopping an open idle handle closes it and its descendants, so alreadyTerminal is false. TaskStop drains subtree cleanup; native job_kill acknowledges a termination request and job status can update afterward.
+- Official native services and policy wiring: `packages/runtime-product/src/composition.ts`, `native-child-authority.ts`, `native-task-notification.ts`.
+- Model-facing vocabulary: `packages/protocol/src/tool-strategy.ts` and the locked DSH subagent tool packages.
+- Task ownership and access: `packages/task-graph/src/runtime.ts`.
+- Host control and observation: `packages/rpc-server/src/native-rpc-service.ts`, `event-projector.ts`.
+- Legacy compatibility: `packages/tools-agent/src/work-runtime.ts`.

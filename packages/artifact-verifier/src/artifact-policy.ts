@@ -222,6 +222,8 @@ export const PACKED_WORKSPACE_POLICIES: readonly PackedWorkspacePolicy[] = Objec
       "src/host-web-fetch.ts",
       "src/host-web-search.ts",
       "src/index.ts",
+      "src/native-child-authority.ts",
+      "src/native-task-notification.ts",
       "src/primary-session.ts",
       "src/system-context.ts",
       "src/utility.ts",

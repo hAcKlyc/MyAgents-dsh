@@ -1,3 +1,6 @@
+import { installNativeRootContext } from "@myagents-dsh/runtime-product";
+import { installProductContextProjection, ownsProductWorkRootContextMessage } from "@myagents-dsh/tools-agent";
+import { SessionProjectionRegistry } from "@deepseek-ai/dsh-session-projection";
 import { FixtureInbox as Inbox } from "./fixtures/inbox-events.js";
 import { SessionSeq } from "@deepseek-ai/dsh-session";
 import { Context } from "@deepseek-ai/cordis";
@@ -69,6 +72,7 @@ const appendEvent = <Type extends SessionEvent["type"]>(
 } as Extract<SessionEvent, { type: Type }>];
 
 interface MountedService {
+  readonly events: SessionEvent[];
   readonly agent: Agent;
   readonly context: Context;
   readonly dispose: () => Promise<void>;
@@ -112,6 +116,8 @@ const mountService = async (
     meta: { cwd: "/tmp/myagents-dsh-operation-test" },
     ...(seed === undefined ? {} : { seed }),
   });
+  const events: SessionEvent[] = [];
+  context.on("session/event", (candidate, event) => { if (candidate === session) events.push(event); });
   const agentState: { value?: Agent } = {};
   const inbox = new Inbox(session, {
     claimed: (message, turn) => {
@@ -183,6 +189,7 @@ const mountService = async (
   }
   if (lifecycle === undefined) throw new Error("operation lifecycle controller was not registered");
   return {
+    events,
     agent,
     context,
     dispose: () => fiber.dispose(),
@@ -535,12 +542,76 @@ describe("durable product-operation fold", () => {
     fixture.agent.send(freezeMessage({ id: messageId, role: "user", content: [{ type: "text", text: "Actual collaborator content" }], source }), "next-step", false);
     if (action === "claim") fixture.inbox.claim("next-step", 1);
     else await fixture.service.cancelMessage({ clientOperationId: "operation-1", messageId });
-    const events = fixture.agent.session.snapshotEvents();
+    const events = fixture.events;
     const folded = foldProductOperations(events, fixture.agent.id, (candidate, id) => owner(fixture.agent, candidate, id));
     expect(folded.operations[0]?.messages.at(-1)).toMatchObject({ contextMessage: true, state: action === "claim" ? "claimed" : "cancelled" });
     const inserted = events.flatMap((event) => event.type === "agent/inbox/spliced" ? event.data.inserted : []).find((message) => message.id === messageId);
     expect(inserted?.source).toEqual(source);
     expect(() => foldProductOperations(events, fixture.agent.id)).toThrow("independent ProductWork source authority");
+  });
+
+  it("admits an idle native reply before an earlier registered pre-step request consumer", async () => {
+    const fixture = await mountService({ capture: () => ({ ...birth(), limits: {} }) }, undefined, undefined, undefined, undefined, true, undefined, undefined,
+      (agent, source, id) => ownsProductWorkRootContextMessage(agent.session, source, id, agent.ctx));
+    await fixture.context.plugin(SessionProjectionRegistry);
+    const stopProjection = installProductContextProjection(fixture.context);
+    Object.assign(fixture.context.productSession, {
+      snapshot: () => ({ state: "ready" }), requireAgent: () => fixture.agent,
+      requireOperationConfigRevision: () => "config-1",
+      requireExecutionEnvironment: () => ({ revision: "environment-1", digest: digest("b") }),
+    });
+    fixture.context.provide("productComponents", { catalog: () => ({ digest: digest("a") }) } as never);
+    fixture.agent.session.append("subagent/catalog", {
+      version: 0, childId: SessionId("native-child"), childCreatedAt: 1, mode: "continuable", label: "Child",
+    });
+    const message = freezeMessage({ id: MessageId("native-idle-reply"), role: "user", content: [{ type: "text", text: "Child reply" }],
+      source: { kind: "agent-message", form: "relay", senderSessionId: SessionId("native-child") } });
+    fixture.agent.send(message, "next-step", false);
+    fixture.agent.session.append("turn/start", { turn: 1 });
+    const messages = fixture.inbox.claim("next-step", 1);
+    // DSH evaluates Skill prompt contexts before its awaited pre-step seam.
+    expect(fixture.service.readActiveToolOperation(fixture.agent)).toBeUndefined();
+    const consumer = vi.fn(() => fixture.service.resolveActiveToolOperation(fixture.agent));
+    const stopConsumer = fixture.context.on("agent/pre-step", (_payload, next) => { consumer(); return next(); });
+    const stopAdmission = installNativeRootContext(fixture.context);
+    try {
+      await fixture.context.waterfall("agent/pre-step", { agent: fixture.agent, messages, turn: 1, step: 1, signal: new AbortController().signal },
+        () => Promise.resolve({ kind: "enter" as const, messages }));
+      expect(consumer).toHaveBeenCalledOnce();
+      expect(fixture.service.resolveActiveToolOperation(fixture.agent).operation.origin).toBe("collaboration");
+    } finally { stopAdmission(); stopConsumer(); stopProjection(); }
+  });
+
+  it.each(["idle", "active"])("admits a DSH child message already claimed before pre-step (%s)", async (mode) => {
+    const id = MessageId("native-claimed-context");
+    const fixture = await mountService(undefined, undefined, undefined, undefined, undefined, true, undefined, undefined,
+      (_agent, source, messageId) => messageId === id && source?.kind === "agent-message");
+    if (mode === "active") {
+      await fixture.service.start(params());
+      fixture.agent.session.append("turn/start", { turn: 1 });
+      fixture.inbox.claim("next-turn", 1);
+    } else fixture.agent.session.append("turn/start", { turn: 1 });
+    const message = freezeMessage({ id, role: "user", content: [{ type: "text", text: "Native child result" }],
+      source: { kind: "agent-message", form: "relay", senderSessionId: SessionId("native-child") } });
+    fixture.agent.send(message, "next-step", false);
+    fixture.inbox.claim("next-step", 1);
+    await expect(fixture.service.deliverContext(fixture.agent, {
+      ...params("native-collaboration"), input: { parts: [{ kind: "text", text: "Native child result" }] },
+    }, message, "realtime", 1)).resolves.toBe("delivered");
+    // The RPC projector reads every event prefix, including the brief interval
+    // between native-context admission and its matching Product claim.
+    const events = fixture.events;
+    for (const event of events.filter((event) => event.type === "myagents/operation/accepted"
+      || event.type === "myagents/operation/message" || event.type === "myagents/operation/claimed")) {
+      expect(() => foldProductOperations(events.slice(0, event.seq + 1), fixture.agent.id,
+        (_source, messageId) => messageId === id)).not.toThrow();
+    }
+    const operation = fixture.service.snapshot().operations[0];
+    expect(operation).toMatchObject({ dshTurns: [1], state: "active" });
+    expect(operation?.messages.at(-1)).toMatchObject({ messageId: id, state: "claimed", contextMessage: true });
+    fixture.agent.session.append("turn/end", { turn: 1, reason: { kind: "aborted", reason: { kind: "user" } } });
+    await fixture.service.reconcileResumed(fixture.agent, false);
+    expect(fixture.service.snapshot().operations[0]?.state).toBe("terminal");
   });
 
   it.each([false, true])("admits one idle Root collaboration operation from its exact Inbox identity (already pending=%s)", async (alreadyPending) => {

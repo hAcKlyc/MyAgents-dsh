@@ -125,7 +125,7 @@ or storage failure after mkdir but before its inode receipt can leave an empty p
 its ownership is unproven, so recovery retains it and never adopts its identity to authorize file
 publication or deletion. A restoration in that uncertain window fences further compensation.
 Cancellation records cleanup through an independent signal. Primary and child Agents reconcile
-unsettled checkpoint facts before their first model step; checkpoint prepare also enforces recovery
+unsettled checkpoint facts before their first model step. Checkpoint lineage reads only the Session owned event suffix: a native fork keeps inherited parent checkpoints in its conversation history without adopting their file recovery authority. The identity check still rejects mismatched records in the owned suffix; checkpoint prepare also enforces recovery
 before a resumed tool can mutate files.
 
 ## 9. Recovery behavior

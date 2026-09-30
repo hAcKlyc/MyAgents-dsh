@@ -1,6 +1,6 @@
 # Official file tools with product mutation authority
 
-Current DSH `0.1.7-rc.2` disposition: retained as patch 0011; official file tools use guarded Product publication. The [seam registry](../dsh/seam-decisions-v1.json) owns exact current patch identity; dated evidence below is historical.
+Current DSH `0.2.0-rc.2` disposition: retained as patch 0011; official file tools use guarded Product publication. The [seam registry](../dsh/seam-decisions-v1.json) owns exact current patch identity; dated evidence below is historical.
 
 Accepted 2026-09-08 for UPG-W16.
 

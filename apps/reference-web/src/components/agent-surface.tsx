@@ -75,7 +75,7 @@ const activityFor = (envelope: RuntimeEnvelope): Extract<FlowBlock, { kind: "act
   const id = `${envelope.runtimeGeneration}:${envelope.sequence}`;
   switch (event.kind) {
     case "plan": return { kind: "activity", id, label: "计划", title: `计划已更新 · ${event.revision}`, detail: { mode: event.mode } };
-    case "task_graph": return { kind: "activity", id, label: "任务", title: `任务图已更新 · ${event.snapshot.revision}`, detail: event.snapshot };
+    case "task_graph": return { kind: "activity", id, label: "任务", title: `${event.list === "shared" ? "共享任务" : "个人任务"}已更新 · ${event.snapshot.revision}`, detail: { agentId: event.agentId, list: event.list, snapshot: event.snapshot } };
     case "work": return { kind: "activity", id, label: "协作", title: `${event.snapshot.taskId} · ${event.snapshot.state}`, detail: event.snapshot };
     case "warning": return { kind: "activity", id, label: "警告", title: event.message, detail: { code: event.code }, tone: "warning" };
     case "compaction": return { kind: "activity", id, label: "上下文", title: `压缩${event.phase.replaceAll("_", " ")}` };

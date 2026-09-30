@@ -18,7 +18,7 @@ On Windows PowerShell, run `./setup.ps1`. Both call `scripts/setup.mjs` through 
 
 ## Modify DSH and build a local native handoff
 
-After implementation and applicable checks, commit the DSH change. The handoff builder requires a clean checkout and binds the Runtime to that exact HEAD. Do not reuse an artifact or native report from an earlier source commit. Set `DSH_RELEASE_PROVIDER_KEY` in the current process environment for the credentialed native campaign; the value must not be written into this repository or printed. Choose a new absolute output directory outside this repository:
+After implementation and applicable checks, commit the DSH change. The handoff builder requires a clean checkout and binds the Runtime to that exact HEAD. Choose a new absolute output directory outside this repository:
 
 ```bash
 npm exec -- node scripts/build-local-handoff.mjs --out /absolute/path/to/new-local-work
@@ -26,9 +26,9 @@ npm exec -- node scripts/build-local-handoff.mjs --out /absolute/path/to/new-loc
 
 On Windows PowerShell, use `npm.cmd exec -- node scripts/build-local-handoff.mjs --out C:\absolute\path\to\new-local-work`.
 
-If setup used existing DSH or pi-ai repositories through `--dsh-source` or `--pi-ai-source`, pass those same absolute paths to this command. Otherwise it uses setup's sources under `tmp/setup/sources/`.
+If setup used existing DSH or pi-ai repositories through `--dsh-source` or `--pi-ai-source`, pass those same absolute paths to this command. Otherwise it uses setup's sources under `tmp/setup/sources/`. An accepted patched artifact at a different location can be selected with `--artifact /absolute/path`.
 
-The command reuses setup's verified patched DSH artifact, runs source/pre-artifact checks, builds the Runtime, runs the current platform's native campaign, and generates `/absolute/path/to/new-local-work/handoff`. Its JSON result includes the handoff path, SHA-256, native target, and source commit. It does not create or push a tag or GitHub Release. A local native handoff requires a passing credentialed campaign; without that evidence it must not claim `verified`.
+The command reuses the accepted patched DSH artifact, runs source/pre-artifact checks, builds the Runtime, and generates `/absolute/path/to/new-local-work/handoff`. Its JSON result includes the handoff path, SHA-256, native target, pending validation claim, and source commit. Local Dev packaging does not require a model key or a native campaign. The handoff records `implementation-complete_pending-native-validation`; only the Release path runs the credentialed native campaign and can record `verified`. This command does not create or push a tag or GitHub Release.
 
 ## Package MyAgents with those exact bytes
 

@@ -25,7 +25,7 @@ The official composition registers two deliberately different routes behind DSH 
 | Route | Active implementation | API behavior |
 | --- | --- | --- |
 | `deepseek-official` | MyAgents `HostDeepSeekLlmAdapter` wrapping the official DSH DeepSeek adapter | fixed official DeepSeek route using its accepted `anthropic-messages` profile, DeepSeek-native streaming and Files/attachments |
-| Host-declared ordinary API route | the pinned `@deepseek-ai/dsh-llm-pi-ai` adapter using in-memory `HostSettingsProvider`, with separately pinned/patched pi-ai `0.85.1` | Direct `anthropic-messages`, `openai-completions` or `openai-responses`, as selected by the Host profile; generic structured Provider content is retained |
+| Host-declared ordinary API route | the pinned `@deepseek-ai/dsh-llm-pi-ai` adapter using in-memory `HostSettingsProvider`, with separately pinned/patched pi-ai `0.87.1` | Direct `anthropic-messages`, `openai-completions` or `openai-responses`, as selected by the Host profile; generic structured Provider content is retained |
 
 The Host lock selects the accepted Runtime and adapter bytes. DeepSeek's resolved model metadata passes explicit `systemPromptUpdate: in-history`
 through `prepareCall` to the native AgentLoop. With that declaration, changed system instructions

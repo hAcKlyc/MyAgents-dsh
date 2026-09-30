@@ -23,7 +23,7 @@ import {
   type TerminalNotificationReservation,
 } from "@myagents-dsh/protocol";
 import type { ProductSessionService } from "@myagents-dsh/runtime-product";
-import type { ProductTaskGraphSnapshot } from "@myagents-dsh/task-graph";
+import type { ProductTaskGraphSnapshot, ProductTaskList } from "@myagents-dsh/task-graph";
 import {
   ownsProductWorkRootContextMessage,
   type ProductWorkSnapshot,
@@ -501,15 +501,23 @@ const contextProjection = (
 
 const taskGraphProjection = (
   snapshot: ProductTaskGraphSnapshot,
+  agentId: string,
+  list: ProductTaskList,
 ): RuntimeEventProjection => Object.freeze({
   event: Object.freeze({
     kind: "task_graph",
+    agentId,
+    list,
     snapshot: Object.freeze({
       revision: snapshot.revision,
       tasks: snapshot.tasks.map((task) => Object.freeze({
         id: task.id,
         subject: task.subject,
         ...(task.activeForm === undefined ? {} : { activeForm: task.activeForm }),
+        ...(task.owner === undefined ? {} : { owner: task.owner }),
+        ...(task.offerTo === undefined ? {} : { offerTo: [...task.offerTo] }),
+        blockedBy: [...task.blockedBy],
+        ...(task.hasHiddenBlockers === undefined ? {} : { hasHiddenBlockers: task.hasHiddenBlockers }),
         status: task.status,
       })),
     }),
@@ -899,6 +907,7 @@ export class RuntimeEventProjector {
   readonly #terminalReservations = new Map<string, TerminalNotificationReservation>();
   readonly #stopProjectionChanged: () => void;
   readonly #stopSessionEvent: () => void;
+  readonly #stopTaskCommitted: () => void;
   readonly #stopAssistantStream: () => void;
   readonly #pendingLive: PendingLiveProjection[] = [];
   #pendingLiveBytes = 0;
@@ -932,7 +941,7 @@ export class RuntimeEventProjector {
           session,
           value as ContextPressureValue,
           sequence,
-          (source, messageId) => ownsProductWorkRootContextMessage(session, source, messageId),
+          (source, messageId) => ownsProductWorkRootContextMessage(session, source, messageId, this.#config.context),
         );
         if (projection !== undefined) this.#capture(sequence, projection);
       } catch (error) {
@@ -959,6 +968,29 @@ export class RuntimeEventProjector {
         this.#fail(error);
       }
     });
+    this.#stopTaskCommitted = config.context.get("productTaskGraph")?.onCommitted((agent, list, snapshot) => {
+      if (this.#stopped || this.#closed || this.#failure !== undefined || list !== "personal"
+        || this.#config.productSession.snapshot().state !== "ready") return;
+      const root = this.#config.productSession.requireAgent();
+      if (agent === root) return;
+      try {
+        if (agent.session.header.origin !== "subagent" || this.#sourceSession !== root.session) return;
+        const projection = taskGraphProjection(snapshot, String(agent.id), list);
+        const bytes = Buffer.byteLength(JSON.stringify(projection));
+        if (this.#pendingLive.length >= MAX_PENDING_LIVE_FRAMES || this.#pendingLiveBytes > MAX_PENDING_LIVE_BYTES - bytes) {
+          throw new ProtocolError("runtime_event_projection_capacity", "child TaskGraph projection queue is full");
+        }
+        this.#pendingLive.push({
+          afterSequence: root.session.seq - 1,
+          projection,
+          emittedAt: new Date().toISOString(),
+          committed: false,
+          bytes,
+        });
+        this.#pendingLiveBytes += bytes;
+        this.#scheduleDrain();
+      } catch (error) { this.#fail(error); }
+    }) ?? (() => undefined);
   }
 
   publishReadySnapshot(): Promise<void> {
@@ -999,8 +1031,9 @@ export class RuntimeEventProjector {
       const registry = this.#config.context.get("sessionProjections") as unknown as
         SessionProjectionRegistryRead;
       const projectionCut = registry.snapshot(session);
-      const taskGraph = this.#config.context.productTaskGraph.snapshot(agent);
-      const work = this.#config.context.productWork.snapshot();
+      const sharedTaskGraph = this.#config.context.productTaskGraph.snapshot(agent, "shared");
+      const personalTaskGraph = this.#config.context.productTaskGraph.snapshot(agent, "personal");
+      const work = this.#config.context.get("productWork")?.snapshot() ?? [];
       const plan = this.#config.context.productPlan.snapshot(agent);
       if (session.seq !== head || projectionCut.asOfSeq !== head - 1) {
         throw new ProtocolError(
@@ -1033,10 +1066,11 @@ export class RuntimeEventProjector {
             session,
             pressure,
             projectionCut.asOfSeq,
-            (source, messageId) => ownsProductWorkRootContextMessage(session, source, messageId),
+            (source, messageId) => ownsProductWorkRootContextMessage(session, source, messageId, this.#config.context),
           );
       if (context !== undefined) baseline.push(context);
-      baseline.push(taskGraphProjection(taskGraph));
+      baseline.push(taskGraphProjection(personalTaskGraph, String(agent.id), "personal"));
+      baseline.push(taskGraphProjection(sharedTaskGraph, String(agent.id), "shared"));
       for (const snapshot of work) baseline.push(workProjection(snapshot));
       baseline.push(planProjection(plan));
       const emittedAt = new Date().toISOString();
@@ -1087,11 +1121,12 @@ export class RuntimeEventProjector {
       );
     }
     if (isTask) {
+      const list = source.data.list ?? "shared";
       this.#capture(source.seq, taskGraphProjection(
-        this.#config.context.productTaskGraph.snapshot(agent),
+        this.#config.context.productTaskGraph.snapshot(agent, list), String(agent.id), list,
       ));
     } else if (isWork) {
-      const snapshot = this.#config.context.productWork.snapshotForEvent(source);
+      const snapshot = this.#config.context.get("productWork")?.snapshotForEvent(source);
       if (snapshot !== undefined) this.#capture(source.seq, workProjection(snapshot));
     } else if (isPlan) {
       this.#capture(source.seq, planProjection(this.#config.context.productPlan.snapshot(agent)));
@@ -1140,6 +1175,7 @@ export class RuntimeEventProjector {
     this.#stopped = true;
     this.#stopProjectionChanged();
     this.#stopSessionEvent();
+    this.#stopTaskCommitted();
     this.#stopAssistantStream();
   }
 
@@ -1194,7 +1230,7 @@ export class RuntimeEventProjector {
     if (frame.type === "start") {
       if (this.#liveAttempt !== undefined) throw new TypeError("assistant attempts overlap");
       const operation = operationForTurn(session, frame.turn, session.seq - 1,
-        (source, messageId) => ownsProductWorkRootContextMessage(session, source, messageId));
+        (source, messageId) => ownsProductWorkRootContextMessage(session, source, messageId, this.#config.context));
       if (operation === undefined) throw new TypeError("assistant attempt lacks its Product operation owner");
       const boundary = operationTurnBoundary(session.snapshotEvents(), operation, frame.turn);
       if (boundary.end !== undefined) throw new TypeError("assistant attempt began after its turn ended");
@@ -1356,6 +1392,7 @@ export class RuntimeEventProjector {
           session,
           messageSource,
           messageId,
+          this.#config.context,
         ),
       ),
       ...(this.#capturedProjections.get(source.seq) ?? []),

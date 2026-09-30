@@ -455,7 +455,7 @@ type FoldedCheckpoint = Readonly<{ data: ProductCheckpointEventData; eventSeq: n
 const foldCheckpointLineages = (session: Session): ReadonlyMap<string, FoldedCheckpoint> => {
   const folded = new Map<string, FoldedCheckpoint>();
   for (const event of session.snapshotEvents()) {
-    if (event.type !== "myagents/checkpoint/state") continue;
+    if (!session.isOwnSeq(event.seq) || event.type !== "myagents/checkpoint/state") continue;
     const current = validateProductCheckpointEvent(event, `checkpoint event ${event.seq}`);
     if (current.sessionId !== String(session.id)) {
       throw new Error("checkpoint event Session identity differs from its log");

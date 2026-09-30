@@ -1,18 +1,3 @@
-diff --git a/.agents/notes/implemented/architecture/2026-08-31-explicit-agent-runtime-identity.i18n.yaml b/.agents/notes/implemented/architecture/2026-08-31-explicit-agent-runtime-identity.i18n.yaml
-index c28606ddd1fb2bcdbb4773f37096581510fd4624..c9cb4eff9748ec89ae444c025217d1a2e2ff1804 100644
---- a/.agents/notes/implemented/architecture/2026-08-31-explicit-agent-runtime-identity.i18n.yaml
-+++ b/.agents/notes/implemented/architecture/2026-08-31-explicit-agent-runtime-identity.i18n.yaml
-@@ -9,8 +9,8 @@
-   en: 0b737a098e4e19ce
-   zh: 97b4254c4533114f
- /agent-note-explicit-agent-identity-at-runtime-boundaries/decision:
--  en: dfee8c7c574e0001
--  zh: 3894ffa7beba4348
-+  en: 974b55e39e61f8b5
-+  zh: 98cc780f79a9a8bd
- /agent-note-explicit-agent-identity-at-runtime-boundaries/verification:
-   en: 85130faaa171036b
-   zh: 06e5e9fab32dbfb4
 diff --git a/.agents/notes/implemented/architecture/2026-08-31-explicit-agent-runtime-identity.md b/.agents/notes/implemented/architecture/2026-08-31-explicit-agent-runtime-identity.md
 index f52b8ec116c312a27306fe73dc0bd5b99fcd9039..7e880603ac061097867e25f6bc2a3b522a70e27d 100644
 --- a/.agents/notes/implemented/architecture/2026-08-31-explicit-agent-runtime-identity.md
@@ -852,7 +837,7 @@ index de9191cc50fff632e3a9ff1c61e14a534df961a8..2bce55dd24b5f55430926bcce44d4b8b
    const snapshot = snapshotJsonValue(candidate)
    if (snapshot === undefined) {
 diff --git a/packages/subagent/subagent/src/index.ts b/packages/subagent/subagent/src/index.ts
-index 6654c1c0e5d056ed0f4c76a56ca2a9536b1ff24f..54108fe71ba62cf0f4046e1ef60cbc9c44651ec6 100644
+index 6654c1c0e5d056ed0f4c76a56ca2a9536b1ff24f..998380095c8ef72a63a0d8f06e926bc35747e29d 100644
 --- a/packages/subagent/subagent/src/index.ts
 +++ b/packages/subagent/subagent/src/index.ts
 @@ -63,6 +63,8 @@ import type {
@@ -891,7 +876,7 @@ index 6654c1c0e5d056ed0f4c76a56ca2a9536b1ff24f..54108fe71ba62cf0f4046e1ef60cbc9c
  
  declare module '@deepseek-ai/cordis' {
    interface Context {
-@@ -202,6 +209,7 @@ export class SubagentRuntime extends TypertRemoteService {
+@@ -202,6 +210,7 @@ export class SubagentRuntime extends TypertRemoteService {
      maxDepth: z.number().step(1).min(0).max(Number.MAX_SAFE_INTEGER).default(1).volatile(),
      maxActiveSubagents: z.number().step(1).min(1).max(Number.MAX_SAFE_INTEGER).default(8).volatile(),
    })
@@ -899,7 +884,7 @@ index 6654c1c0e5d056ed0f4c76a56ca2a9536b1ff24f..54108fe71ba62cf0f4046e1ef60cbc9c
    private providers = new Map<string, SubagentProvider>()
    private continuations: SubagentContinuationManager | undefined
    /**
-@@ -216,6 +224,7 @@ export class SubagentRuntime extends TypertRemoteService {
+@@ -216,6 +225,7 @@ export class SubagentRuntime extends TypertRemoteService {
      this.emitLifecycle = createLifecycleEmitter(this.ctx, parent => scopeTarget(this, parent))
      ctx.inject(['agents'], (childCtx: Context) => {
        const manager = new SubagentContinuationManager(childCtx, {
@@ -907,7 +892,7 @@ index 6654c1c0e5d056ed0f4c76a56ca2a9536b1ff24f..54108fe71ba62cf0f4046e1ef60cbc9c
          prepareContinuable: (name, request) => this.prepareContinuable(name, request),
          observeActivation: (provider, childId, parent) => this.observeActivation(provider, childId, parent),
        }, () => this.config.maxActiveSubagents.get())
-@@ -249,6 +258,16 @@ export class SubagentRuntime extends TypertRemoteService {
+@@ -249,6 +259,16 @@ export class SubagentRuntime extends TypertRemoteService {
      return depth
    }
  
@@ -924,7 +909,7 @@ index 6654c1c0e5d056ed0f4c76a56ca2a9536b1ff24f..54108fe71ba62cf0f4046e1ef60cbc9c
    /**
     * Establish one durable continuable child and deliver its initial prompt.
     * Resolves when the child's inbox accepts that prompt, without waiting for the
-@@ -262,6 +281,52 @@ export class SubagentRuntime extends TypertRemoteService {
+@@ -262,6 +282,52 @@ export class SubagentRuntime extends TypertRemoteService {
      return this.requireContinuations().startContinuable(spec)
    }
  

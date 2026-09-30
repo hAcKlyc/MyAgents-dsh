@@ -195,6 +195,22 @@ const checkpointHarness = async (options: Readonly<{ nativeFs?: boolean; reopenR
 };
 
 describe("ProductCheckpointService", () => {
+  it("keeps inherited checkpoint events out of a native fork's recovery authority", async () => {
+    const state = await checkpointHarness();
+    const prepared = await state.context.productCheckpoint.prepare(state.product, {
+      path: "/fixture/workspace/file.txt", tool: "Write", beforeBytes: Buffer.from("before"), beforeSha256: digest(Buffer.from("before")), afterBytes: Buffer.from("after"), afterSha256: digest(Buffer.from("after")),
+    });
+    expect(prepared).toBeDefined();
+    const childSession = state.context.sessions.fork(state.session, undefined, SessionId("checkpoint-fork"));
+    expect(foldProductCheckpoints(state.session).size).toBeGreaterThan(0);
+    expect(childSession.inheritedEventCount).toBeGreaterThan(0);
+    const child = { id: childSession.id, session: childSession } as typeof state.agent;
+    expect(() => state.context.productCheckpoint.validatePersisted(child)).not.toThrow();
+    await expect(state.context.productCheckpoint.reconcile(child)).resolves.toBeUndefined();
+    expect(foldProductCheckpoints(childSession).size).toBe(0);
+    await state.context.fiber.dispose();
+  });
+
   it("retains an unproven mkdir after receipt persistence fails and never publishes the file", async () => {
     const state = await checkpointHarness({ nativeFs: true });
     const path = join(state.workspace, "unproven", "nested", "file.txt");

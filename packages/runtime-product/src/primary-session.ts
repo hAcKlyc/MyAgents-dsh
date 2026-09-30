@@ -714,6 +714,13 @@ class PrimaryRootPublicationFence {
   readonly #childPermits = new Map<Session, Readonly<{ agent: Agent; parent: Agent }>>();
   readonly #ownedChildren = new Map<Session, Agent>();
 
+  #nativeParent(session: Session): Agent | undefined {
+    if (session.header.origin !== "subagent" || session.header.parentSession === undefined) return undefined;
+    const parent = this.context.agents.get(session.header.parentSession);
+    return parent !== undefined && (parent === this.#owned || this.#ownedChildren.get(parent.session) === parent)
+      ? parent : undefined;
+  }
+
   constructor(private readonly context: Context) {
     context.on("agent/created", ({ agent }) => {
       const permit = this.#childPermits.get(agent.session);
@@ -722,6 +729,10 @@ class PrimaryRootPublicationFence {
           throw new Error("child Agent publication lost its exact primary lineage");
         }
         this.#childPermits.delete(agent.session);
+        this.#ownedChildren.set(agent.session, agent);
+        return undefined;
+      }
+      if (this.#nativeParent(agent.session) !== undefined) {
         this.#ownedChildren.set(agent.session, agent);
         return undefined;
       }
@@ -747,7 +758,8 @@ class PrimaryRootPublicationFence {
       throw new Error("accepted DSH root-publication guard seams are unavailable");
     }
     const disposeSessionGuard = sessions.setPublicationGuard((session) => {
-      if (this.#permit?.session !== session && !this.#childPermits.has(session)) {
+      if (this.#permit?.session !== session && !this.#childPermits.has(session)
+        && this.#nativeParent(session) === undefined) {
         throw new Error("Session publication lacks the primary Session admission authority");
       }
     });
@@ -758,7 +770,8 @@ class PrimaryRootPublicationFence {
           && this.#permit.session === agent.session;
         const childPermit = this.#childPermits.get(agent.session);
         const childPermitted = childPermit?.agent === agent && owner === childPermit.parent;
-        if (!rootPermitted && !childPermitted) {
+        const nativeChildPermitted = owner !== undefined && owner === this.#nativeParent(agent.session);
+        if (!rootPermitted && !childPermitted && !nativeChildPermitted) {
           throw new Error("root Agent publication lacks the primary Session admission authority");
         }
       });

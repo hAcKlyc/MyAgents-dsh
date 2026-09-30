@@ -1,5 +1,5 @@
 diff --git a/docs/persistence-catalog.md b/docs/persistence-catalog.md
-index b9a4241eef0c08e25114def092caf1b2fa24b4f5..0d6e044894803dc7583f07f8c08ad4ea5cb35b19 100644
+index 1575e2104d3c8c1ae1c3b8ced0535415b32789f5..f356698eb055be500a50a23e03aa6e169c57afc4 100644
 --- a/docs/persistence-catalog.md
 +++ b/docs/persistence-catalog.md
 @@ -371,7 +371,7 @@ Source: [`packages/interaction/commands/src/types.ts:105`](../packages/interacti
@@ -33,7 +33,7 @@ index b9a4241eef0c08e25114def092caf1b2fa24b4f5..0d6e044894803dc7583f07f8c08ad4ea
    | {
      /** Optional complete output from an unmarked template, remote, or other summarizer. */
 diff --git a/docs/persistence-catalog.zh.md b/docs/persistence-catalog.zh.md
-index 139a1fb20b253f8dd3f3060e9c942d615a005dee..0e97081c8f5e1f890facb214eb322e58a08e2f91 100644
+index 6bdbb929825c6300a9a2b33605d96b81510a5f1a..8b6cf7e7b1574fea3754729cac778cfd91a320db 100644
 --- a/docs/persistence-catalog.zh.md
 +++ b/docs/persistence-catalog.zh.md
 @@ -373,7 +373,7 @@ export type SessionEvent<T extends SessionEventType = SessionEventType> = {
@@ -66,17 +66,6 @@ index 139a1fb20b253f8dd3f3060e9c942d615a005dee..0e97081c8f5e1f890facb214eb322e58
    }
    | {
      /** Optional complete output from an unmarked template, remote, or other summarizer. */
-diff --git a/docs/subsystems/compaction.i18n.yaml b/docs/subsystems/compaction.i18n.yaml
-index b4be04a060044598bd77c5a7a23ff1995eb3bd10..1983edbe612dfa278912ad8991bc922984546959 100644
---- a/docs/subsystems/compaction.i18n.yaml
-+++ b/docs/subsystems/compaction.i18n.yaml
-@@ -20,3 +20,6 @@
- /compaction/tool-result-pruning-outcomes:
-   en: 27091b0a3d454575
-   zh: e22431e27e1349f2
-+/compaction/tool-result-pruning-outcomes/compactiontelemetry:
-+  en: 16d43d54dc2789bc
-+  zh: 16d43d54dc2789bc
 diff --git a/docs/subsystems/compaction.md b/docs/subsystems/compaction.md
 index 6e135025ab6095e2365e172847bc493d41c50774..e90e2e8db5cb5c769e6b5ccec0e065f25855e2ca 100644
 --- a/docs/subsystems/compaction.md
@@ -209,17 +198,6 @@ index 9b82fb7a7b9e55f2aefa6d561922948fd328c8e9..56989fa2dd2546a8f456e2ed9588ee15
 +
 +Source: [`packages/compaction/compaction-basic/src/types.ts`](../../packages/compaction/compaction-basic/src/types.ts)
  <!-- END GENERATED cordis-surface -->
-diff --git a/docs/subsystems/token-meter.i18n.yaml b/docs/subsystems/token-meter.i18n.yaml
-index 1e666632b58ded9ccb03ee64865578521747f386..f42865122ca04d67ee606c1d656b02f7b9595406 100644
---- a/docs/subsystems/token-meter.i18n.yaml
-+++ b/docs/subsystems/token-meter.i18n.yaml
-@@ -11,3 +11,6 @@
- /token-meter/tokensurfacenode:
-   en: e445d12b10f651d0
-   zh: e93be5fb9da1da15
-+/token-meter/tokensurfacenode/tokenrequestestimateinput:
-+  en: e51c4d183bf9ea74
-+  zh: e51c4d183bf9ea74
 diff --git a/docs/subsystems/token-meter.md b/docs/subsystems/token-meter.md
 index 8accb9cf9f0b97ee7684e327da336a31943ff49e..85346e12143ed1e5d036df0e04d66c2b329a3eb5 100644
 --- a/docs/subsystems/token-meter.md
@@ -294,21 +272,6 @@ index 6c149ec3f225a7012ca8d8d2312835663917b5d2..ac398e70a47ab8a0dd7cb58787a1af6a
  ```
  
  Types: [EpochHeader](session.zh.md) · [Message](llm-streaming.zh.md) · [Session](session.zh.md)
-diff --git a/packages/compaction/compaction-basic/README.i18n.yaml b/packages/compaction/compaction-basic/README.i18n.yaml
-index aca17e342eb9a07a325b313beebf5955569c3efb..a929b4a403e4b876ee6c7e0ee3738943e4d446b6 100644
---- a/packages/compaction/compaction-basic/README.i18n.yaml
-+++ b/packages/compaction/compaction-basic/README.i18n.yaml
-@@ -54,8 +54,8 @@
-   en: 246736aa86d3013d
-   zh: 35e261927ba0699c
- /deepseek-ai-dsh-compaction-basic/understand-the-implementation/source-map:
--  en: bd9d1e01ec833593
--  zh: cbadca50d8e9ed07
-+  en: deeff638c4bdc86d
-+  zh: 48499293cdf85faa
- /deepseek-ai-dsh-compaction-basic/further-exploration:
-   en: 84b5b81eb9b5965d
-   zh: 7000af0fa502fcc1
 diff --git a/packages/compaction/compaction-basic/README.md b/packages/compaction/compaction-basic/README.md
 index fa4ae2fb481296ff91f4c1df9975225bc2c51eef..38afd3aa9cb8a6688adb5ddae0b4da9dedc4aa92 100644
 --- a/packages/compaction/compaction-basic/README.md
@@ -1353,7 +1316,7 @@ index e8160dba2c078e199a9536a9ed3eced592062077..176e15263cd3fce602008eab625f618f
    /** Window fraction for pressure; capped at context window minus reserved output and `headroomTokens`. Defaults to `0.8`. */
 diff --git a/packages/compaction/compaction-basic/tests/capacity-safe.spec.ts b/packages/compaction/compaction-basic/tests/capacity-safe.spec.ts
 new file mode 100644
-index 0000000000000000000000000000000000000000..80091afc22603c240da7bc9a6ee2c283904cee23
+index 0000000000000000000000000000000000000000..acf3974c78272e879f458216a9ecb7651a271931
 --- /dev/null
 +++ b/packages/compaction/compaction-basic/tests/capacity-safe.spec.ts
 @@ -0,0 +1,346 @@
@@ -1704,7 +1667,7 @@ index 0000000000000000000000000000000000000000..80091afc22603c240da7bc9a6ee2c283
 +  })
 +})
 diff --git a/packages/compaction/compaction-basic/tests/compaction-basic.spec.ts b/packages/compaction/compaction-basic/tests/compaction-basic.spec.ts
-index 3736aa5c5e64f763606370a3cc855c5e444a7941..ad4caecfa37de73fdb97b0972a8be704deef7c0f 100644
+index 3736aa5c5e64f763606370a3cc855c5e444a7941..972188106647d540753516bfd976cfadcc97182e 100644
 --- a/packages/compaction/compaction-basic/tests/compaction-basic.spec.ts
 +++ b/packages/compaction/compaction-basic/tests/compaction-basic.spec.ts
 @@ -39,6 +39,32 @@ declare module '@deepseek-ai/dsh-llm' {
@@ -1778,6 +1741,17 @@ index 3736aa5c5e64f763606370a3cc855c5e444a7941..ad4caecfa37de73fdb97b0972a8be704
      const tools = [{ name: 'do_thing', description: 'd', parameters: { type: 'object' } }]
      session.append('request/header', {
        header: { config: { provider: MODEL, model: MODEL }, tools },
+@@ -1402,8 +1441,8 @@ describe('default one-shot summarizer', () => {
+     expect(adapter.lastOptions?.messages.slice(0, -1)).toEqual(prefix)
+     const instruction = adapter.lastOptions?.messages.at(-1)
+     expect(instruction).toMatchObject({ role: 'user' })
+-    expect(instruction).not.toHaveProperty('id')
+-    expect(instruction).not.toHaveProperty('source')
++    expect(instruction?.id).toEqual(expect.any(String))
++    expect(instruction).toMatchObject({ source: { kind: 'compaction-summary-instruction' } })
+     expect(Object.isFrozen(instruction)).toBe(true)
+     expect(Object.isFrozen(instruction?.content[0])).toBe(true)
+     expect(result.shadowedSeqs).toEqual(nodes.slice(start, start + 2))
 @@ -1420,9 +1459,10 @@ describe('default one-shot summarizer', () => {
    })
  
@@ -1954,21 +1928,6 @@ index b6c8ff7f86a3a5127930aa41659917fb429e848e..fa23e3ff45a03f7ecc7937c6056fca39
        compactionRetries: 0,
        maxOverflowRetries: 1,
      })
-diff --git a/packages/compaction/compaction/README.i18n.yaml b/packages/compaction/compaction/README.i18n.yaml
-index 26d64055072948a31463a7f420e6f2b152baf859..01b0994730c2a9cfcb351f2c5eb74c4940f8a07d 100644
---- a/packages/compaction/compaction/README.i18n.yaml
-+++ b/packages/compaction/compaction/README.i18n.yaml
-@@ -57,8 +57,8 @@
-   en: 68caa51bed28bada
-   zh: 3f8261f9dcba95ed
- /deepseek-ai-dsh-compaction/understand-the-implementation/events:
--  en: dc5faf71b27cc340
--  zh: 065f8339009c1a3a
-+  en: 401fb7f594694723
-+  zh: 7740cf69cca00d5f
- /deepseek-ai-dsh-compaction/further-exploration:
-   en: fc5c182bc45e45cf
-   zh: eb1ac9900b6e8fe2
 diff --git a/packages/compaction/compaction/README.md b/packages/compaction/compaction/README.md
 index fecb3b6731108c493825f6fa0874ab865781fc2a..781491b932e75f1f789db3b43bb1dd15ca62d968 100644
 --- a/packages/compaction/compaction/README.md
@@ -2029,21 +1988,6 @@ index 5a7d12c1b21a9ed55287a1935a3f8104d30722b9..cd0a9b4f231541e9f7b4f6ca0a46739a
        }
        | {
          /** Optional complete output from an unmarked template, remote, or other summarizer. */
-diff --git a/packages/llm/token-meter/README.i18n.yaml b/packages/llm/token-meter/README.i18n.yaml
-index 161e2e398885e0e2ad0af851cb648faec19eb25c..d091c0f006d699c724dec9435f5db4f205d51222 100644
---- a/packages/llm/token-meter/README.i18n.yaml
-+++ b/packages/llm/token-meter/README.i18n.yaml
-@@ -45,8 +45,8 @@
-   en: c97959d84cf8a1a4
-   zh: f17570caa42a1a8e
- /deepseek-ai-dsh-token-meter/understand-the-implementation/projection-semantics:
--  en: 91930cc59e849205
--  zh: a530fcc3d57133bc
-+  en: ca5236a783ca0c16
-+  zh: 6038223cd76004bb
- /deepseek-ai-dsh-token-meter/further-exploration:
-   en: 32cf70f8c66ca097
-   zh: a7daf5e0732f31c3
 diff --git a/packages/llm/token-meter/README.md b/packages/llm/token-meter/README.md
 index e6d957bd14560d967fb221b147d87d7db42197ea..ede51f1440b9bf12853ffaddd140466d0bdb373d 100644
 --- a/packages/llm/token-meter/README.md
@@ -2227,28 +2171,3 @@ index bf11f1b039ca54d6305f3b8bdbd7b01f46ff7de9..0a16836f973c4bc0bda0a51203979ba3
    })
  
    it('prices a first multimodal request estimate with the routed visual tokens', async () => {
-diff --git a/packages/compaction/compaction-basic/tests/compaction-basic.spec.ts b/packages/compaction/compaction-basic/tests/compaction-basic.spec.ts
-index ad4caecfa3..d049713393 100644
---- a/packages/compaction/compaction-basic/tests/compaction-basic.spec.ts
-+++ b/packages/compaction/compaction-basic/tests/compaction-basic.spec.ts
-@@ -1441,7 +1441,7 @@ describe('default one-shot summarizer', () => {
-     expect(adapter.lastOptions?.messages.slice(0, -1)).toEqual(prefix)
-     const instruction = adapter.lastOptions?.messages.at(-1)
-     expect(instruction).toMatchObject({ role: 'user' })
--    expect(instruction).not.toHaveProperty('id')
-+    expect(instruction?.id).toEqual(expect.any(String))
-     expect(instruction).not.toHaveProperty('source')
-     expect(Object.isFrozen(instruction)).toBe(true)
-     expect(Object.isFrozen(instruction?.content[0])).toBe(true)
-diff --git a/packages/compaction/compaction-basic/tests/compaction-basic.spec.ts b/packages/compaction/compaction-basic/tests/compaction-basic.spec.ts
---- a/packages/compaction/compaction-basic/tests/compaction-basic.spec.ts
-+++ b/packages/compaction/compaction-basic/tests/compaction-basic.spec.ts
-@@ -1442,7 +1442,7 @@ describe('default one-shot summarizer', () => {
-     const instruction = adapter.lastOptions?.messages.at(-1)
-     expect(instruction).toMatchObject({ role: 'user' })
-     expect(instruction?.id).toEqual(expect.any(String))
--    expect(instruction).not.toHaveProperty('source')
-+    expect(instruction).toMatchObject({ source: { kind: 'compaction-summary-instruction' } })
-     expect(Object.isFrozen(instruction)).toBe(true)
-     expect(Object.isFrozen(instruction?.content[0])).toBe(true)
-     expect(result.shadowedSeqs).toEqual(nodes.slice(start, start + 2))

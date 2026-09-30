@@ -219,6 +219,7 @@ const validateOutputSemantics = (name: CanonicalToolName, normalized: unknown): 
     case "TaskCreate":
     case "TaskGet":
     case "TaskUpdate":
+      if (name === "TaskUpdate" && output.task === null) return;
       assertTaskSequence(output.task, `${name} output task`);
       return;
     case "TaskList":

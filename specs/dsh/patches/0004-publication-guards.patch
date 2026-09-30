@@ -1,20 +1,3 @@
-diff --git a/docs/subsystems/core.i18n.yaml b/docs/subsystems/core.i18n.yaml
-index c4c106c066488b9f923a6dfb389e908ea8d09a27..fb6009a483c3101a0ef85c09f0fc79a8bd206d9a 100644
---- a/docs/subsystems/core.i18n.yaml
-+++ b/docs/subsystems/core.i18n.yaml
-@@ -35,3 +35,12 @@
- /core/repo-wide-type-patterns/branded-ids:
-   en: 10f8ac0f97e7c54a
-   zh: 75cd2311aabfe464
-+/core/repo-wide-type-patterns/preparedassistanttoolcall:
-+  en: 2b0cca1a683465f6
-+  zh: 2b0cca1a683465f6
-+/core/repo-wide-type-patterns/preparedassistantcommit:
-+  en: eb9459e970d8cb52
-+  zh: eb9459e970d8cb52
-+/core/repo-wide-type-patterns/agentpublicationguard:
-+  en: 9280360ce0d2daf9
-+  zh: 9280360ce0d2daf9
 diff --git a/docs/subsystems/core.md b/docs/subsystems/core.md
 index 15c70ebca6a1469634ca75450c23097990e85037..d8800a67c9b6c88173572a6798efe90e7c86758c 100644
 --- a/docs/subsystems/core.md
@@ -447,17 +430,6 @@ index 03de9ddb7bb1eab82a60b6026c9864531f4bb1e1..4a18b2b47f7d5bf94ca8d40600f96913
  <a id="agentpre-step--waterfall"></a>
  
  #### `agent/pre-step` — waterfall
-diff --git a/docs/subsystems/session.i18n.yaml b/docs/subsystems/session.i18n.yaml
-index e4269bb273eb2b286387fc699a84ed05a2b8efd4..e969100891e3caff60b791672d48493a51e3619d 100644
---- a/docs/subsystems/session.i18n.yaml
-+++ b/docs/subsystems/session.i18n.yaml
-@@ -65,3 +65,6 @@
- /sessions/remote-catalog-and-workspace-opening:
-   en: dd27307e0d7c893c
-   zh: b77d2a749b7b641c
-+/sessions/remote-catalog-and-workspace-opening/sessionpublicationguard:
-+  en: 51f7a1132deb7408
-+  zh: 51f7a1132deb7408
 diff --git a/docs/subsystems/session.md b/docs/subsystems/session.md
 index 415201d15987b8369b2f5bfced3dc18dbc89d1b3..488615e5f1a8abb69ef3cf2f6623a8576d01744d 100644
 --- a/docs/subsystems/session.md
@@ -621,21 +593,6 @@ index 0000000000000000000000000000000000000000..62b3429429cd2cbd04311ed5188f92f7
 +    disposeSession()
 +  })
 +})
-diff --git a/packages/core/agent/README.i18n.yaml b/packages/core/agent/README.i18n.yaml
-index 19639a27c091ae2488627a595335aeec74e7ffd9..062021664f73c500ad238f55465d80f180ab4edf 100644
---- a/packages/core/agent/README.i18n.yaml
-+++ b/packages/core/agent/README.i18n.yaml
-@@ -51,8 +51,8 @@
-   en: 3ca29c07144b36db
-   zh: 93580213b3de2004
- /deepseek-ai-dsh-agent/understand-the-implementation/ownership-invariants:
--  en: e48eae6c7de88cf8
--  zh: 1f5b37bdb0e53788
-+  en: 77d5a388dd6bc370
-+  zh: 47c7efbafdd8c96b
- /deepseek-ai-dsh-agent/further-exploration:
-   en: 4ef57cfafa344581
-   zh: 73575876bfdc7a18
 diff --git a/packages/core/agent/README.md b/packages/core/agent/README.md
 index be003d7b899306b58c4ddc88e720c18dde9ce33b..80da687eccf894b23ca46fb060b414dbec82ed92 100644
 --- a/packages/core/agent/README.md
@@ -721,21 +678,6 @@ index 54dd8a805dd7be26953b31cc97864900f7da3fc9..c0f2f8df4e7c74a70b845bac685950c9
      const entry: AgentEntry = {
        id,
        agent,
-diff --git a/packages/core/scope/README.i18n.yaml b/packages/core/scope/README.i18n.yaml
-index 0b818aafe7a74388dc22986268de8604d3ff0460..2ec7edee55ffb1ff468a9a7fe4710ce2e3b68435 100644
---- a/packages/core/scope/README.i18n.yaml
-+++ b/packages/core/scope/README.i18n.yaml
-@@ -39,8 +39,8 @@
-   en: f0c433a9b0091de4
-   zh: 21cecb4194aff7d0
- /deepseek-ai-dsh-scope/understand-the-implementation/event-filtering:
--  en: 9ec9b8d491c7dfe7
--  zh: da82e63bac268535
-+  en: 16f11c1fb5451a2e
-+  zh: d0d0e69813fae968
- /deepseek-ai-dsh-scope/further-exploration:
-   en: f6f4e46a89785446
-   zh: ea130e3ffefe1139
 diff --git a/packages/core/scope/README.md b/packages/core/scope/README.md
 index 72c41e4c1a3b8f8a79940838ead7447f64781cc4..2e17d107b70715e9dd448e833b98219b255ff7b6 100644
 --- a/packages/core/scope/README.md
@@ -762,26 +704,11 @@ index b48842570c564979f920d8e6f6fda87284f4bc65..c85c4e1ce59aa037bc8f8416613595a3
  </details>
  
  -----
-diff --git a/packages/core/session/README.i18n.yaml b/packages/core/session/README.i18n.yaml
-index 23cb191b5e3005d0513dedec838c5379fd186a7b..836b044df8920736a56cdd0bc7450be425807688 100644
---- a/packages/core/session/README.i18n.yaml
-+++ b/packages/core/session/README.i18n.yaml
-@@ -51,8 +51,8 @@
-   en: 0cc7a06f76bd7eca
-   zh: 1db25185b15cad23
- /deepseek-ai-dsh-session/understand-the-implementation/the-request-header:
--  en: 1349f47bea4dab00
--  zh: 20cc03f2c87ec492
-+  en: c2dfd84623236eae
-+  zh: 4e0e8b95d4947b8b
- /deepseek-ai-dsh-session/further-exploration:
-   en: e23d6c8b31295044
-   zh: 5105ac9ce8c5d90d
 diff --git a/packages/core/session/README.md b/packages/core/session/README.md
-index 59c2e9c86a6bf53c07032162a18a2557b7da6c1b..13d5ff99a60687fb4d2042218672ae512846961d 100644
+index 4a73a20c95d2ad05c4d5b432beedb7dd7bc14eda..00b42e1ad7e3b4c43f89504be83033196c97998d 100644
 --- a/packages/core/session/README.md
 +++ b/packages/core/session/README.md
-@@ -115,6 +115,8 @@ Every append uses the shared iterative `snapshotJsonValue()` pass, which reads,
+@@ -119,6 +119,8 @@ Every append uses the shared iterative `snapshotJsonValue()` pass, which reads,
  
  The loop logs a full canonical `request/header` snapshot (call config, adapter defaults, assembled tool schemas — the rendered system prompt is a `system/message` surface node, not header state) at each loop-instance boundary and on change; `foldRequestHeader(events)` reconstructs it by selecting the latest snapshot, making every conversation request a pure function of the log. Route metadata (`request/context`) is separate logged state appended only when the provider, model, capacity, or `systemPromptUpdate` mode differs; it records the actual prepared call's mode after prompt and user admission, rather than supplying that admission decision.
  
@@ -791,10 +718,10 @@ index 59c2e9c86a6bf53c07032162a18a2557b7da6c1b..13d5ff99a60687fb4d2042218672ae51
  
  -----
 diff --git a/packages/core/session/README.zh.md b/packages/core/session/README.zh.md
-index 4291d690b7637df3b495addc196642496eea816d..83e14dcd865da6cdbb3b1f95673d74283329e050 100644
+index 7fb334cfaa8a3a5468bf8330f0dd5802d1e98dbc..7238f691e7133fbb5edf2f4317a68a49df8425c4 100644
 --- a/packages/core/session/README.zh.md
 +++ b/packages/core/session/README.zh.md
-@@ -115,6 +115,8 @@ session.deriveMessages()         // the derived model history
+@@ -119,6 +119,8 @@ session.deriveMessages()         // the derived model history
  
  循环在每个循环实例边界及变更时记录完整规范 `request/header` 快照（调用配置、适配器默认值、组装后的工具 schema——渲染后的系统提示词是 `system/message` surface 节点，不是 header 状态）；`foldRequestHeader(events)` 通过选择最新快照来重建它，使每个对话请求都成为日志的纯函数。路由元数据（`request/context`）是独立的已记录状态，仅在提供方、模型、容量或 `systemPromptUpdate` 模式变化时追加；它在提示词与用户消息准入之后记录实际已准备调用的模式，而非提供准入决策。
  
@@ -804,7 +731,7 @@ index 4291d690b7637df3b495addc196642496eea816d..83e14dcd865da6cdbb3b1f95673d7428
  
  -----
 diff --git a/packages/core/session/src/index.ts b/packages/core/session/src/index.ts
-index 6fd76bdd8677d764c02d0629a7b63b225045324d..8e87dc1e4e85effb73fbbb46a57b29d0dfd85d31 100644
+index b0cfa0c19b6ad65404fcde055af8e318632ee705..41c52ebb4f903099cfbf5e1ce82f1e9b72c18ce3 100644
 --- a/packages/core/session/src/index.ts
 +++ b/packages/core/session/src/index.ts
 @@ -894,6 +894,14 @@ export class Session {

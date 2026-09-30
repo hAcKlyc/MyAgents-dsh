@@ -1,6 +1,6 @@
 # ADR 0011 — Preserve Provider-owned structured content without executing it
 
-Current DSH `0.1.7-rc.2` disposition: retained as patch 0010 with the separately pinned pi-ai seam. The [seam registry](../dsh/seam-decisions-v1.json) owns exact current patch identity; dated evidence below is historical.
+Current DSH `0.2.0-rc.2` disposition: retained as patch 0010 with the separately pinned pi-ai seam. The [seam registry](../dsh/seam-decisions-v1.json) owns exact current patch identity; dated evidence below is historical.
 
 - Status: accepted
 - Date: 2026-09-03

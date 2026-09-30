@@ -13,7 +13,7 @@ export { RUNTIME_VERSION } from "./runtime-version.generated.js";
 export type { CanonicalToolName } from "../generated/canonical-tools.generated.js";
 
 export const PROTOCOL_VERSION = "6.0.0" as const;
-export const DSH_ENGINE_VERSION = "0.1.7-rc.2.myagents.477b4f420553.8d5f1cfa482e" as const;
+export const DSH_ENGINE_VERSION = "0.2.0-rc.2.myagents.639ed0153972.7ac2652ae40f" as const;
 export const SESSION_FORMAT = "dsh-session-events-v2" as const;
 export const DEEPSEEK_WEB_SEARCH_ADAPTER_ID = "deepseek-official-native-web-search" as const;
 export const DEEPSEEK_WEB_SEARCH_POLICY_REF = "deepseek-official-web-search-v1" as const;
@@ -832,6 +832,10 @@ const taskStatusSnapshot = strictObject({
     id: identifier,
     subject: Type.String({ minLength: 1, maxLength: 512 }),
     activeForm: Type.Optional(Type.String({ maxLength: 512 })),
+    owner: Type.Optional(identifier),
+    offerTo: Type.Optional(Type.Array(identifier, { maxItems: 32 })),
+    blockedBy: Type.Optional(Type.Array(identifier, { maxItems: 256 })),
+    hasHiddenBlockers: Type.Optional(Type.Boolean()),
     status: Type.Union([
       Type.Literal("pending"),
       Type.Literal("in_progress"),
@@ -964,7 +968,12 @@ export const RuntimeEventSchema = Type.Union([
   strictObject({ kind: Type.Literal("context"), contextOccupiedTokens: nonNegativeInteger, runtimeContextWindow: Type.Integer({ minimum: 1 }), modelProfileRevision: revision }),
   strictObject({ kind: Type.Literal("interaction"), phase: identifier, interactionId: identifier }),
   strictObject({ kind: Type.Literal("plan"), mode: Type.Union([Type.Literal("normal"), Type.Literal("plan")]), revision }),
-  strictObject({ kind: Type.Literal("task_graph"), snapshot: taskStatusSnapshot }),
+  strictObject({
+    kind: Type.Literal("task_graph"),
+    agentId: Type.Optional(identifier),
+    list: Type.Optional(Type.Union([Type.Literal("personal"), Type.Literal("shared")])),
+    snapshot: taskStatusSnapshot,
+  }),
   strictObject({ kind: Type.Literal("work"), snapshot: workStatusSnapshot }),
   strictObject({ kind: Type.Literal("component"), component: componentStatus }),
   strictObject({ kind: Type.Literal("catalog"), catalog: ExtensionCatalogSchema }),
@@ -1016,6 +1025,30 @@ export const RPC_METHODS = {
   "session/rewind/rollback": method("host_to_runtime", mutationParams, mutationResult),
   "session/rewind/status": method("host_to_runtime", strictObject({ token: identifier }), mutationResult),
   "work/list": method("host_to_runtime", strictObject({ afterTaskId: Type.Optional(identifier) }), strictObject({ items: Type.Array(workStatusSnapshot, { maxItems: 32 }), nextTaskId: Type.Optional(identifier) })),
+  "subagent/list": method("host_to_runtime", strictObject({}), strictObject({
+    items: Type.Array(strictObject({
+      id: identifier,
+      parentId: identifier,
+      depth: Type.Integer({ minimum: 1, maximum: 8 }),
+      mode: Type.Union([Type.Literal("one-shot"), Type.Literal("continuable")]),
+      label: Type.Optional(Type.String({ maxLength: 512 })),
+      activity: Type.Union([Type.Literal("running"), Type.Literal("inactive")]),
+    }), { maxItems: 256 }),
+  })),
+  "subagent/tasks": method("host_to_runtime", strictObject({
+    agentId: identifier,
+    list: Type.Union([Type.Literal("personal"), Type.Literal("shared")]),
+  }), strictObject({
+    agentId: identifier,
+    list: Type.Union([Type.Literal("personal"), Type.Literal("shared")]),
+    snapshot: taskStatusSnapshot,
+  })),
+  "subagent/prompt": method("host_to_runtime", strictObject({
+    agentId: identifier,
+    clientMessageId: identifier,
+    message: Type.String({ minLength: 1, maxLength: 12_000 }),
+  }), okResult),
+  "subagent/interrupt": method("host_to_runtime", strictObject({ agentId: identifier }), okResult),
   "work/agent/resume": method("host_to_runtime", strictObject({ agentId: identifier, clientRequestId: identifier, expectedHandleRevision: Type.Integer({ minimum: 0, maximum: Number.MAX_SAFE_INTEGER }) }), okResult),
   "work/agent/stop": method("host_to_runtime", strictObject({ agentId: identifier, expectedHandleRevision: Type.Integer({ minimum: 0, maximum: Number.MAX_SAFE_INTEGER }) }), okResult),
   "work/agent/message": method("host_to_runtime", strictObject({ agentId: identifier, clientMessageId: identifier, message: Type.String({ minLength: 1, maxLength: 12_000 }) }), okResult),

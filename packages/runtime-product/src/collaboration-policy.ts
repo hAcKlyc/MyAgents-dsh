@@ -23,7 +23,7 @@ export class AgentCollaborationPolicy {
   constructor(root: ModelExecutionProfile, value?: AgentCollaborationConfig) {
     this.config = validateAgentCollaborationConfig(value ?? {
       version: 1,
-      maxDepth: 1,
+      maxDepth: 2,
       maxActiveChildren: 32,
       maxRetainedChildren: 256,
       messageDelivery: "realtime",

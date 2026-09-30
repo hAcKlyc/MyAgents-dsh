@@ -6,6 +6,7 @@ import {
 import { ScriptedFakeLlmAdapter } from "@myagents-dsh/testkit";
 import { ACCEPTED_PATCHED_DSH_ARTIFACT } from "@myagents-dsh/product-profile";
 import { describe, expect, it } from "vitest";
+import { composeOfficialRuntimeServices } from "../apps/runtime-server/src/official-composition.js";
 
 describe("DSH root service composition boundary", () => {
   it("requires every exact patched package before creating Cordis services", async () => {
@@ -20,6 +21,16 @@ describe("DSH root service composition boundary", () => {
     if (installedAccepted) {
       const composition = await composeDshRootServices({ adapter, providers: ["fixture"] });
       await composition.dispose();
+      const official = await composeOfficialRuntimeServices();
+      try {
+        expect(official.context.tools.schemas().map(({ name }) => name)).toEqual(expect.arrayContaining([
+          "subagent", "fork_agent", "send_message", "interrupt_agent", "list_agents",
+          "TaskCreate", "TaskGet", "TaskList", "TaskUpdate",
+        ]));
+        expect(official.context.subagents.resolveMaxDepth()).toBe(2);
+        expect(official.context.get("productWork")).toBeUndefined();
+        expect(official.context.productTaskGraph).toBeDefined();
+      } finally { await official.dispose(); }
     } else {
       await expect(composeDshRootServices({ adapter, providers: ["fixture"] }))
         .rejects.toThrow("accepted patched runtime requires");

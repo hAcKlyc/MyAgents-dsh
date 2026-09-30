@@ -678,10 +678,11 @@ export class SdkOperationService extends Service {
     });
   }
 
-  resolveActiveToolOperation(agent: Agent): Readonly<{
+  /** Read-only prompt/catalog lookup; a native claim may precede operation admission. */
+  readActiveToolOperation(agent: Agent): Readonly<{
     dshTurn: number;
     operation: ProductOperationRecord;
-  }> {
+  }> | undefined {
     this.assertOpen();
     this.assertHealthy();
     if (agent !== this.primaryAgent() || agent !== this.configValue.requireAgent()) {
@@ -691,18 +692,26 @@ export class SdkOperationService extends Service {
       );
     }
     const dshTurn = this.openDshTurn(agent);
-    if (dshTurn === undefined) {
-      throw new ProtocolError(
-        "turn_operation_conflict",
-        "tool execution lacks one open DSH turn",
-      );
-    }
+    if (dshTurn === undefined) return undefined;
     const owners = this.foldValue(agent).operations.filter((operation) =>
       operation.state !== "terminal" && operation.dshTurns.includes(dshTurn));
+    if (owners.length === 0) return undefined;
     if (owners.length !== 1 || owners[0] === undefined) {
       throw this.fence(new Error("open DSH tool turn lacks one durable product-operation owner"));
     }
     return Object.freeze({ dshTurn, operation: owners[0] });
+  }
+
+  resolveActiveToolOperation(agent: Agent): Readonly<{
+    dshTurn: number;
+    operation: ProductOperationRecord;
+  }> {
+    const active = this.readActiveToolOperation(agent);
+    if (active !== undefined) return active;
+    if (this.openDshTurn(agent) === undefined) {
+      throw new ProtocolError("turn_operation_conflict", "tool execution lacks one open DSH turn");
+    }
+    throw this.fence(new Error("open DSH tool turn lacks one durable product-operation owner"));
   }
 
   createModelRequestAuthority(
@@ -776,6 +785,7 @@ export class SdkOperationService extends Service {
     value: MethodParams<"turn/start">,
     message: UserMessage,
     timing: "realtime" | "turn",
+    claimedTurn?: number,
   ): Promise<"delivered" | "suppressed"> {
     const params = validateMethodParams("turn/start", value);
     const timingInput: unknown = timing;
@@ -789,7 +799,7 @@ export class SdkOperationService extends Service {
       this.assertHealthy();
       const sourceKind: unknown = Reflect.get(message.source, "kind");
       if (agent !== this.primaryAgent() || agent !== this.configValue.requireAgent()
-        || (sourceKind !== "agent-message" && sourceKind !== "subagent-report")) {
+        || (sourceKind !== "agent-message" && sourceKind !== "subagent-report" && sourceKind !== "subagent-settled")) {
         throw new ProtocolError("context_message_denied", "collaboration requires its exact root and actual source");
       }
       await this.reconcileAgent(agent);
@@ -806,7 +816,7 @@ export class SdkOperationService extends Service {
         if (existing.deliveryTiming !== undefined) timing = existing.deliveryTiming;
       } else {
         const pending = [...agent.inbox.nextStep, ...agent.inbox.nextTurn].find((candidate) => candidate.id === message.id);
-        if (pending === undefined && this.configValue.ownsRootContextMessage(agent, message.source, message.id)) {
+        if (claimedTurn === undefined && pending === undefined && this.configValue.ownsRootContextMessage(agent, message.source, message.id)) {
           // A legacy quiet report may already have been consumed inside a user
           // operation. Preserve that fact instead of manufacturing another run.
           return "delivered";
@@ -841,6 +851,14 @@ export class SdkOperationService extends Service {
             rootContextMessage: true, rootDeliveryTiming: timing, rootInputFingerprint: inputFingerprint(params.input), rootMessageId: message.id,
           });
         }
+        if (claimedTurn !== undefined) {
+          const admitted = this.foldValueForContextClaim(agent, message.id, claimedTurn).operations
+            .find((candidate) => candidate.messages.some((owned) => owned.messageId === message.id));
+          if (admitted === undefined) throw this.fence(new Error("native context lost its operation admission"));
+          agent.session.append("myagents/operation/claimed", {
+            clientOperationId: admitted.clientOperationId, messageId: message.id, dshTurn: claimedTurn,
+          });
+        }
         await this.flush(agent);
         fold = this.foldValue(agent);
         operation = fold.operations.find((candidate) => candidate.messages.some((owned) => owned.messageId === message.id));
@@ -854,6 +872,7 @@ export class SdkOperationService extends Service {
       if (!this.configValue.ownsRootContextMessage(agent, message.source, message.id)) {
         throw this.fence(new Error("collaboration insertion lacks durable ProductWork ownership"));
       }
+      if (claimedTurn !== undefined) return "delivered";
       const current = this.foldValue(agent).operations.find((candidate) => candidate.clientOperationId === operation.clientOperationId);
       const currentMessage = current?.messages.find((candidate) => candidate.messageId === message.id);
       if (currentMessage?.state === "queued" && !this.wakeExactPending(agent, message.id)) {
@@ -1935,9 +1954,14 @@ export class SdkOperationService extends Service {
     }
   }
 
-  private foldValue(agent: Agent): ProductOperationFold {
+  private foldValue(agent: Agent, claim?: Readonly<{ messageId: string; dshTurn: number }>): ProductOperationFold {
     try {
-      return foldProductOperations(
+      const fold = claim === undefined ? foldProductOperations : (
+        events: Parameters<typeof foldProductOperations>[0],
+        id: Parameters<typeof foldProductOperations>[1],
+        owns: Parameters<typeof foldProductOperations>[2],
+      ) => foldProductOperationsForLiveClaim(events, claim, id, owns);
+      return fold(
         agent.session.snapshotEvents(),
         agent.id,
         (source, messageId) => this.configValue.ownsRootContextMessage(agent, source, messageId),
@@ -2001,6 +2025,10 @@ export class SdkOperationService extends Service {
         this.fence(error);
       });
     return failure;
+  }
+
+  private foldValueForContextClaim(agent: Agent, messageId: string, dshTurn: number): ProductOperationFold {
+    return this.foldValue(agent, { messageId, dshTurn });
   }
 
   private fence(cause: unknown): ProtocolError {

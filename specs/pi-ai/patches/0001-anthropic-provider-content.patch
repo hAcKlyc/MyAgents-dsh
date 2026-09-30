@@ -1,8 +1,8 @@
 diff --git a/packages/ai/src/api/anthropic-messages.ts b/packages/ai/src/api/anthropic-messages.ts
-index de3a51cf4fff36177a678bf5383c6a30008ee2e1..2276af57a3c32d6d6b70c44040ff71856acd8241 100644
+index f25b2b11d26fd1cbfd1d822aea91875cff03b00d..53c259d17d243c473ff406fbfe585ef702ebbbc1 100644
 --- a/packages/ai/src/api/anthropic-messages.ts
 +++ b/packages/ai/src/api/anthropic-messages.ts
-@@ -22,6 +22,8 @@ import type {
+@@ -20,6 +20,8 @@ import type {
  	Model,
  	ProviderEnv,
  	ProviderHeaders,
@@ -11,7 +11,7 @@ index de3a51cf4fff36177a678bf5383c6a30008ee2e1..2276af57a3c32d6d6b70c44040ff7185
  	SimpleStreamOptions,
  	StopReason,
  	StreamFunction,
-@@ -331,6 +333,65 @@ const ANTHROPIC_MESSAGE_EVENTS: ReadonlySet<string> = new Set([
+@@ -337,6 +339,65 @@ const ANTHROPIC_MESSAGE_EVENTS: ReadonlySet<string> = new Set([
  	"content_block_stop",
  ]);
  
@@ -77,7 +77,7 @@ index de3a51cf4fff36177a678bf5383c6a30008ee2e1..2276af57a3c32d6d6b70c44040ff7185
  function flushSseEvent(state: SseDecoderState): ServerSentEvent | null {
  	if (!state.event && state.data.length === 0) {
  		return null;
-@@ -588,7 +649,9 @@ export const stream: StreamFunction<"anthropic-messages", AnthropicOptions> = (
+@@ -596,7 +657,9 @@ export const stream: StreamFunction<"anthropic-messages", AnthropicOptions> = (
  			stream.push({ type: "start", partial: output });
  
  			type Block = (ThinkingContent | TextContent | (ToolCall & { partialJson: string })) & { index: number };
@@ -88,7 +88,7 @@ index de3a51cf4fff36177a678bf5383c6a30008ee2e1..2276af57a3c32d6d6b70c44040ff7185
  
  			for await (const event of iterateAnthropicEvents(response, options?.signal)) {
  				if (event.type === "message_start") {
-@@ -661,6 +724,43 @@ export const stream: StreamFunction<"anthropic-messages", AnthropicOptions> = (
+@@ -670,6 +733,43 @@ export const stream: StreamFunction<"anthropic-messages", AnthropicOptions> = (
  						};
  						output.content.push(block);
  						stream.push({ type: "toolcall_start", contentIndex: output.content.length - 1, partial: output });
@@ -132,7 +132,7 @@ index de3a51cf4fff36177a678bf5383c6a30008ee2e1..2276af57a3c32d6d6b70c44040ff7185
  					}
  				} else if (event.type === "content_block_delta") {
  					if (event.delta.type === "text_delta") {
-@@ -699,6 +799,10 @@ export const stream: StreamFunction<"anthropic-messages", AnthropicOptions> = (
+@@ -708,6 +808,10 @@ export const stream: StreamFunction<"anthropic-messages", AnthropicOptions> = (
  								delta: event.delta.partial_json,
  								partial: output,
  							});
@@ -143,7 +143,7 @@ index de3a51cf4fff36177a678bf5383c6a30008ee2e1..2276af57a3c32d6d6b70c44040ff7185
  						}
  					} else if (event.delta.type === "signature_delta") {
  						const index = blocks.findIndex((b) => b.index === event.index);
-@@ -738,6 +842,20 @@ export const stream: StreamFunction<"anthropic-messages", AnthropicOptions> = (
+@@ -747,6 +851,20 @@ export const stream: StreamFunction<"anthropic-messages", AnthropicOptions> = (
  								toolCall: block,
  								partial: output,
  							});
@@ -164,7 +164,7 @@ index de3a51cf4fff36177a678bf5383c6a30008ee2e1..2276af57a3c32d6d6b70c44040ff7185
  						}
  					}
  				} else if (event.type === "message_delta") {
-@@ -1325,6 +1443,8 @@ function convertMessages(
+@@ -1359,6 +1477,8 @@ function convertMessages(
  						name: isOAuthToken ? toClaudeCodeName(block.name) : block.name,
  						input: block.arguments ?? {},
  					});
@@ -174,10 +174,10 @@ index de3a51cf4fff36177a678bf5383c6a30008ee2e1..2276af57a3c32d6d6b70c44040ff7185
  			}
  			if (blocks.length === 0) continue;
 diff --git a/packages/ai/src/api/mistral-conversations.ts b/packages/ai/src/api/mistral-conversations.ts
-index 979b467ed35984224a9e90e0e3c5c5acfd37d0d7..a0fdc15fa91e5b5f669595e0db5aa433770512d7 100644
+index 837d1ec115a3d5e1a4b22ccc637db8669892a669..7b10334405c7944aa0d003c2e788cff427ad6c8b 100644
 --- a/packages/ai/src/api/mistral-conversations.ts
 +++ b/packages/ai/src/api/mistral-conversations.ts
-@@ -827,6 +827,7 @@ function toChatMessages(messages: Message[], supportsImages: boolean): MistralCh
+@@ -832,6 +832,7 @@ function toChatMessages(messages: Message[], supportsImages: boolean): MistralCh
  					}
  					continue;
  				}
@@ -186,7 +186,7 @@ index 979b467ed35984224a9e90e0e3c5c5acfd37d0d7..a0fdc15fa91e5b5f669595e0db5aa433
  					id: block.id,
  					type: "function",
 diff --git a/packages/ai/src/providers/faux.ts b/packages/ai/src/providers/faux.ts
-index c80de5c874a3e6f18f668f62a4cf4559e276d640..8497f8eeb8bedce18b262525a67d41c2be232c96 100644
+index a38c18774e53155641a75bbda7233d5e93216680..dec501bed284aee9c9c48999b64fa3ea19ca6fb2 100644
 --- a/packages/ai/src/providers/faux.ts
 +++ b/packages/ai/src/providers/faux.ts
 @@ -1,5 +1,6 @@
@@ -195,8 +195,8 @@ index c80de5c874a3e6f18f668f62a4cf4559e276d640..8497f8eeb8bedce18b262525a67d41c2
 +	AssistantContent,
  	AssistantMessage,
  	AssistantMessageEventStream,
- 	Context,
-@@ -175,7 +176,7 @@ function contentToText(content: string | Array<TextContent | ImageContent>): str
+ 	DeferredCancelOptions,
+@@ -177,7 +178,7 @@ function contentToText(content: string | Array<TextContent | ImageContent>): str
  		.join("\n");
  }
  
@@ -205,7 +205,7 @@ index c80de5c874a3e6f18f668f62a4cf4559e276d640..8497f8eeb8bedce18b262525a67d41c2
  	return content
  		.map((block) => {
  			if (block.type === "text") {
-@@ -184,7 +185,10 @@ function assistantContentToText(content: Array<TextContent | ThinkingContent | T
+@@ -186,7 +187,10 @@ function assistantContentToText(content: Array<TextContent | ThinkingContent | T
  			if (block.type === "thinking") {
  				return block.thinking;
  			}
@@ -217,7 +217,7 @@ index c80de5c874a3e6f18f668f62a4cf4559e276d640..8497f8eeb8bedce18b262525a67d41c2
  		})
  		.join("\n");
  }
-@@ -404,6 +408,13 @@ async function streamWithDeltas(
+@@ -405,6 +409,13 @@ async function streamWithDeltas(
  			continue;
  		}
  
@@ -232,10 +232,10 @@ index c80de5c874a3e6f18f668f62a4cf4559e276d640..8497f8eeb8bedce18b262525a67d41c2
  		stream.push({ type: "toolcall_start", contentIndex: index, partial: { ...partial } });
  		for (const chunk of splitStringByTokenSize(JSON.stringify(block.arguments), minTokenSize, maxTokenSize)) {
 diff --git a/packages/ai/src/types.ts b/packages/ai/src/types.ts
-index fe318fe4266f192b083586f2187854986a58f301..08bebeddd7e9d80448f01617bba98cb4633fe23f 100644
+index 7646a9c05c68991f88b63eba46285f5493a4f053..0ac57ef6bb6ba637b2ba191f275c1d88fcd466ce 100644
 --- a/packages/ai/src/types.ts
 +++ b/packages/ai/src/types.ts
-@@ -380,6 +380,32 @@ export interface ToolCall {
+@@ -393,6 +393,32 @@ export interface ToolCall {
  	namespace?: string;
  }
  
@@ -268,7 +268,7 @@ index fe318fe4266f192b083586f2187854986a58f301..08bebeddd7e9d80448f01617bba98cb4
  export interface Usage {
  	input: number;
  	output: number;
-@@ -427,7 +453,7 @@ export interface UserMessage {
+@@ -514,7 +540,7 @@ export interface UserMessage {
  
  export interface AssistantMessage {
  	role: "assistant";
@@ -277,7 +277,7 @@ index fe318fe4266f192b083586f2187854986a58f301..08bebeddd7e9d80448f01617bba98cb4
  	api: Api;
  	provider: ProviderId;
  	model: string;
-@@ -554,6 +580,13 @@ export type AssistantMessageEvent =
+@@ -660,6 +686,13 @@ export type AssistantMessageEvent =
  	| { type: "toolcall_start"; contentIndex: number; partial: AssistantMessage }
  	| { type: "toolcall_delta"; contentIndex: number; delta: string; partial: AssistantMessage }
  	| { type: "toolcall_end"; contentIndex: number; toolCall: ToolCall; partial: AssistantMessage }
@@ -292,10 +292,10 @@ index fe318fe4266f192b083586f2187854986a58f301..08bebeddd7e9d80448f01617bba98cb4
  			type: "done";
  			reason: Extract<StopReason, "stop" | "length" | "toolUse" | "deferred">;
 diff --git a/packages/ai/src/utils/estimate.ts b/packages/ai/src/utils/estimate.ts
-index b434969ecc1e9cb767b558cd09d9b485d6400d2f..506cc49a20bccd1d8c6acea41c47ff0209cf5bca 100644
+index 165b4d4d2f90a9e26d6db61eafcbb7957fde15c0..603f5b13e34b228dca6a514afab90e252df63de3 100644
 --- a/packages/ai/src/utils/estimate.ts
 +++ b/packages/ai/src/utils/estimate.ts
-@@ -53,8 +53,10 @@ export function estimateMessageTokens(message: Message): number {
+@@ -61,8 +61,10 @@ export function estimateMessageTokens(message: Message): number {
  			chars += block.text.length;
  		} else if (block.type === "thinking") {
  			chars += block.thinking.length;
@@ -308,12 +308,12 @@ index b434969ecc1e9cb767b558cd09d9b485d6400d2f..506cc49a20bccd1d8c6acea41c47ff02
  	}
  	return Math.ceil(chars / CHARS_PER_TOKEN);
 diff --git a/packages/ai/src/utils/text.ts b/packages/ai/src/utils/text.ts
-index 66f5b9c5b656568adab56fcc9362ddbf04e67d5e..5bd599101bd3f07f68bb5cba763ac8afff3e33d6 100644
+index 5798ed346fb36fe7c1376a8b6c75e6ba794e12c8..14848adfdc6663d0c70bff507dafad2454c7d8b7 100644
 --- a/packages/ai/src/utils/text.ts
 +++ b/packages/ai/src/utils/text.ts
 @@ -1,6 +1,6 @@
--import type { ImageContent, TextContent, ThinkingContent, ToolCall } from "../types.ts";
-+import type { AssistantContent, ImageContent } from "../types.ts";
+-import type { ImageContent, SystemMessage, TextContent, ThinkingContent, ToolCall } from "../types.ts";
++import type { AssistantContent, ImageContent, SystemMessage } from "../types.ts";
  
 -type Content = TextContent | ImageContent | ThinkingContent | ToolCall;
 +type Content = AssistantContent | ImageContent;
@@ -321,19 +321,19 @@ index 66f5b9c5b656568adab56fcc9362ddbf04e67d5e..5bd599101bd3f07f68bb5cba763ac8af
  /** Extract and join text from message content. */
  export function contentText(content: string | readonly Content[], separator = "\n"): string {
 diff --git a/packages/ai/test/anthropic-sse-parsing.test.ts b/packages/ai/test/anthropic-sse-parsing.test.ts
-index 9982ae82eae49d68911037d290477a3ef4b91269..55206b520dd1d536995f78a5919ea2a6c71d19e2 100644
+index 36de46d267ff1de7c66eba4d58529199ec8f0113..ea120a2e48641e40eb070478e1fbc9a5aa79726e 100644
 --- a/packages/ai/test/anthropic-sse-parsing.test.ts
 +++ b/packages/ai/test/anthropic-sse-parsing.test.ts
-@@ -3,7 +3,7 @@ import { Type } from "typebox";
- import { describe, expect, it } from "vitest";
+@@ -4,7 +4,7 @@ import { describe, expect, it } from "vitest";
  import { stream as streamAnthropic } from "../src/api/anthropic-messages.ts";
- import { getModel } from "../src/compat.ts";
--import type { Context, ToolCall } from "../src/types.ts";
-+import type { Context, ProviderToolCall, ProviderToolResult, ToolCall } from "../src/types.ts";
+ import { transformMessages } from "../src/api/transform-messages.ts";
+ import { getModel, normalizeContext } from "../src/compat.ts";
+-import type { Model, ToolCall } from "../src/types.ts";
++import type { Context, Model, ProviderToolCall, ProviderToolResult, ToolCall } from "../src/types.ts";
  
  function createSseResponse(events: Array<{ event: string; data: string }>): Response {
  	const body = events.map(({ event, data }) => `event: ${event}\ndata: ${data}\n`).join("\n");
-@@ -68,19 +68,222 @@ const minimalAnthropicEvents = [
+@@ -69,13 +69,14 @@ const minimalAnthropicEvents = [
  	},
  ];
  
@@ -352,9 +352,10 @@ index 9982ae82eae49d68911037d290477a3ef4b91269..55206b520dd1d536995f78a5919ea2a6
  			},
  		},
  	} as unknown as Anthropic;
- }
+@@ -167,6 +168,208 @@ describe("Anthropic raw SSE parsing", () => {
+ 		expect(result.usage.cost.output).toBeCloseTo(0.0001, 10);
+ 	});
  
- describe("Anthropic raw SSE parsing", () => {
 +	it.each(["absent", "client", "unrelated"])(
 +		"does not promote a generic result with %s Provider authority",
 +		async (authority) => {
@@ -564,7 +565,7 @@ diff --git a/packages/ai/test/text.test.ts b/packages/ai/test/text.test.ts
 index 43dc21c84636c5362990684c643d48823236595b..99c0a32532a8ba8e3fb1767ddaf9a88a92ceaf8d 100644
 --- a/packages/ai/test/text.test.ts
 +++ b/packages/ai/test/text.test.ts
-@@ -5,5 +5,20 @@ const content: AssistantMessage["content"] = [
+@@ -5,6 +5,21 @@ const content: AssistantMessage["content"] = [
  	{ type: "thinking", thinking: "reasoning" },
  	{ type: "text", text: "first" },
  	{ type: "toolCall", id: "1", name: "read", arguments: {} },
@@ -585,3 +586,4 @@ index 43dc21c84636c5362990684c643d48823236595b..99c0a32532a8ba8e3fb1767ddaf9a88a
 +	},
  	{ type: "text", text: "second" },
  ];
+ 

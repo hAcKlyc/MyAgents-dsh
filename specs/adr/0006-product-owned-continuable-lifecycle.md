@@ -1,6 +1,6 @@
 # ADR 0006 — Bind continuable subagent settlement and retirement to one product owner
 
-Current DSH `0.1.7-rc.2` disposition: retained as patch 0005; external settlement and exact child lifecycle remain required. The [seam registry](../dsh/seam-decisions-v1.json) owns exact current patch identity; dated evidence below is historical.
+Current DSH `0.2.0-rc.2` disposition: retained as patch 0005; external settlement and exact child lifecycle remain required. The [seam registry](../dsh/seam-decisions-v1.json) owns exact current patch identity; dated evidence below is historical.
 
 Status: accepted on 2026-08-21 for the fixed DSH source baseline
 

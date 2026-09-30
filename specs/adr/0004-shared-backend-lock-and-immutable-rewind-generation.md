@@ -1,6 +1,6 @@
 # ADR 0004 — Shared backend lock and immutable rewind generation
 
-Current DSH `0.1.7-rc.2` disposition: implemented through public persistence composition; no DSH core patch. The [seam registry](../dsh/seam-decisions-v1.json) owns exact current patch identity; dated evidence below is historical.
+Current DSH `0.2.0-rc.2` disposition: implemented through public persistence composition; no DSH core patch. The [seam registry](../dsh/seam-decisions-v1.json) owns exact current patch identity; dated evidence below is historical.
 
 Status: accepted on 2026-08-16 as the Batch 1 persistence composition
 

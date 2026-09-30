@@ -1,6 +1,6 @@
 # ADR 0003 — Frozen predicate for required product Session events
 
-Current DSH `0.1.7-rc.2` disposition: retired; native V4 required-event validation and Product payload checks replace the patch. The [seam registry](../dsh/seam-decisions-v1.json) owns exact current patch identity; dated evidence below is historical.
+Current DSH `0.2.0-rc.2` disposition: retired; native V4 required-event validation and Product payload checks replace the patch. The [seam registry](../dsh/seam-decisions-v1.json) owns exact current patch identity; dated evidence below is historical.
 
 Status: accepted on 2026-08-16 for the fixed DSH source baseline
 

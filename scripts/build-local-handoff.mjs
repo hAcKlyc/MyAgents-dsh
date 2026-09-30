@@ -15,7 +15,7 @@ try {
     out: { type: "string" },
     "dsh-source": { type: "string" },
     "pi-ai-source": { type: "string" },
-    "credential-env": { type: "string" },
+    artifact: { type: "string" },
   } });
   if (!values.out || !isAbsolute(values.out) || existsSync(values.out)) {
     throw new Error("--out must name a new absolute directory");
@@ -39,14 +39,11 @@ try {
     "--dsh-source (run setup first)");
   const piAiSource = requiredDirectory(values["pi-ai-source"] ?? resolve(root, "tmp/setup/sources/pi"),
     "--pi-ai-source (run setup first)");
-  const artifact = requiredDirectory(resolve(root, "tmp/setup/artifacts", accepted.manifestSha256),
-    "verified DSH artifact (run setup first)");
-  const credentialEnv = values["credential-env"] ?? "DSH_RELEASE_PROVIDER_KEY";
-  if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(credentialEnv)) throw new Error("--credential-env must be an environment variable name");
-  if (!process.env[credentialEnv]) throw new Error(`${credentialEnv} is required for the native campaign`);
+  const artifact = requiredDirectory(values.artifact ?? resolve(root, "tmp/setup/artifacts", accepted.manifestSha256),
+    "accepted DSH artifact (run setup first or pass --artifact)");
   mkdirSync(values.out, { recursive: true });
   const result = buildNativeHandoff({
-    work: values.out, source, piAiSource, credentialEnv, artifact,
+    work: values.out, source, piAiSource, artifact,
   });
   process.stdout.write(`${JSON.stringify({
     ...result, repositoryHead: execFileSync("git", ["rev-parse", "HEAD"], { cwd: root, encoding: "utf8" }).trim(),

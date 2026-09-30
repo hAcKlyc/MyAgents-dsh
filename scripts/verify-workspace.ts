@@ -225,6 +225,8 @@ const expectedWorkspaceFiles = new Map([
     "src/host-interaction.ts",
     "src/host-model.ts",
     "src/network-transport.ts",
+    "src/native-child-authority.ts",
+    "src/native-task-notification.ts",
     "src/host-settings.ts",
     "src/host-web-bridge.ts",
     "src/host-web-fetch.ts",

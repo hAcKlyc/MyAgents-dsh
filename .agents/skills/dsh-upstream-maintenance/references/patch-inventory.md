@@ -6,10 +6,10 @@ UPG17 dispositions require the owning Product, artifact, native and Host gates b
 
 ## Source and artifact model
 
-- Fixed DSH `0.1.7-rc.2`, commit `477b4f420553e8a52c2fbccc464d7561b239c443`, tree `e3e63253d1d35ad07f785273235c40813cb6c8bd`.
+- Fixed DSH `0.2.0-rc.2`, commit `639ed015397290b3745d163aafe02ffee4aa3f84`, tree `ac66a6a3e77f6fa396509ddfecc7beacf0cf642a`.
 - Registry source association is unproven; source authority and npm resolution are separate facts.
-- Ten core patches produce 89 required DSH packages. Two independent UPG17 package builds match byte-for-byte; later source/lock/build-policy changes require fresh acceptance.
-- pi-ai `0.85.1`, commit `d981de1229ef899957bbe968bc8dcda02a21f477`, has a separately verified Provider-content patch.
+- Ten core patches produce 104 required DSH packages. The artifact builder compares two independent packing passes byte-for-byte; later source/lock/build-policy changes require fresh acceptance.
+- pi-ai `0.87.1`, commit `f07218c4d4bbc12bef056a7058c3dd49dfe41abe`, has a separately verified Provider-content patch.
 - Verify original blobs, apply only to isolated worktrees, compile and pack content-addressed artifacts. Never edit sibling upstream, registry archives or installed dependencies in place.
 
 Read current generated registries, package/lock files and accepted manifests before reporting identities.
@@ -31,7 +31,7 @@ Patch filenames retain historical numbers; patch order is the registry's dense o
 | 009 / 0009 | reduce / 0008-literal-prompt-contributions | Native literal PromptSection removes duplicate interpolation; child persona and continuation semantics remain patched. |
 | 010 / 0010 | rebase / 0009-agent-instruction-selection | First non-empty candidate per directory, last-known-good transient failure and canonical Read/Write/Edit touches. |
 | 011 / 0011 | rebase / 0010-pi-ai-provider-content | Generic Provider blocks survive pi-ai/DSH conversion and exact route replay, preserving requested/response model identity without local ToolRuntime claims. |
-| 012 / 0012 | rebase / 0011-file-tool-composition | Public official tool factories, stored-edit preview and publication callback preserve BOM/CRLF, atomic writes, parent creation, image dimensions and platform ACL behavior. |
+| 012 / 0012 | reduce / 0011-file-tool-composition | Public official tool factories, stored-edit preview and publication callback preserve BOM/CRLF, atomic writes, parent creation, image dimensions and platform ACL behavior. |
 | 013 / 0009 | rebase / 0012-literal-runtime-context | Native literal PromptSection is reused; PromptContext remains strict upstream, so the patch adds explicit literal handling for Host and Skill context bodies. |
 
 ## Dependencies and retirement boundaries

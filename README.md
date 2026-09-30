@@ -46,7 +46,7 @@ MyAgents 客户端       其他 Host         Reference Web Host
 
 ### Agent 工具清单
 
-当前构建使用 `dsh_first`。下表列出基础模型可见工具的**实际名称**；`bash` 与 `pwsh` 按平台二选一，因此每个平台通常可见 24 项。MCP、Host 和组件工具由对应配置动态加入，不在这份固定清单内。
+当前构建使用 `dsh_first`。下表列出基础模型可见工具的**实际名称**；`bash` 与 `pwsh` 按平台二选一，因此每个平台通常可见 26 项。MCP、Host 和组件工具由对应配置动态加入，不在这份固定清单内。
 
 | 工具 | 能力 | 备注 |
 | --- | --- | --- |
@@ -68,13 +68,15 @@ MyAgents 客户端       其他 Host         Reference Web Host
 | `EnterPlanMode` | 进入计划模式 | MyAgents 提供 |
 | `ExitPlanMode` | 结束计划模式 | MyAgents 提供；未启用 DSH 的 `exit_plan_mode` |
 | `Skill` | 调用已配置的技能 | MyAgents 提供 |
-| `Agent` | 启动子 Agent | MyAgents 提供 |
-| `TaskStop` | 停止子任务 | MyAgents 提供 |
-| `SendMessage` | 向子 Agent 发送消息 | MyAgents 提供 |
-| `TaskCreate` | 创建任务图节点 | MyAgents 提供 |
-| `TaskGet` | 查询任务图节点 | MyAgents 提供 |
-| `TaskList` | 列出任务图节点 | MyAgents 提供 |
-| `TaskUpdate` | 更新任务图节点 | MyAgents 提供 |
+| `subagent` | 新建独立子 Agent | DSH 原生定义与生命周期；MyAgents 接入 Host 权限 |
+| `fork_agent` | 继承已完成用户回合的历史创建子 Agent | DSH 原生定义与生命周期；MyAgents 接入 Host 权限 |
+| `send_message` | 给可延续子 Agent 发消息 | DSH 原生定义与投递 |
+| `interrupt_agent` | 中断子 Agent 当前轮次 | DSH 原生定义；不会关闭整棵子树 |
+| `list_agents` | 列出子 Agent | 通过 DSH 原生目录能力提供 |
+| `TaskCreate` | 在个人或共享列表创建任务 | MyAgents 提供；默认个人列表 |
+| `TaskGet` | 查询可见任务 | MyAgents 提供 |
+| `TaskList` | 列出个人或可见的共享任务 | MyAgents 提供 |
+| `TaskUpdate` | 更新进度、依赖、负责人或开放对象 | MyAgents 提供 |
 
 具体能力以所选版本的[兼容声明](./specs/tech_docs/assurance/compatibility-and-capability-truth.md)和协议协商结果为准。
 
@@ -151,7 +153,7 @@ MyAgents client        Other Hosts        Reference Web Host
 
 #### Agent tool catalog
 
-The current build uses `dsh_first`. The table lists the **actual names** in the base model-visible catalog. A platform exposes either `bash` or `pwsh`, so it normally has 24 effective tools. MCP, Host, and component tools are added dynamically by their configuration and are outside this fixed catalog.
+The current build uses `dsh_first`. The table lists the **actual names** in the base model-visible catalog. A platform exposes either `bash` or `pwsh`, so it normally has 26 effective tools. MCP, Host, and component tools are added dynamically by their configuration and are outside this fixed catalog.
 
 | Tool | Capability | Source note |
 | --- | --- | --- |
@@ -173,13 +175,15 @@ The current build uses `dsh_first`. The table lists the **actual names** in the 
 | `EnterPlanMode` | Enter plan mode | Provided by MyAgents |
 | `ExitPlanMode` | Leave plan mode | Provided by MyAgents; DSH `exit_plan_mode` is not installed |
 | `Skill` | Invoke a configured Skill | Provided by MyAgents |
-| `Agent` | Start a child Agent | Provided by MyAgents |
-| `TaskStop` | Stop child work | Provided by MyAgents |
-| `SendMessage` | Message a child Agent | Provided by MyAgents |
-| `TaskCreate` | Create a task graph node | Provided by MyAgents |
-| `TaskGet` | Read a task graph node | Provided by MyAgents |
-| `TaskList` | List task graph nodes | Provided by MyAgents |
-| `TaskUpdate` | Update a task graph node | Provided by MyAgents |
+| `subagent` | Start a fresh child Agent | Native DSH definition and lifecycle; MyAgents connects Host permissions |
+| `fork_agent` | Start a child inheriting completed user-turn history | Native DSH definition and lifecycle; MyAgents connects Host permissions |
+| `send_message` | Message a continuable child Agent | Native DSH definition and delivery |
+| `interrupt_agent` | Interrupt a child's current turn | Native DSH definition; does not close a subtree |
+| `list_agents` | List child Agents | Exposed through DSH's native catalog |
+| `TaskCreate` | Create a personal or shared task | Provided by MyAgents; personal by default |
+| `TaskGet` | Read an accessible task | Provided by MyAgents |
+| `TaskList` | List personal or accessible shared tasks | Provided by MyAgents |
+| `TaskUpdate` | Update progress, dependencies, owner, or recipients | Provided by MyAgents |
 
 Exact capabilities depend on the selected version's [compatibility declaration](./specs/tech_docs/assurance/compatibility-and-capability-truth.md) and the negotiated protocol capabilities.
 
