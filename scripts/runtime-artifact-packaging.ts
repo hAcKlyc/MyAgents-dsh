@@ -34,7 +34,10 @@ export const pruneRuntimeArtifactResources = (
   const pruneFiles = (directory: string): void => {
     for (const child of readdirSync(directory, { withFileTypes: true })) {
       const path = resolve(directory, child.name);
-      if (child.isDirectory()) pruneFiles(path);
+      if (child.isDirectory()) {
+        pruneFiles(path);
+        if (readdirSync(path).length === 0) remove(path);
+      }
       else if (child.isFile() && (
         /\.d\.[cm]?ts$/u.test(child.name)
         || /\.(?:[cm]?js|[cm]?ts|css)\.map$/u.test(child.name)

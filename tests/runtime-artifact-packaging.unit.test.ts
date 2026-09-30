@@ -40,7 +40,7 @@ describe("Runtime artifact packaging", () => {
     put("example/lib/index.js");
     put("example/lib/index.js.map");
     put("example/lib/index.d.ts");
-    put("example/lib/types.d.cts");
+    put("example/lib/types-only/types.d.cts");
     put("example/lib/types.d.mts");
     put("example/test/huge-fixture.json");
     put("example/.yarn/plugins/development.cjs");
@@ -56,6 +56,7 @@ describe("Runtime artifact packaging", () => {
     put(".bin/helper");
     const result = pruneRuntimeArtifactResources(artifact, { platform: "darwin", arch: "arm64" });
     expect(result).toEqual({ filesRemoved: 7, bytesRemoved: 49 });
+    expect(() => lstatSync(resolve(artifact, "node_modules/example/lib/types-only"))).toThrow();
     for (const path of ["example/lib/index.js", "example/lib/test/runtime.js", "example/LICENSE",
       "example/assets/font.bcmap", "example/assets/data.map", "example/assets/pdf.worker.mjs",
       "example/assets/decoder.wasm", "example/node_modules/@nested/dependency/index.js", ".bin/helper"]) {
