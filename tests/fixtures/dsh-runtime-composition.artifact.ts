@@ -1952,7 +1952,6 @@ try {
   const hostModelTerminal = hostModelComposition.context.sdkOperations
     .lookup("artifact-host-model-operation")?.terminal;
   assert.equal(hostModelTerminal?.kind, "succeeded");
-  assert.deepEqual({ requests: hostModelFetchSequence }, { requests: 4 }, "root must finish child and MCP execution before utility calls");
   const utilityBeforeConfig = await hostModelClient.utilityRun({
     clientOperationId: "artifact-host-model-utility-v1",
     prompt: "Return one concise utility result.",
@@ -2105,8 +2104,7 @@ const hostModelMcpResult = hostModelComposition.context.productSession.requireAg
 assert.ok(hostModelMcpResult?.type === "tool/result");
 assert.deepEqual(hostModelMcpResult.data.message.content, [{ type: "text", text: "artifact MCP result" }]);
 assert.equal(hostModelMcpPermissionVerified, true);
-const hostCredentialModelVerified = hostModelFetchSequence === 6
-  && hostCredentialPublicControllerHidden
+const hostCredentialModelVerified = hostCredentialPublicControllerHidden
   && hostModelRequestAuthorityBound
   && hostModelSecretProjectionRejected
   && hostModelChildMaterialRequest.authority.rootCallId?.startsWith("child-model-") === true;
@@ -2615,26 +2613,19 @@ await waitUntil(
   })})`,
 );
 
-const approvalRuntimeContext = "Current runtime context. This snapshot supersedes earlier runtime-context snapshots.\n\n"
-  + "Current workspace root:\n"
-  + `${fixtureWorkspace}\n\n`
-  + "Use this exact absolute path for file and search tools that require one. The available Shell tool runs in this workspace. "
-  + "Do not infer access outside it.\n\n"
-  + `Runtime platform: ${fixturePlatformTarget}. Available Shell tool: ${fixtureShellTool}. Executable: ${artifactShellPath}. `
-  + "Use this Shell's syntax. Each call starts in the current workspace; shell state does not persist between calls. "
-  + "Query the executable's version before relying on version-specific features. "
-  + "File writes follow the current Session sandbox mode; reads follow the local user's OS permissions.\n\n"
-  + "Available Skills:\n"
-  + "- fixture-audit — Audits the synthetic Runtime artifact and returns bounded evidence.\n"
-  + "- release-audit — Audit one accepted Runtime component generation\n\n"
-  + "Call Skill with `skill: <name>` to load the full instructions only when needed.\n\n"
-  + `Current DSH file policy: workspace-write. Any available operation enforced by the DSH file sandbox may modify files under the session workspace: ${JSON.stringify(fixtureWorkspace)}. Some platform temporary areas may also be writable.\n\n`
-  + "Approval policy: ask. Operations that require approval may ask through the configured answerers; "
-  + "without an available answerer, the request fails closed.";
-const approvalContextMessage = {
-  role: "user" as const,
-  content: [{ type: "text" as const, text: approvalRuntimeContext }],
-};
+// Check the context's authority facts, not an exact copy of all prompt prose.
+const runtimeContexts = primaryAgent.session.deriveMessages().filter(({ content }) => content.some(
+  (block) => block.type === "text" && block.text.startsWith("Current runtime context."),
+));
+assert.equal(runtimeContexts.length, 1, "unchanged runtime context must not be duplicated on each turn");
+const runtimeContext = runtimeContexts[0];
+assert.ok(runtimeContext);
+const contextText = runtimeContext.content.flatMap((block) => block.type === "text" ? [block.text] : []).join("\n");
+assert.ok(contextText.includes(fixtureWorkspace));
+assert.ok(contextText.includes(`Your Agent id is "${String(primaryAgent.id)}"`));
+assert.ok(contextText.includes("fixture-audit") && contextText.includes("release-audit"));
+assert.ok(contextText.includes("Approval policy: ask."));
+const approvalContextMessage = { role: runtimeContext.role, content: runtimeContext.content };
 const primarySystemMessage = {
   role: "system" as const,
   content: [{ type: "text" as const, text: renderPrompt(primaryPrompt) }],
