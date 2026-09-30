@@ -29,7 +29,7 @@ import * as SubagentSpawnInProcess from "@deepseek-ai/dsh-subagent-spawn-in-proc
 import * as ToolSubagent from "@deepseek-ai/dsh-tool-subagent";
 import * as ToolSubagentControl from "@deepseek-ai/dsh-tool-subagent-control";
 import * as ToolSubagentList from "@deepseek-ai/dsh-tool-subagent-control/list-agents";
-import { nativeChildAuthority, installNativeChildAuthorityProjection } from "./native-child-authority.js";
+import { installNativeRootContext, nativeChildAuthority, installNativeChildAuthorityProjection } from "./native-child-authority.js";
 import { isNativeContinuableChild, notifyNativeSharedTask } from "./native-task-notification.js";
 
 import { SandboxBashExecutor } from "@deepseek-ai/dsh-bash-sandbox";
@@ -127,6 +127,7 @@ import {
 import {
   ProductPermissionService,
   ProductToolRuntime,
+  ProductToolError,
   productRootAgent,
   validateProductPermissionPlaneConfig,
   type ProductPermissionController,
@@ -1448,11 +1449,14 @@ export const installCanonicalToolPlane = async (
         if (policy === undefined) return next();
         const context = root.productTools.resolveExternal(exec, exec.name);
         root.productPlan.assertExternalTool(context, exec.name);
-        await root.productPermission.authorize(context, {
+        const targetAgent = exec.arguments !== null && typeof exec.arguments === "object"
+          ? Reflect.get(exec.arguments, "agent_id") as unknown : undefined;
+        const decision = await root.productPermission.authorize(context, {
           permissionClass: policy.permissionClass,
-          target: `${exec.name}:${String(exec.agent?.id)}`,
+          target: `${exec.name}:${typeof targetAgent === "string" ? targetAgent : String(exec.agent?.id)}`,
           tool: policy.tool,
         });
+        if (decision !== "allow") throw new ProductToolError("permission_denied", `${exec.name} permission was denied`);
         root.productTools.assertExternalCurrent(context, exec.name);
         return next();
       });
@@ -2904,33 +2908,7 @@ export const composeDshRootServices = async (
       settlementDeadlineAuthority: root.productSession.settlementDeadlineAuthority(),
     });
     if (root.get("productWork") === undefined) {
-      // DSH sends/wakes its native messages itself. Admit their Product envelope
-      // at the awaited pre-step seam, after the Inbox claim and before any model call.
-      const stopNativeContext = root.on("agent/pre-step", async ({ agent, messages, turn }, next) => {
-        if (root.get("productWork") !== undefined || root.productSession.snapshot().state !== "ready"
-          || agent !== root.productSession.requireAgent()) return next();
-        for (const message of messages) {
-          if (message.source.kind !== "agent-message" && message.source.kind !== "subagent-settled") continue;
-          if (!ownsProductWorkRootContextMessage(agent.session, message.source, message.id, root)) continue;
-          if (root.sdkOperations.snapshot().operations.some((operation) => operation.messages.some((owned) =>
-            owned.messageId === message.id && owned.state === "claimed"))) continue;
-          const environment = root.productSession.requireExecutionEnvironment();
-          await root.sdkOperations.deliverContext(agent, {
-            clientOperationId: `collaboration-${createHash("sha256").update(String(message.id)).digest("hex").slice(0, 48)}`,
-            clientUserMessageId: String(message.id),
-            input: { parts: message.content.map((block) => {
-              if (block.type !== "text") throw new Error("native child context must contain text only");
-              return { kind: "text" as const, text: block.text };
-            }) },
-            configRevision: root.productSession.requireOperationConfigRevision(),
-            extensionDigest: root.productComponents.catalog().digest,
-            executionEnvironmentRevision: environment.revision, executionEnvironmentDigest: environment.digest,
-            limits: {},
-            origin: { kind: "headless", scenario: "runtime-collaboration" },
-          }, message, "realtime", turn);
-        }
-        return next();
-      });
+      const stopNativeContext = installNativeRootContext(root);
       root.effect(() => stopNativeContext, "Native child context operation correlation");
     }
     const operationLifecycle = operationLifecycleController;

@@ -12,3 +12,5 @@ export * from "./utility.js";
 export { assertAcceptedDshRuntimeGraph } from "@myagents-dsh/product-profile";
 export { staticSkillCatalogDigest } from "@myagents-dsh/tools-agent";
 export type { StaticSkillCatalog } from "@myagents-dsh/tools-agent";
+
+export { installNativeRootContext } from "./native-child-authority.js";

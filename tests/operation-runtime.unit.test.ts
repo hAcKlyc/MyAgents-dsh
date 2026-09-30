@@ -1,3 +1,6 @@
+import { installNativeRootContext } from "@myagents-dsh/runtime-product";
+import { installProductContextProjection, ownsProductWorkRootContextMessage } from "@myagents-dsh/tools-agent";
+import { SessionProjectionRegistry } from "@deepseek-ai/dsh-session-projection";
 import { FixtureInbox as Inbox } from "./fixtures/inbox-events.js";
 import { SessionSeq } from "@deepseek-ai/dsh-session";
 import { Context } from "@deepseek-ai/cordis";
@@ -545,6 +548,36 @@ describe("durable product-operation fold", () => {
     const inserted = events.flatMap((event) => event.type === "agent/inbox/spliced" ? event.data.inserted : []).find((message) => message.id === messageId);
     expect(inserted?.source).toEqual(source);
     expect(() => foldProductOperations(events, fixture.agent.id)).toThrow("independent ProductWork source authority");
+  });
+
+  it("admits an idle native reply before an earlier registered pre-step request consumer", async () => {
+    const fixture = await mountService({ capture: () => ({ ...birth(), limits: {} }) }, undefined, undefined, undefined, undefined, true, undefined, undefined,
+      (agent, source, id) => ownsProductWorkRootContextMessage(agent.session, source, id, agent.ctx));
+    await fixture.context.plugin(SessionProjectionRegistry);
+    const stopProjection = installProductContextProjection(fixture.context);
+    Object.assign(fixture.context.productSession, {
+      snapshot: () => ({ state: "ready" }), requireAgent: () => fixture.agent,
+      requireOperationConfigRevision: () => "config-1",
+      requireExecutionEnvironment: () => ({ revision: "environment-1", digest: digest("b") }),
+    });
+    fixture.context.provide("productComponents", { catalog: () => ({ digest: digest("a") }) } as never);
+    fixture.agent.session.append("subagent/catalog", {
+      version: 0, childId: SessionId("native-child"), childCreatedAt: 1, mode: "continuable", label: "Child",
+    });
+    const message = freezeMessage({ id: MessageId("native-idle-reply"), role: "user", content: [{ type: "text", text: "Child reply" }],
+      source: { kind: "agent-message", form: "relay", senderSessionId: SessionId("native-child") } });
+    fixture.agent.send(message, "next-step", false);
+    fixture.agent.session.append("turn/start", { turn: 1 });
+    const messages = fixture.inbox.claim("next-step", 1);
+    const consumer = vi.fn(() => fixture.service.resolveActiveToolOperation(fixture.agent));
+    const stopConsumer = fixture.context.on("agent/pre-step", (_payload, next) => { consumer(); return next(); });
+    const stopAdmission = installNativeRootContext(fixture.context);
+    try {
+      await fixture.context.waterfall("agent/pre-step", { agent: fixture.agent, messages, turn: 1, step: 1, signal: new AbortController().signal },
+        () => Promise.resolve({ kind: "enter" as const, messages }));
+      expect(consumer).toHaveBeenCalledOnce();
+      expect(fixture.service.resolveActiveToolOperation(fixture.agent).operation.origin).toBe("collaboration");
+    } finally { stopAdmission(); stopConsumer(); stopProjection(); }
   });
 
   it.each(["idle", "active"])("admits a DSH child message already claimed before pre-step (%s)", async (mode) => {
