@@ -1349,6 +1349,17 @@ export const installCanonicalToolPlane = async (
         return undefined;
       });
       fibers.push({ dispose: () => { stopChildPolicy(); return Promise.resolve(); } });
+      const stopChildTurnPolicy = root.on("agent/pre-step", ({ agent }, next) => {
+        if (agent.session.header.origin === "subagent") {
+          const primary = root.productSession.requireAgent();
+          const approval = root.approval.overrideOf(primary.session) ?? "ask";
+          if (root.approval.overrideOf(agent.session) !== approval) setApprovalPolicy(agent.session, approval);
+          const sandbox = root.sandboxPolicy.resolve({ session: primary.session }).mode;
+          if (root.sandboxPolicy.overrideOf(agent.session) !== sandbox) setSandboxMode(agent.session, sandbox);
+        }
+        return next();
+      });
+      fibers.push({ dispose: () => { stopChildTurnPolicy(); return Promise.resolve(); } });
     }
     fibers.push(await root.plugin(UserQuestionService));
     const permissionDeadline = root.productSession.settlementDeadlineAuthority();

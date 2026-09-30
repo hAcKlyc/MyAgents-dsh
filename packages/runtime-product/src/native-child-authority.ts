@@ -15,6 +15,14 @@ interface NativeChildState {
   turn?: number | undefined;
   mode?: string | undefined;
   catalog: { id: string; turn?: number | undefined }[];
+  pending: (OperationIdentity & { messageId: string })[];
+  operation?: OperationIdentity | undefined;
+}
+
+declare module "@deepseek-ai/dsh-session/types" {
+  interface SessionEventMap {
+    "myagents/native-child-message-operation": OperationIdentity & { messageId: string };
+  }
 }
 
 declare module "@deepseek-ai/dsh-session-projection/types" {
@@ -23,13 +31,15 @@ declare module "@deepseek-ai/dsh-session-projection/types" {
 
 const projection: ProjectionDefinition<"myagentsNativeChildAuthority"> = {
   key: "myagentsNativeChildAuthority",
-  stateVersion: 1,
+  stateVersion: 2,
   stateSchema: z.object({
     inheritedEventCount: z.number().int().nonnegative(),
     turn: z.number().int().optional(), mode: z.string().optional(),
     catalog: z.array(z.object({ id: z.string(), turn: z.number().int().optional() })),
+    pending: z.array(z.object({ messageId: z.string(), clientOperationId: z.string(), productTurnId: z.string() })),
+    operation: z.object({ clientOperationId: z.string(), productTurnId: z.string() }).optional(),
   }),
-  init: (_header, inheritedEventCount) => ({ inheritedEventCount, catalog: [] }),
+  init: (_header, inheritedEventCount) => ({ inheritedEventCount, catalog: [], pending: [] }),
   apply: (state, event) => {
     if (event.seq < state.inheritedEventCount) return state;
     if (event.type === "turn/start") return { ...state, turn: event.data.turn };
@@ -41,12 +51,36 @@ const projection: ProjectionDefinition<"myagentsNativeChildAuthority"> = {
     if (event.type === "subagent/descriptor") return state.mode === undefined ? { ...state, mode: event.data.mode } : state;
     if (event.type === "subagent/catalog") return { ...state, catalog: [...state.catalog,
       { id: String(event.data.childId), ...(state.turn === undefined ? {} : { turn: state.turn }) }] };
+    if (event.type === "myagents/native-child-message-operation") return { ...state, pending: [...state.pending, event.data] };
+    if (event.type === "user/message") {
+      const operation = state.pending.find((entry) => entry.messageId === event.data.id);
+      if (operation !== undefined) return { ...state,
+        operation: { clientOperationId: operation.clientOperationId, productTurnId: operation.productTurnId },
+        pending: state.pending.filter((entry) => entry.messageId !== event.data.id) };
+    }
     return state;
   },
 };
 
-export const installNativeChildAuthorityProjection = (ctx: Context): (() => void) =>
-  ctx.sessionProjections.register(projection);
+export const installNativeChildAuthorityProjection = (ctx: Context): (() => void) => {
+  const stopProjection = ctx.sessionProjections.register(projection);
+  // Capture the sender's authority when DSH admits the message, before it wakes
+  // the child. A continuation belongs to that dispatch, not its creation turn.
+  const stopMessages = ctx.on("agent/inbox/inserted", ({ agent, message }) => {
+    if (agent.session.header.origin !== "subagent") return;
+    const source = message.source;
+    if (!("senderSessionId" in source) || (source.kind !== "coordinator" && source.kind !== "agent-message")) return;
+    const sender = ctx.agents.get(source.senderSessionId);
+    if (sender === undefined) return;
+    const binding = sender === ctx.productSession.requireAgent()
+      ? ctx.sdkOperations.resolveActiveToolOperation(sender) : nativeChildAuthority(ctx).resolve(sender);
+    agent.session.append("myagents/native-child-message-operation", {
+      messageId: String(message.id), clientOperationId: binding.operation.clientOperationId,
+      productTurnId: binding.operation.productTurnId,
+    });
+  });
+  return () => { stopMessages(); stopProjection(); };
+};
 
 const childState = (ctx: Context, session: Session): NativeChildState => {
   const state = ctx.sessionProjections.stateOf(session, "myagentsNativeChildAuthority");
@@ -132,6 +166,8 @@ export class NativeChildOperationAuthority {
     const id = String(child.id);
     if (visited.has(id)) throw new ProtocolError("turn_operation_conflict", "native child lineage is cyclic");
     visited.add(id);
+    const current = childState(this.ctx, child.session).operation;
+    if (current !== undefined) return current;
     const parentId = child.session.header.parentSession;
     const parent = parentId === undefined ? undefined : this.ctx.agents.get(parentId);
     if (parent === undefined) throw new ProtocolError("turn_operation_conflict", "native child has no live parent");
