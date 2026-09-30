@@ -80,8 +80,10 @@ Native Glob/Grep return its complete-result locator and retrieval hint; Read use
 filesystem/sandbox path for that absolute file. There is no additional search store or transcript.
 Invalid regex errors quote the submitted pattern and parser reason rather than the internal wrapper.
 
-Each assembled Agent context identifies its native Agent id, allowing children to recognize shared
-offers without exposing unrelated personal lists. Native interrupt requests reject unknown ids using
+Each assembled Agent context identifies its native DSH Agent id, allowing children to recognize shared
+offers without exposing unrelated personal lists. This runtime identity is separate from MyAgents CLI's
+configured workspace Agent ids; the context directs callers to `myagents agent list` for that namespace.
+Native interrupt requests reject unknown ids using
 DSH's live registry and durable descendant catalog; known inactive children retain native no-op semantics.
 Unresolved dependency errors identify only visible blockers and their status, explain reopen/delete,
 and report invisible blockers without revealing ids.

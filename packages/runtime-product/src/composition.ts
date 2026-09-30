@@ -1643,7 +1643,7 @@ export const installCanonicalToolPlane = async (
       interpolate: false,
       text: ({ scope }) => {
         const agent = root.agents.list().find((candidate) => candidate === scope);
-        return agent === undefined ? "" : `Your Agent id is "${String(agent.id)}". Your Task personal list belongs to this Agent. Shared tasks are visible only when owned by or offered to you; use TaskList to read them.`;
+        return agent === undefined ? "" : `Your Agent id is "${String(agent.id)}" (DSH runtime identity). Use it with native Agent controls and Task assignment. Your Task personal list belongs to this Agent. Shared tasks are visible only when owned by or offered to you; use TaskList to read them. MyAgents CLI Agent ids identify configured workspace Agents, a separate namespace; obtain those with myagents agent list instead of passing this runtime id.`;
       },
     });
     root.systemPrompt.context({
