@@ -2,14 +2,14 @@
 type: technical-architecture
 status: implemented
 module: web-and-network
-updated: 2026-09-26
+updated: 2026-10-01
 ---
 
 # Web and network
 
 ## 1. Purpose and authority
 
-This guide explains canonical `WebSearch`/`WebFetch`, safe direct HTTP and managed MCP network transport. `packages/tools-web/` owns canonical web tool behavior and the safe HTTP client; model profile and Host capability admission select the backend.
+This guide explains native DSH `web_search`/`web_fetch`, safe direct HTTP and managed MCP network transport. DSH owns the Agent-facing schemas and presentation. `packages/tools-web/` registers product Providers through `ctx.web` and governs execution/network policy; model profile and Host capability admission select the backend.
 
 Canonical WebFetch/WebSearch usage is optional. Missing or unusable Provider metering must not invalidate a useful answer or search result; canonical output normalization omits unusable usage while preserving content and provenance. Agent output follows the same optional-metering rule. Valid usage remains exact and separately attributable, and unavailable statistics are never fabricated as zero. Permission, URL/domain/citation provenance, cancellation and execution bounds remain authoritative.
 
@@ -28,18 +28,17 @@ Canonical tools always register through DSH `ctx.tools`; only their backend vari
 | --- | --- |
 | `deepseek-official` `WebSearch` with Host canonical-web capability | Host sends the fixed server-search schema to `https://api.deepseek.com/anthropic/v1/messages` using the admitted Provider's credentials and proxy policy |
 | `deepseek-official` `WebSearch` without Host canonical-web capability | Runtime's explicit direct profile sends the same fixed endpoint/schema, resolving the Provider credential only for that request |
-| `deepseek-official` `WebFetch` with Host canonical-web capability | existing complete Host `WebFetch` fetches/converts content under Host proxy policy and runs the frozen Provider's no-tools utility API |
-| `deepseek-official` `WebFetch` without Host canonical-web capability | explicit Runtime direct profile safe-fetches/converts content and runs its local utility model |
-| other ordinary API route | optional versioned Host canonical-web adapter through `host/tool/execute`; Anthropic Messages selects Claude Code-compatible nested server search, while any native Search product requires an explicit backend |
+| native `web_fetch`, on every admitted model route | Runtime `ProductFetchProvider` safe-fetches under the installed Host network policy and invokes `convertHostWebContent`; DSH formats the returned content without a utility-model summary |
+| other ordinary API route, `web_search` | optional versioned Host canonical-web adapter through `host/tool/execute`; Anthropic Messages selects Claude Code-compatible nested server search, while any native Search product requires an explicit backend |
 
 Web capability does not gate Provider/model admission. Backend identity is frozen into the operation; changing Provider/config affects a later operation, not an in-flight call. `policyRef` is an operation/session policy identity and revision, not Host-supplied dynamic allow/deny rules; trusted composition owns actual public-host, port, redirect, concurrency and byte policy, and components cannot widen it.
 
-`runWebSearchRequest`, `runHostWebRequest` and the Host bridge bind Provider/credential/reverse
+`runWebSearchRequest` and the Host search bridge bind Provider/credential/reverse
 authority to `productRootAgent(context).id`, retaining the executing tool's call and operation identity.
 Root, foreground child and background child tests cover this boundary, including rejection of a
 different root. Tool policy still checks the executing child independently. DeepSeek main-model and
-native server-search selection remain with their existing Runtime owners; content/utility selection
-uses the complete existing Host WebFetch seam. No arbitrary HTTP reverse port is added.
+native server-search selection remain with their existing Runtime owners. Native `web_fetch` does
+not call the legacy Host WebFetch/utility-model route. No arbitrary HTTP reverse port is added.
 
 ## 4. WebFetch flow
 
@@ -50,13 +49,15 @@ The official composition passes its installed general network transport into the
 The trusted transport passes Undici's response headers directly to `ProductSafeHttpClient`. Undici may attach symbol-keyed TLS metadata to proxied HTTPS headers; WebFetch reads the HTTP header names it needs and does not impose an exact object-shape validator on the trusted response. URL, address, redirect, deadline and body-size policy remain enforced by the client.
 `ProductSafeHttpClient` also supplies the same bounded default Accept, compression, and User-Agent headers to both direct and proxied WebFetch requests; a proxy route must not silently omit them and change a target's response.
 
-Fetched content is converted through the selected content service and a bounded utility model step
-where configured. The canonical result validates and projects controlled URL provenance rather than
-preserving arbitrary upstream URLs: Runtime-local output strips userinfo/query/fragment from its
-requested/final projections, while the Host route requires the normalized request URL and a
-query/fragment-free final URL/citation relationship. The Host keeps the complete retrieval URL
-internally and strips query/fragment from final-page and utility citation projections before returning
-the canonical result.
+The official composition registers DSH's `applyWebFetchTool` with its `ProductFetchProvider`.
+The provider invokes `convertHostWebContent` in `packages/runtime-product/src/host-web-fetch.ts`:
+HTML is converted with Turndown, PDF text is extracted with PDF.js and `@napi-rs/canvas`, and text/JSON
+is decoded directly. The provider returns bounded text to the native tool. The PDF dependencies are
+actively used product customization, not remnants of a second model-visible WebFetch definition.
+The pinned upstream `HttpFetchProvider` classifies HTML/text/JSON/XML and rejects PDF; selecting the
+native tool definition does not automatically select that upstream provider or retire our PDF support.
+Moving PDF extraction to MyAgents' existing document Worker would require an explicit Host capability
+and a standalone fallback design; resource pruning alone does not remove this runtime dependency.
 
 ## 5. WebSearch flow
 

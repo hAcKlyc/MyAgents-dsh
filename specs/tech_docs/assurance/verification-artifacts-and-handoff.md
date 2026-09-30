@@ -2,7 +2,7 @@
 type: technical-architecture
 status: implemented-runtime-delivery
 module: verification-artifacts-and-handoff
-updated: 2026-09-02
+updated: 2026-10-01
 ---
 
 # Verification, artifacts, and integration handoff
@@ -44,6 +44,25 @@ POSIX runners verify exact directory and file mode bits. Windows does not report
 bits, so its Runtime inventory records a stable logical regular-file mode and still verifies file
 type, identity and bytes; the Reference Web inventory reserves logical executable mode for its
 declared POSIX launcher.
+
+The Runtime builder prunes the installed delivery staging tree through
+`scripts/runtime-artifact-packaging.ts` after npm tree validation/link materialization and before
+creating the content manifest. It removes source maps, TypeScript declarations, PDB debug symbols,
+package-root test/example/CI resources, and node-pty prebuilds for other platforms/architectures.
+The OpenAI and Anthropic SDKs retain compiled runtime exports but omit their duplicate TypeScript
+source directories. Other source directories remain, including packages exposing TS runtime subpaths.
+Test Host and fake-model testkit packages are built for conformance but are not installed as production
+Runtime dependencies. Runtime entrypoints, self-check and their production dependency graph remain.
+Non-Windows targets also omit node-pty's Windows third-party assets. Target native addons and
+executable helpers, JavaScript modules, PDF workers/fonts/character maps/WASM, package manifests
+and licenses remain. Nested implementation directories named `test` or `examples` are not treated
+as package-root development resources. The helper reports removed file/byte totals and is idempotent.
+
+This projection belongs to the distribution producer, not MyAgents ingestion. It does not modify
+the source checkout, npm cache, accepted patched DSH tarballs, or an already sealed handoff. Both
+local Dev and Release use this builder and run installed Runtime process conformance against the
+pruned bytes. SDK development/type assets remain in their source packages; the executable Runtime
+delivery is not a TypeScript development dependency.
 
 New Runtime artifacts, Reference Web artifacts and Batch 3 handoffs carry the repository's
 Apache-2.0 `LICENSE` alongside their MyAgents-dsh code. Patched DSH packages retain their MIT

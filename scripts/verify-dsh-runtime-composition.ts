@@ -53,7 +53,7 @@ import {
 } from "./build-patched-dsh-artifact.js";
 import { readDshSeamPatchSet } from "./dsh-seam-decisions.js";
 import { PI_AI_SOURCE, verifyPiAiSource } from "./pi-ai-seam.js";
-import { materializeRuntimeArtifactFileLinks } from "./runtime-artifact-packaging.js";
+import { materializeRuntimeArtifactFileLinks, pruneRuntimeArtifactResources } from "./runtime-artifact-packaging.js";
 import { evaluateArtifactToolchain } from "./toolchain-policy.mjs";
 import { childCli } from "./child-cli.mjs";
 
@@ -924,6 +924,9 @@ const buildInstalledRuntimeCandidate = (
       : value;
   }
   for (const [, packageName] of runtimePackageWorkspaces) {
+    // Conformance uses these from its isolated consumer/repository, never from
+    // the production Runtime process. Do not make them delivery dependencies.
+    if (packageName === "@myagents-dsh/test-host" || packageName === "@myagents-dsh/testkit") continue;
     const packageRoot = resolve(stagedConsumerRoot, "node_modules", ...packageName.split("/"));
     const packOutput = JSON.parse(run("npm", [
       "pack",
@@ -993,6 +996,8 @@ const buildInstalledRuntimeCandidate = (
   const finalLock = JSON.parse(readFileSync(resolve(candidateRoot, "package-lock.json"), "utf8")) as unknown;
   assertArtifactLocalFileReferences(finalLock, "reinstalled Runtime lock");
   materializeRuntimeArtifactFileLinks(candidateRoot);
+  const pruned = pruneRuntimeArtifactResources(candidateRoot, process);
+  process.stderr.write(`Runtime resources pruned: ${pruned.filesRemoved} files, ${pruned.bytesRemoved} bytes\n`);
 };
 
 const assertRuntimeProcessEvidence = (
