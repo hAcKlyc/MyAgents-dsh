@@ -1,6 +1,6 @@
 # ADR 0007 — Preserve established DeepSeek stream tool identities
 
-Current DSH `0.1.7-rc.2` disposition: retired; the native translator preserves streamed tool identity. The [seam registry](../dsh/seam-decisions-v1.json) owns exact current patch identity; dated evidence below is historical.
+Current DSH `0.2.0-rc.2` disposition: retired; the native translator preserves streamed tool identity. The [seam registry](../dsh/seam-decisions-v1.json) owns exact current patch identity; dated evidence below is historical.
 
 Status: accepted for the fixed DSH `0.1.1-rc.2` source baseline
 

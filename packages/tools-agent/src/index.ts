@@ -37,3 +37,5 @@ export type {
   ProductWorkSettledEventData,
   ProductWorkSnapshot,
 } from "./work-runtime.js";
+
+export { installProductContextProjection } from "./work-runtime.js";

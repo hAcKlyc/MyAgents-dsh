@@ -1,16 +1,5 @@
-From 69f6a1ee6e649ba61042554b0ea26761a830d9d0 Mon Sep 17 00:00:00 2001
-From: Ethan <ethan@EthandeMacBook-Air.local>
-Date: Fri, 25 Sep 2026 01:55:27 +0800
-Subject: [PATCH] feat(prompt): preserve literal runtime contexts on rc2
-
-Host-owned dynamic context can contain user supplied template braces. Carry an explicit literal flag through assembly and rendering while retaining normal variable interpolation by default.
----
- packages/core/system-prompt/src/index.ts      |  9 ++++++++-
- .../system-prompt/tests/system-prompt.spec.ts | 20 ++++++++++++++++++-
- 2 files changed, 27 insertions(+), 2 deletions(-)
-
 diff --git a/packages/core/system-prompt/src/index.ts b/packages/core/system-prompt/src/index.ts
-index 6935ed1d06..60ef032472 100644
+index 6935ed1d062fc7f5c0e1e031020ab863aa0b4d79..60ef032472b678ed6ce3f0edb2ca7a50417f3606 100644
 --- a/packages/core/system-prompt/src/index.ts
 +++ b/packages/core/system-prompt/src/index.ts
 @@ -83,6 +83,8 @@ export interface PromptContext {
@@ -51,7 +40,7 @@ index 6935ed1d06..60ef032472 100644
        tools: orderTools(collected, this.toolOrder, knownNames),
        variables,
 diff --git a/packages/core/system-prompt/tests/system-prompt.spec.ts b/packages/core/system-prompt/tests/system-prompt.spec.ts
-index 16a79c807f..2cd8b76a33 100644
+index 16a79c807f4da6a86bbe8cdf603ae71c80bc7c49..2cd8b76a330b74628e7127ec9f8645c4a68eeab5 100644
 --- a/packages/core/system-prompt/tests/system-prompt.spec.ts
 +++ b/packages/core/system-prompt/tests/system-prompt.spec.ts
 @@ -1,7 +1,7 @@

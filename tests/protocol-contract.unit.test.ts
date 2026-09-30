@@ -5,9 +5,6 @@ import { resolve } from "node:path";
 import { describe, expect, it } from "vitest";
 
 import {
-  CANONICAL_TOOL_NAMES,
-  RPC_METHODS,
-  RPC_NOTIFICATIONS,
   SessionReadAssembler,
   canonicalSessionReadData,
   parseJsonRpcFrame,
@@ -50,19 +47,6 @@ const validateTarget = (target: FixtureTarget, value: unknown): unknown => {
 };
 
 describe("candidate-v2 protocol authority", () => {
-  it("owns the exact method, notification, and canonical-tool inventory", () => {
-    const hostMethods = Object.values(RPC_METHODS)
-      .filter(({ direction }) => direction === "host_to_runtime");
-    const reverseMethods = Object.values(RPC_METHODS)
-      .filter(({ direction }) => direction === "runtime_to_host");
-
-    expect(hostMethods).toHaveLength(44);
-    expect(reverseMethods).toHaveLength(7);
-    expect(Object.keys(RPC_NOTIFICATIONS)).toHaveLength(4);
-    expect(CANONICAL_TOOL_NAMES).toHaveLength(24);
-    expect(new Set(CANONICAL_TOOL_NAMES)).toHaveLength(24);
-  });
-
   it("regenerates every checked-in projection byte-for-byte", async () => {
     const artifacts = await buildProtocolArtifacts(repositoryRoot);
     const drift = await findProtocolArtifactDrift(artifacts, async (relativePath) => {

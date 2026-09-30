@@ -118,7 +118,7 @@ const buildAcceptedAuthority = (value: unknown): AcceptedPatchedDshArtifactAutho
   ], "accepted patched DSH artifact authority");
   if (authority.formatVersion !== 1 || authority.packageCount !== 104
     || typeof authority.artifactVersion !== "string"
-    || !/^0\.1\.7-rc\.2\.myagents\.[a-f0-9]{12}\.[a-f0-9]{12}$/u.test(authority.artifactVersion)) {
+    || !/^\d+\.\d+\.\d+-rc\.\d+\.myagents\.[a-f0-9]{12}\.[a-f0-9]{12}$/u.test(authority.artifactVersion)) {
     throw new TypeError("accepted patched DSH artifact identity is invalid");
   }
   const runtimeValue = authority.runtimePackages;

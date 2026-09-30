@@ -1,6 +1,6 @@
 # ADR 0001 — Wake an existing Inbox message without mutation
 
-Current DSH `0.1.7-rc.2` disposition: retained as patch 0001; exact same-ID pending wake is still required. The [seam registry](../dsh/seam-decisions-v1.json) owns exact current patch identity; dated evidence below is historical.
+Current DSH `0.2.0-rc.2` disposition: retained as patch 0001; exact same-ID pending wake is still required. The [seam registry](../dsh/seam-decisions-v1.json) owns exact current patch identity; dated evidence below is historical.
 
 Status: accepted on 2026-08-16 for the fixed DSH source baseline
 

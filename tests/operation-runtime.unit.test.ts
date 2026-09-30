@@ -69,6 +69,7 @@ const appendEvent = <Type extends SessionEvent["type"]>(
 } as Extract<SessionEvent, { type: Type }>];
 
 interface MountedService {
+  readonly events: SessionEvent[];
   readonly agent: Agent;
   readonly context: Context;
   readonly dispose: () => Promise<void>;
@@ -112,6 +113,8 @@ const mountService = async (
     meta: { cwd: "/tmp/myagents-dsh-operation-test" },
     ...(seed === undefined ? {} : { seed }),
   });
+  const events: SessionEvent[] = [];
+  context.on("session/event", (candidate, event) => { if (candidate === session) events.push(event); });
   const agentState: { value?: Agent } = {};
   const inbox = new Inbox(session, {
     claimed: (message, turn) => {
@@ -183,6 +186,7 @@ const mountService = async (
   }
   if (lifecycle === undefined) throw new Error("operation lifecycle controller was not registered");
   return {
+    events,
     agent,
     context,
     dispose: () => fiber.dispose(),
@@ -535,7 +539,7 @@ describe("durable product-operation fold", () => {
     fixture.agent.send(freezeMessage({ id: messageId, role: "user", content: [{ type: "text", text: "Actual collaborator content" }], source }), "next-step", false);
     if (action === "claim") fixture.inbox.claim("next-step", 1);
     else await fixture.service.cancelMessage({ clientOperationId: "operation-1", messageId });
-    const events = fixture.agent.session.snapshotEvents();
+    const events = fixture.events;
     const folded = foldProductOperations(events, fixture.agent.id, (candidate, id) => owner(fixture.agent, candidate, id));
     expect(folded.operations[0]?.messages.at(-1)).toMatchObject({ contextMessage: true, state: action === "claim" ? "claimed" : "cancelled" });
     const inserted = events.flatMap((event) => event.type === "agent/inbox/spliced" ? event.data.inserted : []).find((message) => message.id === messageId);
@@ -561,7 +565,7 @@ describe("durable product-operation fold", () => {
     }, message, "realtime", 1)).resolves.toBe("delivered");
     // The RPC projector reads every event prefix, including the brief interval
     // between native-context admission and its matching Product claim.
-    const events = fixture.agent.session.snapshotEvents();
+    const events = fixture.events;
     for (const event of events.filter((event) => event.type === "myagents/operation/accepted"
       || event.type === "myagents/operation/message" || event.type === "myagents/operation/claimed")) {
       expect(() => foldProductOperations(events.slice(0, event.seq + 1), fixture.agent.id,

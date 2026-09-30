@@ -132,21 +132,6 @@ index 843f0e0cd7149e5ddbef9414632fa4464f58882c..1a543f0cd6441b13e7433946a923025d
  /**
   * Steer one model-authored message to the sender's direct parent or direct
   * continuable child. A running target admits it at the nearest step boundary;
-diff --git a/packages/core/system-prompt/README.i18n.yaml b/packages/core/system-prompt/README.i18n.yaml
-index d05e3b8c576f11b9d4f5e82f6e4ce1f6a73ccae6..7cd8fe7e2d0ca224cf228f65aa6830750601ac1b 100644
---- a/packages/core/system-prompt/README.i18n.yaml
-+++ b/packages/core/system-prompt/README.i18n.yaml
-@@ -45,8 +45,8 @@
-   en: 54977e6c431f851e
-   zh: ef60007054b97ff0
- /deepseek-ai-dsh-system-prompt/understand-the-implementation/scoping:
--  en: 1100ab1dfe961631
--  zh: c510275c893951b4
-+  en: 7afaab7c1e853f3e
-+  zh: 0bfd339cebac6743
- /deepseek-ai-dsh-system-prompt/further-exploration:
-   en: 108d1b4cca466bc7
-   zh: e1275966f83c14f9
 diff --git a/packages/core/system-prompt/README.md b/packages/core/system-prompt/README.md
 index a76ae5c66f0801cb85cd8cf22d0c3ebbc68e65b8..ac1eafa821022d638c11ce9db5d412b3303f4f2a 100644
 --- a/packages/core/system-prompt/README.md
@@ -173,21 +158,6 @@ index 98c6e733399c954c5bbc56b905aefcc6b080381d..ef4813176c7176b721768167ea24cf31
  </details>
  
  -----
-diff --git a/packages/subagent/subagent-in-process-driver/README.i18n.yaml b/packages/subagent/subagent-in-process-driver/README.i18n.yaml
-index 0652ba509c6d25fd8f8817781a954dc64b3ac82a..af073561da85936809bc3cda55d521e8e6e62421 100644
---- a/packages/subagent/subagent-in-process-driver/README.i18n.yaml
-+++ b/packages/subagent/subagent-in-process-driver/README.i18n.yaml
-@@ -39,8 +39,8 @@
-   en: 102689042efe8d9d
-   zh: 6e9e8ffe2d4200e1
- /deepseek-ai-dsh-subagent-in-process-driver/understand-the-implementation/source-map:
--  en: 1afa2487d2e7273f
--  zh: 24ca22c87186d367
-+  en: a7fb1610ad2969cf
-+  zh: 0b62de764d12c2c2
- /deepseek-ai-dsh-subagent-in-process-driver/further-exploration:
-   en: 092428bf90f2ed01
-   zh: b5979a2a7bcfd083
 diff --git a/packages/subagent/subagent-in-process-driver/README.md b/packages/subagent/subagent-in-process-driver/README.md
 index fe9703a2bc735cfea81dbf921488edb786335f6f..c116ab0ae4c502e96ba27b708b206fb9c91e2dca 100644
 --- a/packages/subagent/subagent-in-process-driver/README.md
@@ -226,21 +196,6 @@ index dbaac326b10c444c6509dcb9f1aabc5f4f87df02..1d8684925614d7c16a03e5f9e6ef77c6
        toolFilter: request.toolFilter,
      })
      if (request.outputSchema !== undefined) {
-diff --git a/packages/subagent/subagent-spawn-in-process/README.i18n.yaml b/packages/subagent/subagent-spawn-in-process/README.i18n.yaml
-index 252819dbfbe2dcbaa95b76fa77a3b15dd6697429..f3bdc6c36f7261fdb87493c7c74f33eec85e9ae2 100644
---- a/packages/subagent/subagent-spawn-in-process/README.i18n.yaml
-+++ b/packages/subagent/subagent-spawn-in-process/README.i18n.yaml
-@@ -39,8 +39,8 @@
-   en: 7b55a5649bc38155
-   zh: 51fe220c84ca759a
- /deepseek-ai-dsh-subagent-spawn-in-process/understand-the-implementation/ownership-and-scope:
--  en: 8af949dc29cb4a5c
--  zh: f4e4f9f9f4a4b7c9
-+  en: 48417f9e9c028433
-+  zh: f592afbf15b0fae6
- /deepseek-ai-dsh-subagent-spawn-in-process/further-exploration:
-   en: 742e34ea6c31adf9
-   zh: 599d993ba5a3c8f1
 diff --git a/packages/subagent/subagent-spawn-in-process/README.md b/packages/subagent/subagent-spawn-in-process/README.md
 index ce3909934efa1b2f5cc57ff046b892e3ec129444..b761b64e57588fd4ede1d7b6cbadd3062c6ab0e7 100644
 --- a/packages/subagent/subagent-spawn-in-process/README.md
@@ -291,23 +246,6 @@ index e199b7c9aad008276348649cbb4d81a4421a9730..588ad1436ed71b23475a69422229cc77
      it('toolFilter hides denied tools from the child prompt AND refuses their execution', async () => {
        const { ctx, parent, adapter } = await setup([
          // The child tries the denied tool anyway, then answers.
-diff --git a/packages/subagent/subagent/README.i18n.yaml b/packages/subagent/subagent/README.i18n.yaml
-index 787865254c557c26392825f58559a6203938ac35..ddab5f889cc6842f2317330ba51ff6cc37cb4941 100644
---- a/packages/subagent/subagent/README.i18n.yaml
-+++ b/packages/subagent/subagent/README.i18n.yaml
-@@ -48,10 +48,10 @@
-   en: 9439bd15ee2129c9
-   zh: 6c275cf484efa0cf
- /deepseek-ai-dsh-subagent/understand-the-implementation/continuable-flow:
--  en: 9703c868342826cc
-+  en: 74bb6e0a94bd2b86
-   zh: e300484cecf15835
- /deepseek-ai-dsh-subagent/understand-the-implementation/ownership-and-invariants:
--  en: 7384d01be46a2f0a
-+  en: 27656f7ec0f83b55
-   zh: 83373486ad10d6d5
- /deepseek-ai-dsh-subagent/further-exploration:
-   en: d1c1e87fc59ebfe5
 diff --git a/packages/subagent/subagent/README.md b/packages/subagent/subagent/README.md
 index f962257a854893d94d5b9317c9605d952917b1b1..3782ffd5d06834ae5fd65f1ac03194c141ffe39c 100644
 --- a/packages/subagent/subagent/README.md

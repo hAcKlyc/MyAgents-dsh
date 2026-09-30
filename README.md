@@ -69,7 +69,7 @@ MyAgents 客户端       其他 Host         Reference Web Host
 | `ExitPlanMode` | 结束计划模式 | MyAgents 提供；未启用 DSH 的 `exit_plan_mode` |
 | `Skill` | 调用已配置的技能 | MyAgents 提供 |
 | `subagent` | 新建独立子 Agent | DSH 原生定义与生命周期；MyAgents 接入 Host 权限 |
-| `fork_agent` | 继承当前历史创建子 Agent | DSH 原生定义与生命周期；MyAgents 接入 Host 权限 |
+| `fork_agent` | 继承已完成用户回合的历史创建子 Agent | DSH 原生定义与生命周期；MyAgents 接入 Host 权限 |
 | `send_message` | 给可延续子 Agent 发消息 | DSH 原生定义与投递 |
 | `interrupt_agent` | 中断子 Agent 当前轮次 | DSH 原生定义；不会关闭整棵子树 |
 | `list_agents` | 列出子 Agent | 通过 DSH 原生目录能力提供 |
@@ -176,7 +176,7 @@ The current build uses `dsh_first`. The table lists the **actual names** in the 
 | `ExitPlanMode` | Leave plan mode | Provided by MyAgents; DSH `exit_plan_mode` is not installed |
 | `Skill` | Invoke a configured Skill | Provided by MyAgents |
 | `subagent` | Start a fresh child Agent | Native DSH definition and lifecycle; MyAgents connects Host permissions |
-| `fork_agent` | Start a child with inherited history | Native DSH definition and lifecycle; MyAgents connects Host permissions |
+| `fork_agent` | Start a child inheriting completed user-turn history | Native DSH definition and lifecycle; MyAgents connects Host permissions |
 | `send_message` | Message a continuable child Agent | Native DSH definition and delivery |
 | `interrupt_agent` | Interrupt a child's current turn | Native DSH definition; does not close a subtree |
 | `list_agents` | List child Agents | Exposed through DSH's native catalog |

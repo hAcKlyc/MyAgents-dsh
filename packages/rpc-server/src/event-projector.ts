@@ -1121,8 +1121,7 @@ export class RuntimeEventProjector {
       );
     }
     if (isTask) {
-      const list = source.type === "myagents/task/created" || source.type === "myagents/task/updated"
-        ? source.data.list ?? "shared" : "shared";
+      const list = source.data.list ?? "shared";
       this.#capture(source.seq, taskGraphProjection(
         this.#config.context.productTaskGraph.snapshot(agent, list), String(agent.id), list,
       ));

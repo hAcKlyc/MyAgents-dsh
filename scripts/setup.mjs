@@ -74,7 +74,7 @@ const primePiAiCache = (repository, authority) => {
   const worktree = join(temporary, "source");
   try {
     run("git", ["-C", repository, "worktree", "add", "--detach", worktree, authority.commit]);
-    run("npm", ["ci", "--ignore-scripts", "--no-audit", "--no-fund", "--prefix", worktree]);
+    run("npm", ["ci", "--engine-strict=false", "--ignore-scripts", "--no-audit", "--no-fund", "--prefix", worktree]);
   } finally {
     if (existsSync(worktree)) {
       rmSync(worktree, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 });

@@ -1,5 +1,5 @@
 diff --git a/docs/architecture.md b/docs/architecture.md
-index 0919d65a30d6c233e883df80d83482467e5e8082..e186991c054acfc0b041d7d656990e9465211845 100644
+index c63a75cb2367b566eea5778fc50273ff67dc8bcc..59e1fb320c46a1a10dfac50dd302067df0ec62a6 100644
 --- a/docs/architecture.md
 +++ b/docs/architecture.md
 @@ -98,6 +98,7 @@ turn/start
@@ -11,7 +11,7 @@ index 0919d65a30d6c233e883df80d83482467e5e8082..e186991c054acfc0b041d7d656990e94
       tool/call* -> tools/pre-execute -> tools/execute -> tools/post-execute -> tool/result*
       step/end
 diff --git a/docs/architecture.zh.md b/docs/architecture.zh.md
-index bf3fb3b649143ca532b216f9726250db037bdbb6..fa1bae26e4cca9acef6badcfe857ff9fb13d1ef8 100644
+index 1ae1356a74157fc300d7b1da44056758f52f040d..2c3e4b538cf732c5ccb129b116079d4bd7e8fed6 100644
 --- a/docs/architecture.zh.md
 +++ b/docs/architecture.zh.md
 @@ -102,6 +102,7 @@ turn/start
@@ -22,28 +22,13 @@ index bf3fb3b649143ca532b216f9726250db037bdbb6..fa1bae26e4cca9acef6badcfe857ff9f
         assistant/message | assistant/attempt -> agent/assistant-stream end
       tool/call* -> tools/pre-execute -> tools/execute -> tools/post-execute -> tool/result*
       step/end
-diff --git a/packages/core/agent-loop/README.i18n.yaml b/packages/core/agent-loop/README.i18n.yaml
-index ae56c85e43097991101325219ce1598f3fbade1d..8c3a7f34976952b9c577a2fd0615ce1c2089dd13 100644
---- a/packages/core/agent-loop/README.i18n.yaml
-+++ b/packages/core/agent-loop/README.i18n.yaml
-@@ -48,8 +48,8 @@
-   en: ed5137ef858b3424
-   zh: af2ff3bc15576456
- /deepseek-ai-dsh-agent-loop/understand-the-implementation/failure-and-cancellation:
--  en: 6bd69c9cf8790e14
--  zh: e2812f6bb4c26f10
-+  en: 394c86d04140e778
-+  zh: 7d20306edfe4ee5f
- /deepseek-ai-dsh-agent-loop/further-exploration:
-   en: 6c73cd2390e24b86
-   zh: ba042ca93cc0f595
 diff --git a/packages/core/agent-loop/README.md b/packages/core/agent-loop/README.md
-index 4726700ed2d966c8133a413b1f46538c38fbe503..c3d9a3e53d36cbe550ee53af27e98c51b9f13bf7 100644
+index 19e356affcaed3029b17889fc5df56f7271333ba..092894fddfb7b69683262292e54b9a478249e5fb 100644
 --- a/packages/core/agent-loop/README.md
 +++ b/packages/core/agent-loop/README.md
-@@ -126,6 +126,8 @@ Prompt admission uses the actual `prepareCall()` result, not the preceding `requ
+@@ -128,6 +128,8 @@ Final adapter selection, dispatch, and iteration failures arrive as terminal fin
  
- Final adapter selection, dispatch, and iteration failures arrive as terminal finishes and enter `agent/request-error`; a handling listener returns `{ kind: 'retry' }` without calling `next()`, while an unhandled failure is terminal. Middleware, result-processing, tool, and other extension failures remain thrown and close the turn directly — plugin failure ends the turn, not the loop. Undispatched model tool calls after cancellation receive synthetic `tool/call` plus `ABORTED_BEFORE_DISPATCH` result pairs. The [explicit-cancellation decision](../../../.agents/notes/implemented/architecture/2026-07-16-explicit-turn-cancellation.md) owns the signal lifecycle.
+ Before closing a failed step, the driver records an error result for each unanswered assistant tool call. A recorded `tool/call` without a committed result receives `TOOL_OUTCOME_UNKNOWN`; a request without a call record receives `TOOL_NOT_STARTED`. Committed results remain intact, started dispatches settle before recovery, and the turn retains the original failure. These results let later requests use paired tool history without automatically retrying uncertain operations ([decision](../../../.agents/notes/implemented/bug-fix/2026-09-19-failed-step-tool-results.md)).
  
 +The `agent/pre-assistant-commit` waterfall governs the complete successful assistant message before settlement. It may replace tool arguments only; the loop validates lossless JSON and preserves message, block and tool identities. Durable content, permission and execution use the governed arguments; the embedded stream retains the original provider response. Rejection or cancellation commits no governed message.
 +
@@ -51,12 +36,12 @@ index 4726700ed2d966c8133a413b1f46538c38fbe503..c3d9a3e53d36cbe550ee53af27e98c51
  
  -----
 diff --git a/packages/core/agent-loop/README.zh.md b/packages/core/agent-loop/README.zh.md
-index 060dc37f32f3732fc21f0c5733c8d5d02ed6d512..58c686219ce5ead3479aeff5d3c8e0be3b019471 100644
+index a6a8e874c06c4069e7941eeedd16d14bd43c37ef..25c9fb77cb4e33799c5c2ccb29107abcccba97cd 100644
 --- a/packages/core/agent-loop/README.zh.md
 +++ b/packages/core/agent-loop/README.zh.md
-@@ -126,6 +126,8 @@ const handle = await ctx.agents.create({
+@@ -128,6 +128,8 @@ const handle = await ctx.agents.create({
  
- 最终适配器选择、分发与迭代失败以终止结束的形式到达并进入 `agent/request-error`；处理该失败的监听器返回 `{ kind: 'retry' }` 且不调用 `next()`，未被处理的失败则是终态。Middleware、结果处理、工具及其他扩展失败仍会抛出并直接关闭轮次——插件失败结束的是轮次，不是循环。取消后未分发的模型工具调用会收到合成的 `tool/call` 加 `ABORTED_BEFORE_DISPATCH` 结果对。[显式取消决策](../../../.agents/notes/implemented/architecture/2026-07-16-explicit-turn-cancellation.zh.md)拥有信号生命周期。
+ 关闭失败步骤之前，驱动器为每个尚无结果的 assistant 工具调用记录错误结果。已有 `tool/call` 记录但尚无已提交结果的调用获得 `TOOL_OUTCOME_UNKNOWN`；没有调用记录的请求获得 `TOOL_NOT_STARTED`。已提交的结果保持完整，已启动的派发先结算再恢复，轮次保留原始失败。这些结果让后续请求使用配对完整的工具历史，而不自动重试结果不明的操作（[决策](../../../.agents/notes/implemented/bug-fix/2026-09-19-failed-step-tool-results.zh.md)）。
  
 +`agent/pre-assistant-commit` waterfall 在结算之前处理完整的成功助手消息。它只能替换工具参数；循环验证无损 JSON，并保持消息、内容块和工具标识。持久化内容、权限与执行使用处理后的参数；内嵌流保留提供方原始响应。拒绝或取消时不提交处理后的消息。
 +
@@ -64,7 +49,7 @@ index 060dc37f32f3732fc21f0c5733c8d5d02ed6d512..58c686219ce5ead3479aeff5d3c8e0be
  
  -----
 diff --git a/packages/core/agent-loop/src/agent.ts b/packages/core/agent-loop/src/agent.ts
-index f1b32adfeccefb62dd05748a916e8803d8aa1f97..ab27cecf6f3400aa33520147f8f2edf51a0c2b27 100644
+index 3f1b0409c18553e6c9d3f6d89959eec2b0f1b98d..4a847c36983dec009aa8427fca0fd5ff03e963a8 100644
 --- a/packages/core/agent-loop/src/agent.ts
 +++ b/packages/core/agent-loop/src/agent.ts
 @@ -12,19 +12,22 @@ import type {
@@ -220,7 +205,7 @@ index f1b32adfeccefb62dd05748a916e8803d8aa1f97..ab27cecf6f3400aa33520147f8f2edf5
  /** Remove adapter-derived values before plugins propose the next request config. */
  function requestProposal(header: EpochHeader): LlmCallConfig {
    if (header.adapterDefaults === undefined) return header.config
-@@ -500,7 +624,7 @@ export class ReactLoopAgent implements Agent {
+@@ -517,7 +641,7 @@ export class ReactLoopAgent implements Agent {
            continue
          }
  
@@ -229,7 +214,7 @@ index f1b32adfeccefb62dd05748a916e8803d8aa1f97..ab27cecf6f3400aa33520147f8f2edf5
            content: live.blocks(),
            source: {
              provider: request.provider,
-@@ -508,6 +632,20 @@ export class ReactLoopAgent implements Agent {
+@@ -525,6 +649,20 @@ export class ReactLoopAgent implements Agent {
              ...live.replayState !== undefined ? { replayState: live.replayState } : {},
            },
          })
@@ -250,7 +235,7 @@ index f1b32adfeccefb62dd05748a916e8803d8aa1f97..ab27cecf6f3400aa33520147f8f2edf5
          live.settle(
            'assistant/message',
            () => this.session.append('assistant/message', {
-@@ -520,10 +658,11 @@ export class ReactLoopAgent implements Agent {
+@@ -537,10 +675,11 @@ export class ReactLoopAgent implements Agent {
          )
          if (finish.kind === 'max-tokens') return { kind: 'max-tokens' }
  

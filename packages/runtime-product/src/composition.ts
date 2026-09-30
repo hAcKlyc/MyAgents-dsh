@@ -28,8 +28,8 @@ import * as SubagentForkInProcess from "@deepseek-ai/dsh-subagent-fork-in-proces
 import * as SubagentSpawnInProcess from "@deepseek-ai/dsh-subagent-spawn-in-process";
 import * as ToolSubagent from "@deepseek-ai/dsh-tool-subagent";
 import * as ToolSubagentControl from "@deepseek-ai/dsh-tool-subagent-control";
-import { registerNativeSubagentList } from "./native-subagent-list.js";
-import { nativeChildAuthority } from "./native-child-authority.js";
+import * as ToolSubagentList from "@deepseek-ai/dsh-tool-subagent-control/list-agents";
+import { nativeChildAuthority, installNativeChildAuthorityProjection } from "./native-child-authority.js";
 import { isNativeContinuableChild, notifyNativeSharedTask } from "./native-task-notification.js";
 
 import { SandboxBashExecutor } from "@deepseek-ai/dsh-bash-sandbox";
@@ -142,6 +142,7 @@ import {
   ProductSkillService,
   ProductWorkService,
   ownsProductWorkRootContextMessage,
+  installProductContextProjection,
   validateStaticSkillCatalog,
   type StaticSkillCatalog,
   type ProductDynamicSkillController,
@@ -1334,6 +1335,8 @@ export const installCanonicalToolPlane = async (
     fibers.push(await root.plugin(SkillRegistry));
     fibers.push(await root.plugin(ApprovalService, { policy: "ask" }));
     if (toolStrategy === "dsh_first") {
+      const stopProjection = installNativeChildAuthorityProjection(root);
+      fibers.push({ dispose: () => { stopProjection(); return Promise.resolve(); } });
       const stopChildPolicy = root.on("agent/created", ({ agent, source }) => {
         if (agent.session.header.origin !== "subagent" || agent.session.header.parentSession === undefined) return undefined;
         const parent = root.agents.get(agent.session.header.parentSession);
@@ -1646,8 +1649,7 @@ export const installCanonicalToolPlane = async (
         provider: "native-fork", toolName: "fork_agent", backgroundMode: "continuable",
       }));
       fibers.push(await root.plugin(ToolSubagentControl));
-      const stopListAgents = registerNativeSubagentList(root);
-      fibers.push({ dispose: () => { stopListAgents(); return Promise.resolve(); } });
+      fibers.push(await root.plugin(ToolSubagentList));
     }
     let dynamicAgents: ProductDynamicAgentController | undefined;
     if (toolStrategy === "ma_first") {
@@ -2448,6 +2450,7 @@ export const composeDshRootServices = async (
       persistedReadConcurrency: 4,
     });
     await root.plugin(await loadSessionProjectionRegistry());
+    installProductContextProjection(root);
     await root.plugin(AgentRegistry);
     await root.plugin(SessionStats);
     await root.plugin(SessionTurnOutline);
@@ -2876,7 +2879,7 @@ export const composeDshRootServices = async (
         },
       }),
       ownsRootContextMessage: (agent, source, messageId) =>
-        ownsProductWorkRootContextMessage(agent.session, source, messageId),
+        ownsProductWorkRootContextMessage(agent.session, source, messageId, root),
       registerRetirementGuard: (guard) => root.productSession.registerRetirementGuard(guard),
       requireAgent: () => root.productSession.requireAgent(),
       retirePrimary: (cause) => root.productSession.retire(cause),
@@ -2897,7 +2900,7 @@ export const composeDshRootServices = async (
           || agent !== root.productSession.requireAgent()) return next();
         for (const message of messages) {
           if (message.source.kind !== "agent-message" && message.source.kind !== "subagent-settled") continue;
-          if (!ownsProductWorkRootContextMessage(agent.session, message.source, message.id)) continue;
+          if (!ownsProductWorkRootContextMessage(agent.session, message.source, message.id, root)) continue;
           if (root.sdkOperations.snapshot().operations.some((operation) => operation.messages.some((owned) =>
             owned.messageId === message.id && owned.state === "claimed"))) continue;
           const environment = root.productSession.requireExecutionEnvironment();

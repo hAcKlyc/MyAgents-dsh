@@ -13,8 +13,8 @@ declare module "@deepseek-ai/dsh-llm" {
 }
 
 export const isNativeContinuableChild = (root: Agent, childId: string): boolean =>
-  root.session.ownEvents().some((event) => event.type === "subagent/catalog"
-    && String(event.data.childId) === childId && event.data.mode === "continuable");
+  (root.ctx.sessionProjections.snapshot(root.session, ["subagentCatalog"]).values.subagentCatalog ?? [])
+    .some((entry) => String(entry.id) === childId && entry.mode === "continuable");
 
 export const notifyNativeSharedTask = async (
   ctx: Context,

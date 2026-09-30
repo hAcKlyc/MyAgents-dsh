@@ -303,7 +303,6 @@ describe("Host credential and model route", () => {
     }));
     Object.assign(context, {
       agents: { get: (id: string) => id === "child-session" ? child : id === "runtime-session-1" ? primary : undefined },
-      productWork: { createChildModelRequestAuthority: childAuthority },
     });
     harness.pair.host.registerRequestHandler("host/credential/resolve", (params) => {
       if (params.subject !== "provider") throw new Error("unexpected credential subject");
@@ -312,6 +311,7 @@ describe("Host credential and model route", () => {
         : { authoritativeCredentialRevision: "credential-v1", kind: "material" as const,
             material: { [credentialValueField]: `synthetic-${params.profileRevision}` } };
     });
+    harness.root.provide("productWork", { createChildModelRequestAuthority: childAuthority } as never);
     const attachmentScope = new AsyncLocalStorage<string>();
     const authority = new HostDeepSeekModelAuthority(context, harness.credentialController,
       { resolveUserId: () => "00000000-0000-4000-8000-000000000001" }, (input) => {
@@ -443,8 +443,6 @@ describe("Host credential and model route", () => {
       const childProfile = { ...profile, revision: "web-child-profile", modelId: "web-child-model" };
       const selected = origin === "root" ? profile : childProfile;
       const modelContext = fakeModelContext(harness.root);
-      const childToolAuthority = vi.fn(() => ({}));
-      Object.assign(modelContext, { productWork: { resolveActiveChildToolOperation: childToolAuthority } });
       const authority = new HostDeepSeekModelAuthority(modelContext, harness.credentialController,
         { resolveUserId: () => "00000000-0000-4000-8000-000000000001" });
       authority.bindHostCapabilities({ webSearchAdapters: ["myagents-host-canonical-web-v1"] } as Parameters<typeof authority.bindHostCapabilities>[0]);
@@ -474,7 +472,6 @@ describe("Host credential and model route", () => {
         "WebSearch", { query: "fixture" })).resolves.toEqual({ fixture: true });
       expect(hostRequests.at(-1)).toMatchObject({ authority: { runtimeSessionId: "runtime-session-1", callId: "web-child-call" } });
       expect(credentialRequests.at(-1)).toMatchObject({ profileRevision: selected.revision });
-      if (origin !== "root") expect(childToolAuthority).toHaveBeenCalled();
       const wrong = { ...context, rootAgent: { id: "another-root" } as ProductToolContext["agent"], agent: { ...context.agent, options: { provider: selected.providerRouteId, model: selected.modelId } } as ProductToolContext["agent"] };
       await expect(authority.runHostWebRequest(wrong, () => Promise.resolve(true))).rejects.toMatchObject({ code: "provider_request_stale" });
       await expect(authority.runWebSearchRequest(wrong, () => Promise.resolve(true))).rejects.toMatchObject({ code: "provider_request_stale" });

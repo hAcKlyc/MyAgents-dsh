@@ -1,6 +1,6 @@
 # ADR 0010 — Reuse DSH for mutually exclusive project instructions
 
-Current DSH `0.1.7-rc.2` disposition: retained as patch 0009; first-candidate selection and guidance propagation remain required. The [seam registry](../dsh/seam-decisions-v1.json) owns exact current patch identity; dated evidence below is historical.
+Current DSH `0.2.0-rc.2` disposition: retained as patch 0009; first-candidate selection and guidance propagation remain required. The [seam registry](../dsh/seam-decisions-v1.json) owns exact current patch identity; dated evidence below is historical.
 
 - Status: accepted
 - Date: 2026-09-01

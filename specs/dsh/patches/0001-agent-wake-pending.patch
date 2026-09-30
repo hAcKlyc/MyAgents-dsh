@@ -1,5 +1,5 @@
 diff --git a/packages/core/agent-loop/src/agent.ts b/packages/core/agent-loop/src/agent.ts
-index bcd7ad17a82699c395c3a14855cdee6ed4a2b905..f1b32adfeccefb62dd05748a916e8803d8aa1f97 100644
+index 2f68565cef052f82ef6f2a740141962507654e02..3f1b0409c18553e6c9d3f6d89959eec2b0f1b98d 100644
 --- a/packages/core/agent-loop/src/agent.ts
 +++ b/packages/core/agent-loop/src/agent.ts
 @@ -16,7 +16,7 @@ import type {

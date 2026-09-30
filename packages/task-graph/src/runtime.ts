@@ -1,6 +1,9 @@
 import { createHash } from "node:crypto";
 import { isDeepStrictEqual, types as utilTypes } from "node:util";
 
+import { z } from "zod";
+import type { ProjectionDefinition } from "@deepseek-ai/dsh-session-projection";
+
 import { Service, type Context } from "@deepseek-ai/cordis";
 import type { Agent } from "@deepseek-ai/dsh-agent";
 import type { ContentBlock } from "@deepseek-ai/dsh-llm";
@@ -906,8 +909,42 @@ type TaskEventPermit = Readonly<{
   readonly type: ProductTaskEventType;
 }>;
 
+interface TaskEventProjectionState {
+  sessionId: string;
+  inheritedEventCount: number;
+  events: SessionEvent[];
+}
+
+declare module "@deepseek-ai/dsh-session-projection/types" {
+  interface SessionProjectionStateMap {
+    myagentsTaskEvents: TaskEventProjectionState;
+  }
+}
+
+// Only task facts are retained; the native registry owns replay and live watermarks.
+const taskEventProjection: ProjectionDefinition<"myagentsTaskEvents"> = {
+  key: "myagentsTaskEvents",
+  stateVersion: 1,
+  stateSchema: z.object({
+    sessionId: z.string(),
+    inheritedEventCount: z.number().int().nonnegative(),
+    events: z.array(z.custom<SessionEvent>((value) => value !== null && typeof value === "object"
+      && isProductTaskEventType((value as SessionEvent).type))),
+  }).superRefine((state, context) => {
+    try {
+      foldProductTaskGraph(state.events, state.sessionId, "personal");
+      foldProductTaskGraph(state.events, state.sessionId, "shared");
+    } catch (error) {
+      context.addIssue({ code: "custom", message: String(error) });
+    }
+  }),
+  init: (header, inheritedEventCount) => ({ sessionId: String(header.id), inheritedEventCount, events: [] }),
+  apply: (state, event) => !isProductTaskEventType(event.type) || event.seq < state.inheritedEventCount
+    ? state : { ...state, events: [...state.events, event] },
+};
+
 export class ProductTaskGraphService extends Service {
-  static inject = ["agents", "productTools", "sessions", "tools"];
+  static inject = ["agents", "productTools", "sessions", "tools", "sessionProjections"];
   private readonly configValue: ProductTaskGraphServiceConfig;
   private readonly settlements = new Set<Promise<unknown>>();
   private readonly committedListeners = new Set<(agent: Agent, list: ProductTaskList, snapshot: ProductTaskGraphSnapshot) => void>();
@@ -920,6 +957,7 @@ export class ProductTaskGraphService extends Service {
   constructor(ctx: Context, config: ProductTaskGraphServiceConfig) {
     super(ctx, "productTaskGraph");
     this.configValue = validateConfig(config);
+    ctx.sessionProjections.register(taskEventProjection);
     ctx.effect(() => {
       const stopEvent = ctx.on("session/event", (session, event) => {
         if (!isProductTaskEventType(event.type)) return;
@@ -960,13 +998,19 @@ export class ProductTaskGraphService extends Service {
     });
   }
 
+  private taskEvents(session: Session): readonly SessionEvent[] {
+    const state = this.ctx.sessionProjections.stateOf(session, "myagentsTaskEvents");
+    if (!state) throw new ProductTaskGraphFoldError("native task projection is unavailable");
+    return state.events;
+  }
+
   snapshot(agent: Agent, list: ProductTaskList = "shared"): ProductTaskGraphSnapshot {
     this.assertHealthy();
     if (list === "shared" ? agent !== this.configValue.requireAgent() : this.ctx.agents.get(agent.id) !== agent) {
       throw new ProductToolError("task_graph_unavailable", "TaskGraph lacks its exact Agent owner");
     }
     try {
-      return foldProductTaskGraph(agent.session.ownEvents(), String(agent.session.id), list);
+      return foldProductTaskGraph(this.taskEvents(agent.session), String(agent.session.id), list);
     } catch (error) {
       this.failure ??= error;
       throw new ProductToolError("task_graph_unavailable", "durable TaskGraph projection cannot be trusted", { cause: error });
@@ -981,8 +1025,8 @@ export class ProductTaskGraphService extends Service {
   validatePersisted(agent: Agent): ProductTaskGraphSnapshot {
     this.assertHealthy();
     try {
-      const shared = foldProductTaskGraph(agent.session.ownEvents(), String(agent.session.id), "shared");
-      foldProductTaskGraph(agent.session.ownEvents(), String(agent.session.id), "personal");
+      const shared = foldProductTaskGraph(this.taskEvents(agent.session), String(agent.session.id), "shared");
+      foldProductTaskGraph(this.taskEvents(agent.session), String(agent.session.id), "personal");
       return shared;
     } catch (error) {
       this.failure ??= error;
@@ -1347,7 +1391,7 @@ export class ProductTaskGraphService extends Service {
           type,
         }) as SessionEvent;
         const candidate = foldProductTaskGraph(
-          Object.freeze([...target.session.ownEvents(), synthetic]),
+          Object.freeze([...this.taskEvents(target.session), synthetic]),
           String(target.session.id),
           list,
         );

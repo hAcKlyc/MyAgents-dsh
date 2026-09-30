@@ -76,9 +76,10 @@ truncates by Unicode code point to 1,024 characters. A non-string or protocol-ov
 rejects the snapshot; projection truncation prevents an otherwise admitted long description from
 breaking model Tool metadata.
 
-Snapshot Skill source bytes and digest remain immutable. A filesystem-backed Skill may parse
-frontmatter and, on invocation, expand controlled arguments and `${CLAUDE_SKILL_DIR}` into the
-model-visible rendering. Its `resourceRoot` remains Host/Workspace filesystem data referenced by
+Snapshot Skill source bytes and digest remain immutable. Inline and filesystem-backed Skills both
+parse ordinary frontmatter and expand declared arguments on invocation. Filesystem-backed Skills
+also expand `${CLAUDE_SKILL_DIR}` into the model-visible rendering. Authored `allowed-tools`
+metadata remains instruction guidance, never a permission grant. Its `resourceRoot` remains Host/Workspace filesystem data referenced by
 the generation, not a generation-owned copied directory. Prepare performs lexical normalization;
 invocation resolves a direct, non-symbolic identity and checks containment against any
 operation-frozen allowed read root, not only the Workspace root. The snapshot carries the bounded

@@ -157,7 +157,6 @@ const runtimeCompositionSourcePaths = [
   "packages/runtime-product/src/host-web-search.ts",
   "packages/runtime-product/src/index.ts",
   "packages/runtime-product/src/native-child-authority.ts",
-  "packages/runtime-product/src/native-subagent-list.ts",
   "packages/runtime-product/src/native-task-notification.ts",
   "packages/runtime-product/src/primary-session.ts",
   "packages/runtime-product/src/system-context.ts",

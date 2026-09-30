@@ -17,9 +17,9 @@
   },
   "peerDependencies": {
     "@deepseek-ai/cordis": "4.0.4",
-    "@deepseek-ai/dsh-llm": "0.1.7-rc.2.myagents.477b4f420553.8d5f1cfa482e || 0.1.7-rc.2",
-    "@deepseek-ai/dsh-tools": "0.1.7-rc.2.myagents.477b4f420553.8d5f1cfa482e || 0.1.7-rc.2",
-    "@deepseek-ai/dsh-tool-web": "0.1.7-rc.2.myagents.477b4f420553.8d5f1cfa482e || 0.1.7-rc.2",
-    "@deepseek-ai/dsh-web": "0.1.7-rc.2.myagents.477b4f420553.8d5f1cfa482e || 0.1.7-rc.2"
+    "@deepseek-ai/dsh-llm": "0.2.0-rc.2.myagents.639ed0153972.7ac2652ae40f || 0.2.0-rc.2",
+    "@deepseek-ai/dsh-tools": "0.2.0-rc.2.myagents.639ed0153972.7ac2652ae40f || 0.2.0-rc.2",
+    "@deepseek-ai/dsh-tool-web": "0.2.0-rc.2.myagents.639ed0153972.7ac2652ae40f || 0.2.0-rc.2",
+    "@deepseek-ai/dsh-web": "0.2.0-rc.2.myagents.639ed0153972.7ac2652ae40f || 0.2.0-rc.2"
   }
 }

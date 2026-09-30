@@ -8,9 +8,9 @@ When the fixed upstream checkout is available at the documented sibling path, `n
 
 ## Two authorities, deliberately not conflated
 
-- Source/design evidence is `deepseek-harness@477b4f420553e8a52c2fbccc464d7561b239c443` (tree `e3e63253d1d35ad07f785273235c40813cb6c8bd`), declaring `0.1.7-rc.2`.
-- Development dependency resolution is exact public npm `0.1.7-rc.2` plus Cordis `4.0.4`, independently pinned by package-lock tarball URLs and integrities.
-- Executable candidates are source-built with ten audited core patches. The separately patched pi-ai `0.85.1` remains an independent dependency authority. The accepted 100-package patched-artifact manifest is the exact package-byte authority; later Product/lock/builder changes require fresh verification and do not inherit prior acceptance.
+- Source/design evidence is `deepseek-harness@639ed015397290b3745d163aafe02ffee4aa3f84` (tree `ac66a6a3e77f6fa396509ddfecc7beacf0cf642a`), declaring `0.2.0-rc.2`.
+- Development dependency resolution is exact public npm `0.2.0-rc.2` plus Cordis `4.0.4`, independently pinned by package-lock tarball URLs and integrities.
+- Executable candidates are source-built with ten audited core patches. The separately patched pi-ai `0.87.1` remains an independent dependency authority. The accepted 104-package patched-artifact manifest is the exact package-byte authority; later Product/lock/builder changes require fresh verification and do not inherit prior acceptance.
 
 The public registry manifests omit `gitHead`. Their exact association with the tagged source remains `unproven`; the project therefore does not claim that the fixed source commit produced those registry tarballs. The custom executable artifact is independently tied to source, patch, builder, lock, package and consumer bytes.
 
@@ -26,7 +26,7 @@ The generated baseline traverses the complete production dependency closure, inc
 
 ## Candidate limitations and seam decisions
 
-The source is fixed to DSH 0.1.7-rc.2. Registry tarballs do not prove their association with that
+The source is fixed to DSH 0.2.0-rc.2. Registry tarballs do not prove their association with that
 commit. Product imports use public exports only; source-private wildcards stay forbidden.
 The native V4 SessionHandle Provider supplies Product required-event validation without the
 retired PersistenceCoordinator predicate patch. Product mutations remain in the SQLite companion,
@@ -39,7 +39,7 @@ The source gate verifies every exact upstream blob, applies the ordered series o
 worktree and runs the selected source regressions. The patchless seam 004 still requires fresh
 Product and native ownership proof. The affected ADRs preserve each semantic and removal condition.
 
-The [current source review](./upstream-refresh-2026-09-25.md) records the 0.1.7 semantic decisions.
+The [current source review](./upstream-refresh-2026-09-30.md) records the 0.2.0 semantic decisions.
 The accepted artifact manifest and MyAgents Host lock own their respective executable identities;
 current native and Host acceptance requires matching evidence. Later lock/builder/source changes
 require fresh artifacts; clean patch application and old handoffs cannot establish acceptance for new bytes.

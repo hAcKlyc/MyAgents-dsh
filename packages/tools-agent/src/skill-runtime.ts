@@ -1103,9 +1103,7 @@ export class ProductSkillService extends Service {
     if ((resourceRoot === undefined) !== (sourcePath === undefined)) {
       throw new TypeError("dynamic Skill filesystem source must include both root and path");
     }
-    const parsed = resourceRoot === undefined
-      ? Object.freeze({ argumentNames: Object.freeze([]), body: content })
-      : parseWorkspaceSkillDocument(content);
+    const parsed = parseWorkspaceSkillDocument(content);
     const key = this.#generationKey(identity);
     const records = this.#dynamicByGeneration.get(key) ?? new Map<string, DynamicSkillRecord>();
     if (records.has(name)) throw new TypeError("dynamic Skill names must be unique within one generation");

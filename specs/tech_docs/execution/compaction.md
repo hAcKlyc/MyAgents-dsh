@@ -269,7 +269,7 @@ credential-backed evidence.
 
 ## 12. Verification
 
-The [current DSH source baseline](../../dsh/dsh-baseline-v1.json) and [seam registry](../../dsh/seam-decisions-v1.json) own the 0.1.7-rc.2 source and patch 0007 identity. Exact accepted Runtime, native campaign, dynamic campaign and Host handoff identities belong to their generated manifests and trusted delivery record. Old-byte evidence cannot be copied into a new release.
+The [current DSH source baseline](../../dsh/dsh-baseline-v1.json) and [seam registry](../../dsh/seam-decisions-v1.json) own the 0.2.0-rc.2 source and patch 0007 identity. Exact accepted Runtime, native campaign, dynamic campaign and Host handoff identities belong to their generated manifests and trusted delivery record. Old-byte evidence cannot be copied into a new release.
 
 Current executable coverage includes:
 
@@ -330,4 +330,4 @@ The Runtime consumes only the recorded patched artifact. The complete ten-patch 
 
 ### Source identity
 
-The current DSH source and patch 0007 identity come from the [source baseline](../../dsh/dsh-baseline-v1.json) and [seam registry](../../dsh/seam-decisions-v1.json). The [0.1.7 source review](../../dsh/upstream-refresh-2026-09-25.md) records the latest semantic decision; exact artifact evidence certifies the installed bytes.
+The current DSH source and patch 0007 identity come from the [source baseline](../../dsh/dsh-baseline-v1.json) and [seam registry](../../dsh/seam-decisions-v1.json). The [0.2.0 source review](../../dsh/upstream-refresh-2026-09-30.md) records the latest semantic decision; exact artifact evidence certifies the installed bytes.

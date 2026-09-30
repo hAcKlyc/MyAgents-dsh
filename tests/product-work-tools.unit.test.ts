@@ -32,6 +32,7 @@ import { SystemPrompt } from "@deepseek-ai/dsh-system-prompt";
 import { ToolRuntime, type ToolRunContext } from "@deepseek-ai/dsh-tools";
 import {
   ownsProductWorkRootContextMessage,
+  installProductContextProjection,
   ProductWorkService,
   validateProductWorkEventData,
   type ProductWorkSettledEventData,
@@ -61,16 +62,18 @@ describe("native DSH child message provenance", () => {
     const context = new Context();
     contexts.push(context);
     await context.plugin(SessionStore);
+    await context.plugin(SessionProjectionRegistry);
+    installProductContextProjection(context);
     const session = context.sessions.create(SessionId("native-root"), { meta: { cwd: "/tmp/native-root" } });
     const childId = SessionId("native-child");
     session.append("subagent/catalog", { version: 0, childId, childCreatedAt: 1, mode: "continuable", label: "Tester" });
     const message = freezeMessage({ id: MessageId("native-result"), role: "user", content: [{ type: "text", text: "Result" }],
       source: kind === "agent-message" ? { kind, form: "relay", senderSessionId: childId }
         : { kind, form: "notice", summary: "Child finished", senderSessionId: childId } });
-    const inbox = new Inbox(session, { claimed: () => {}, discarded: () => {}, inserted: () => {} });
+    const inbox = new Inbox(session, { claimed: () => undefined, discarded: () => undefined, inserted: () => undefined });
     inbox.append("next-step", message);
-    expect(ownsProductWorkRootContextMessage(session, message.source, message.id)).toBe(true);
-    expect(ownsProductWorkRootContextMessage(session, message.source, "other-message")).toBe(false);
+    expect(ownsProductWorkRootContextMessage(session, message.source, message.id, context)).toBe(true);
+    expect(ownsProductWorkRootContextMessage(session, message.source, "other-message", context)).toBe(false);
   });
 });
 
@@ -546,6 +549,7 @@ const harness = async (options: HarnessOptions = {}): Promise<Harness> => {
   await context.plugin(ToolRuntime, { mode: "native" });
   await context.plugin(LlmRuntime);
   await context.plugin(SessionProjectionRegistry);
+  installProductContextProjection(context);
   await context.plugin(AgentLoop, { agents: [] });
   // Keep one native Agent scope to register the official Inbox projection used
   // for cold-query folds; the synthetic Work actors never drive model requests.

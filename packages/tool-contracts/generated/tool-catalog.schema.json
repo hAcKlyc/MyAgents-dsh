@@ -3,7 +3,7 @@
   "additionalProperties": false,
   "properties": {
     "contractSha256": {
-      "const": "d2359ccd5533aac96e9ac8fe7b1dbfb920a39dc14b6cbf69419f44050a6b39be",
+      "const": "2328363c025a310a373d1b959b3c6cb33e864e2e63a86981c30e49c777f3437c",
       "type": "string"
     },
     "diagnostics": {

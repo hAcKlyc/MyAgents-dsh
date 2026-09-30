@@ -2,6 +2,7 @@ import { Context } from "@deepseek-ai/cordis";
 import { AgentRegistry, type Agent } from "@deepseek-ai/dsh-agent";
 import { ToolCallId } from "@deepseek-ai/dsh-llm";
 import { SessionId, SessionStore, type Session, type SessionEvent } from "@deepseek-ai/dsh-session";
+import { SessionProjectionRegistry } from "@deepseek-ai/dsh-session-projection";
 import { SystemPrompt } from "@deepseek-ai/dsh-system-prompt";
 import * as ToolCallTimeoutPolicy from "@deepseek-ai/dsh-tool-call-timeout-policy";
 import { ToolRuntime } from "@deepseek-ai/dsh-tools";
@@ -33,6 +34,7 @@ const mounted = async (options: MountedOptions = {}) => {
   const context = new Context();
   contexts.push(context);
   await context.plugin(SessionStore);
+  await context.plugin(SessionProjectionRegistry);
   await context.plugin(AgentRegistry);
   await context.plugin(SystemPrompt);
   await context.plugin(ToolRuntime, { mode: "native" });
@@ -127,6 +129,18 @@ const successful = async (
 ): Promise<Record<string, unknown>> => state.output(await state.execute(name, input)) as Record<string, unknown>;
 
 describe("durable Session-local product TaskGraph", () => {
+  it("keeps fork-inherited parent tasks out of the child's personal list", async () => {
+    const state = await mounted();
+    await successful(state, "TaskCreate", { subject: "Parent only", description: "Parent work" });
+    const session = state.context.sessions.fork(state.session, undefined, SessionId("fork-task-child"));
+    const child = Object.freeze({ ctx: state.context, id: session.id, session }) as unknown as Agent;
+    state.context.agents.enter(child, state.agent);
+    expect(state.context.productTaskGraph.snapshot(child, "personal").tasks).toEqual([]);
+    const result = state.output(await state.execute("TaskCreate", { subject: "Child only", description: "Child work" }, undefined, child)) as { task: { id: string; subject: string } };
+    expect(result.task).toMatchObject({ id: "task-1", subject: "Child only" });
+    expect(state.context.productTaskGraph.snapshot(state.agent, "personal").tasks.map((task) => task.subject)).toEqual(["Parent only"]);
+  });
+
   it("atomically claims for the real child, fences concurrent claims, and governs explicit transfer", async () => {
     const state = await mounted({ isKnownCollaborator: (_root, id) => id === "child-first" || id === "child-second" });
     const first = state.child("child-first");
@@ -167,10 +181,11 @@ describe("durable Session-local product TaskGraph", () => {
     const delivered: string[] = [];
     const state = await mounted({
       isKnownCollaborator: (_root, id) => id === "child-first" || id === "child-second",
-      notifySharedTask: async (_root, childId, taskId) => {
+      notifySharedTask: (_root, childId, taskId) => {
         expect(taskId).toBe("task-1");
         if (childId === "child-second") throw new Error("recipient is offline");
         delivered.push(childId);
+        return Promise.resolve();
       },
     });
     const first = state.child("child-first");

@@ -10,9 +10,9 @@ const repositoryRoot = resolve(import.meta.dirname, "..");
 
 export const DSH_SEAM_SOURCE = Object.freeze({
   repository: "https://github.com/deepseek-ai/deepseek-harness.git",
-  commit: "477b4f420553e8a52c2fbccc464d7561b239c443",
-  tree: "e3e63253d1d35ad07f785273235c40813cb6c8bd",
-  declaredRelease: "0.1.7-rc.2",
+  commit: "639ed015397290b3745d163aafe02ffee4aa3f84",
+  tree: "ac66a6a3e77f6fa396509ddfecc7beacf0cf642a",
+  declaredRelease: "0.2.0-rc.2",
   executablePackageAssociation: "unproven",
   files: Object.freeze([
     Object.freeze({
@@ -32,18 +32,18 @@ export const DSH_SEAM_SOURCE = Object.freeze({
     }),
     Object.freeze({
       path: "docs/architecture.i18n.yaml",
-      blob: "efc66e50efbf9b08726c01f91d0db04146e520ce",
-      sha256: "ca4a8c255b7f0e3c4f4a0c950ebbe245fc7efacb8c15313173e3a8680fe8d4a6",
+      blob: "5e0e5f9848d23b73a7c2c0cdd661fa785d50152f",
+      sha256: "67b688c254ae39ca7ef676c12c0d09ebbf13e4cb215019adfe3aefcb8435c005",
     }),
     Object.freeze({
       path: "docs/architecture.md",
-      blob: "0919d65a30d6c233e883df80d83482467e5e8082",
-      sha256: "bae3ba9c3a3752e5fe12f568d5716a3c414f79da874402bf790a6c0993015ed7",
+      blob: "c63a75cb2367b566eea5778fc50273ff67dc8bcc",
+      sha256: "cf5728e0b907b8c770b637f779feb785ceefe5017b59aa2e160d488ae376fc0f",
     }),
     Object.freeze({
       path: "docs/architecture.zh.md",
-      blob: "bf3fb3b649143ca532b216f9726250db037bdbb6",
-      sha256: "1f9ad6d40970c7cd13d15b340ebcbca344b42f0a9527142ae857136827f2bd37",
+      blob: "1ae1356a74157fc300d7b1da44056758f52f040d",
+      sha256: "1bd164bc5cd857a9c46e97d7927f40b6fac0217cefbbb35a5945610126b88048",
     }),
     Object.freeze({
       path: "docs/config-catalog.i18n.yaml",
@@ -52,13 +52,13 @@ export const DSH_SEAM_SOURCE = Object.freeze({
     }),
     Object.freeze({
       path: "docs/config-catalog.md",
-      blob: "7978a4afafeb5139726d671d8c28d83917c7edb2",
-      sha256: "df6e7c0ad13d8050f510a651643fe0f08997b58c75657fff73110d04c9e2096a",
+      blob: "7c40fad9136fdfa003ba430f3fa3f5467d29b1c6",
+      sha256: "2051bc75e07acfd088ba00ba4ec72e7bfcaca7c0a4aab4f7d26ddd37a344a227",
     }),
     Object.freeze({
       path: "docs/config-catalog.zh.md",
-      blob: "12383e538dfc03c151f2c7c26f523ce64310e27d",
-      sha256: "0faee1a64380966b419822863ef0f5a5abb6c06449223add4d7066587f938c7a",
+      blob: "44b5a7345587d0d0b584854bd1fa7e413d05ec31",
+      sha256: "e40deff653367c338a8c8aa77c6df61d3993a20d3fc8fb6f853a2c501e8b2d29",
     }),
     Object.freeze({
       path: "docs/event-producer-consumer.i18n.yaml",
@@ -67,28 +67,28 @@ export const DSH_SEAM_SOURCE = Object.freeze({
     }),
     Object.freeze({
       path: "docs/event-producer-consumer.md",
-      blob: "5312354d601291bf3762e339b37730e5328fcb15",
-      sha256: "3eeed022ba76be46aec399a1f0feb141cd93ce05f773f504e382e3d230907e13",
+      blob: "c2b882cd95b03f004c93cc30a9794cadec5e1d9b",
+      sha256: "273e9357b71818fe519785791945e4ca7c0f3c7cef46d5c75fe46cc665054856",
     }),
     Object.freeze({
       path: "docs/event-producer-consumer.zh.md",
-      blob: "6baa07d2d26d530d8beedcb86a1cf4098be2b6ff",
-      sha256: "9699cf22d40a6eb2747da73479a0f16e3e1f2ba8d64738ec24d8244341749c5c",
+      blob: "97e2cb197b31d965f848895ae02be03afe42f2e4",
+      sha256: "6fde648c8e0eeb1858c46fde536ec65d7fa657e3120f523d38cade68f6a9837e",
     }),
     Object.freeze({
       path: "docs/persistence-catalog.i18n.yaml",
-      blob: "6e6a1802d1daa1b9e09ec8c875f1cdeaf715e431",
-      sha256: "1c4c26cba68f7e90a2afaa08c5c692e67e71515868adf334780047008f937b8a",
+      blob: "555c6e52a78d21d208e103035894f7fd85f74368",
+      sha256: "5c629208abce7f9a67de13ed5eec8275bdb2b2e193b9bfdbe2024bd00111ecf4",
     }),
     Object.freeze({
       path: "docs/persistence-catalog.md",
-      blob: "b9a4241eef0c08e25114def092caf1b2fa24b4f5",
-      sha256: "aa11781401570bc6bb21f2d80da9fa210fa6acd721f23e76239dfc8630e5e986",
+      blob: "1575e2104d3c8c1ae1c3b8ced0535415b32789f5",
+      sha256: "7884d96ec60e78fa0812e8b50c6949df2fba701f022ebb71be1d76aa07664f52",
     }),
     Object.freeze({
       path: "docs/persistence-catalog.zh.md",
-      blob: "139a1fb20b253f8dd3f3060e9c942d615a005dee",
-      sha256: "89ae18a196a31b6ccc424822b0982e73e0eaca105ad4293bed5ef0fd8a650c7b",
+      blob: "6bdbb929825c6300a9a2b33605d96b81510a5f1a",
+      sha256: "bc21360d07498190dde6d30099c7c9c8ff6d30b6d3d3287be08729266c4fa23c",
     }),
     Object.freeze({
       path: "docs/subsystems/compaction.i18n.yaml",
@@ -182,8 +182,8 @@ export const DSH_SEAM_SOURCE = Object.freeze({
     }),
     Object.freeze({
       path: "package.json",
-      blob: "81a370d4c43452c01f44cc823520e093c93d8860",
-      sha256: "eb332130b7347793c65c6e72af2afb8543e767d86857400dbb23ff0c46d527b4",
+      blob: "f5ce66dc9e112a415ed3e8d3aafbb98600daad12",
+      sha256: "a303ffb8994be8e7a874bc887db1abd47a77a6e08872e65f1d65281f43eab91b",
     }),
     Object.freeze({
       path: "packages/compaction/compaction-basic/README.i18n.yaml",
@@ -297,23 +297,23 @@ export const DSH_SEAM_SOURCE = Object.freeze({
     }),
     Object.freeze({
       path: "packages/core/agent-loop/README.i18n.yaml",
-      blob: "ae56c85e43097991101325219ce1598f3fbade1d",
-      sha256: "70b91e3aa4fe2f03777ba51810f2359c2ecc47a51aaa881df10af536fc9d1e4d",
+      blob: "787f531a3141ec9c87c6559cbff3ace4ece58c76",
+      sha256: "a4b6816ac2a1c5f6cf84593d553e26ec501f0db15c4da47d7d759f29bdf737d9",
     }),
     Object.freeze({
       path: "packages/core/agent-loop/README.md",
-      blob: "4726700ed2d966c8133a413b1f46538c38fbe503",
-      sha256: "61e645888cd0ff05066e21941de743e08bd493a210bae2a2b06732eeacc34db8",
+      blob: "19e356affcaed3029b17889fc5df56f7271333ba",
+      sha256: "7e85b7d46c17e5351455821e70441080214e249c2bf19ea356239bb09749e033",
     }),
     Object.freeze({
       path: "packages/core/agent-loop/README.zh.md",
-      blob: "060dc37f32f3732fc21f0c5733c8d5d02ed6d512",
-      sha256: "b9c531d536a996d4ce871ae993149418fd29add8f18b315f0726f6db749af5e7",
+      blob: "a6a8e874c06c4069e7941eeedd16d14bd43c37ef",
+      sha256: "b2df762bb642f23a6fd8e378aa498f31f9c76bfd3f8c93087f9c88fc171ccef3",
     }),
     Object.freeze({
       path: "packages/core/agent-loop/src/agent.ts",
-      blob: "bcd7ad17a82699c395c3a14855cdee6ed4a2b905",
-      sha256: "6163adcf3633e31483ceee9992c7871e7761ffc30268efe8775abbfeb1a8632a",
+      blob: "2f68565cef052f82ef6f2a740141962507654e02",
+      sha256: "9c985dd5ce3612b0a6f1833cb592930e4e390d4249821accea53064d8e42015c",
     }),
     Object.freeze({
       path: "packages/core/agent-loop/tests/cancel.spec.ts",
@@ -337,8 +337,8 @@ export const DSH_SEAM_SOURCE = Object.freeze({
     }),
     Object.freeze({
       path: "packages/core/agent/package.json",
-      blob: "424d4c2d406f71a6abb2476e41106c4f0c94f9a2",
-      sha256: "6cb51e02a89890f50fc4b41bdb6fe066999fe8f9fd3d4b92b5740da67fdcda92",
+      blob: "121af3b02bc0e86d74832ee07073748090a42f40",
+      sha256: "5a1933ae764443b0f725af0a069d810e55cb83857f0a99eaf78fe70b0ee1d01b",
     }),
     Object.freeze({
       path: "packages/core/agent/src/index.ts",
@@ -377,23 +377,23 @@ export const DSH_SEAM_SOURCE = Object.freeze({
     }),
     Object.freeze({
       path: "packages/core/session/README.i18n.yaml",
-      blob: "23cb191b5e3005d0513dedec838c5379fd186a7b",
-      sha256: "3513322535d66d0220082875d86067a8c24a9fc87ea19797cd631fd5538cb655",
+      blob: "d2ab139d2c1ee536c0235dd6a4322c1bb7a20931",
+      sha256: "cffa2ca14c10bc52e3032c9124bacce3946360a541a8403c02c032f1584658d6",
     }),
     Object.freeze({
       path: "packages/core/session/README.md",
-      blob: "59c2e9c86a6bf53c07032162a18a2557b7da6c1b",
-      sha256: "eb6ae053f7fb8711ffafbfd1883720f074294b18f3994d016101353c2d1fc139",
+      blob: "4a73a20c95d2ad05c4d5b432beedb7dd7bc14eda",
+      sha256: "d8d75f10c9378c4bc5085016c982a2c0dd46c9bd9eeb8b9ccc18a4a8449e3759",
     }),
     Object.freeze({
       path: "packages/core/session/README.zh.md",
-      blob: "4291d690b7637df3b495addc196642496eea816d",
-      sha256: "1cd9a14a06cb401caed8f2c98e185ce7d5fec25368d4d5bf191913234820d30c",
+      blob: "7fb334cfaa8a3a5468bf8330f0dd5802d1e98dbc",
+      sha256: "b27f53bccbc5141326c20e6ce0e101f96f4d6738ae7c62d404b594967b85fcd2",
     }),
     Object.freeze({
       path: "packages/core/session/src/index.ts",
-      blob: "6fd76bdd8677d764c02d0629a7b63b225045324d",
-      sha256: "e4092a93a5a6daecf9639f2a261cf074d1877318c9ddb2226249802cc21ddd2d",
+      blob: "b0cfa0c19b6ad65404fcde055af8e318632ee705",
+      sha256: "711d4d071bdce9afb4ab2abcf36b5dfc79e4a956b3236aa880c8c019d73ab9e6",
     }),
     Object.freeze({
       path: "packages/core/session/src/known-event-types.ts",
@@ -432,8 +432,8 @@ export const DSH_SEAM_SOURCE = Object.freeze({
     }),
     Object.freeze({
       path: "packages/extensions/tool-cordis/src/api-catalog.ts",
-      blob: "501831b9cc4c4ee5d695bf1141bfbae4cf461809",
-      sha256: "c6fda9edbda87d2c81be65d3492277ae3d95fe3a0f88e6544996e7ed401ffdf9",
+      blob: "a7043c75efcca854016a4e44cf980c82712dde39",
+      sha256: "4a5098979f529cd2c9f09f961837dee68bb10b7d884d3b115d3008c15d64e7bd",
     }),
     Object.freeze({
       path: "packages/fs/fs-local/README.i18n.yaml",
@@ -512,8 +512,8 @@ export const DSH_SEAM_SOURCE = Object.freeze({
     }),
     Object.freeze({
       path: "packages/llm/llm-deepseek-api-key/package.json",
-      blob: "010d315891aa3399cc28caa1c59ce9104686d22f",
-      sha256: "8f847bd76d47307e7af766d254fb625f361978146270182443f41863aa5b21d3",
+      blob: "c9c762a0a23e159d42e4774d5f6c5d46fc5aacc1",
+      sha256: "bdd86a7a4488400d30c1819eadc00b74da4e363216bb4e550eeaeda750330979",
     }),
     Object.freeze({
       path: "packages/llm/llm-deepseek-api-key/src/config.ts",
@@ -542,23 +542,23 @@ export const DSH_SEAM_SOURCE = Object.freeze({
     }),
     Object.freeze({
       path: "packages/llm/llm-pi-ai/README.i18n.yaml",
-      blob: "8afec3d7941f3bf372b0982dfbf496cee5d60f54",
-      sha256: "324ddbc9d2bf3fd887c5279773908b4d5bc2cc328c974803f0318494ccaa9b6d",
+      blob: "19311117b679bda1dd4d1dfe6ad093afa6cfd777",
+      sha256: "be0421c6d807662a7f1895e3dcad8f0cf3dccd6a2af2e98d250807a45cc46b46",
     }),
     Object.freeze({
       path: "packages/llm/llm-pi-ai/README.md",
-      blob: "7b1708b957202369382d8a93b2bbcefd31565f67",
-      sha256: "ee862409daec6937228af81f1c76a1d50aaf21d41c0b98ece806372f2a76203d",
+      blob: "0e8a801b5354f050b98c0575da8b373e1431bc60",
+      sha256: "9d0e389fba40dedec1d7199f0148fd527163400a440d291a0e5ee962e8f2bf5f",
     }),
     Object.freeze({
       path: "packages/llm/llm-pi-ai/README.zh.md",
-      blob: "ed780ad235b1d8df2b821be6a0595ecd8b8e951b",
-      sha256: "a2634e4b6e0794a652b7da7978bb6c2d458423b9987b114a132e89e709f8a633",
+      blob: "5126fe25ed6fe4b431a74ddc0d21abd4a6d72861",
+      sha256: "75d6a38c8afe995b963dbe72999c5e1ee14bbfb9af6a8e56848b7be59d3a7cb9",
     }),
     Object.freeze({
       path: "packages/llm/llm-pi-ai/src/replay.ts",
-      blob: "7df034522c03c78d831ab45749b295fee3fc44a1",
-      sha256: "71c35a2fa7ce6399784c84a1d04ca3922eae6358aedd40724a12372090c59542",
+      blob: "9012c56fcafcb7f00690d59a5942e327c65e9fbd",
+      sha256: "436e19859cb32c299bb7e4ddd15557b083fb285be73a0a48e3c8a95fce7a690b",
     }),
     Object.freeze({
       path: "packages/llm/llm-pi-ai/src/stream.ts",
@@ -567,8 +567,8 @@ export const DSH_SEAM_SOURCE = Object.freeze({
     }),
     Object.freeze({
       path: "packages/llm/llm-pi-ai/tests/convert.spec.ts",
-      blob: "4ca36d762a1889129f6546badb35d7788b04525b",
-      sha256: "4f15bd03d5f4bef12886972f054a4f3ede86a79f279bf21d531fa076191ef09e",
+      blob: "005c12596cd7d765f1992cdcab808f859d4afdb1",
+      sha256: "08175c982134af9f4003591e71793975f9cdfc8294d554575cd0116546aef279",
     }),
     Object.freeze({
       path: "packages/llm/llm/src/content.ts",
@@ -777,18 +777,18 @@ export const DSH_SEAM_SOURCE = Object.freeze({
     }),
     Object.freeze({
       path: "pnpm-lock.yaml",
-      blob: "36dc0506d3f741747bd80ce6089eaf7f80206d5f",
-      sha256: "5d3980bcd2a0113101815aabfeb4f8a875d556a333521539b7f11d790f4a50aa",
+      blob: "6c7ce04c19349c2d5060f15a11eef5b642da0f50",
+      sha256: "80fe05eae33582ae26839afd05f1965f9b0e4be11034ddf9797af6085d5ba9b1",
     }),
     Object.freeze({
       path: "scripts/gen-cordis-catalog.ts",
-      blob: "facc1d7222f6674b5944720ae73b1c54df8c14d3",
-      sha256: "b7083339916ea8312ec50b2aaa3beb358a0de9c46d5b0bf6095d0599e5a0f7a8",
+      blob: "9bcbcda614866e8eeb2f9b7673194072b97e5ae1",
+      sha256: "2badd2a36149e4f12a798d3497709637a556bca036c3b68fdd4c1c738f07f21a",
     }),
     Object.freeze({
       path: "scripts/type-equiv.manifest.json",
-      blob: "190df80ee08088642ad0f74899e58b55c93a8e08",
-      sha256: "182a27b76e4f8526d097eea2e6d8636730f8aed580b8c23ce0782240fcc9a84c",
+      blob: "d1a15a97023d174311a35109dd28dc4b65ff9523",
+      sha256: "7eaf4a26ef34efe6079e0632587b7f2886689f81b94fc4cf7508399c1a20720b",
     }),
   ]),
 });
@@ -893,10 +893,10 @@ export function buildDshSeamDecisions(): object {
 
   return {
     schemaVersion: 1,
-    recordedAt: "2026-09-25",
+    recordedAt: "2026-09-30",
     authority: DSH_SEAM_SOURCE,
     productProfileActivation: "forbidden-until-patched-DSH-artifact-and-batch-1-gate",
-    candidateIntegration: "RC.2 V4 upgrade; exact acceptance requires rebuilt artifact, Runtime composition and Host gates",
+    candidateIntegration: "0.2.0 RC2 upgrade; exact acceptance requires rebuilt artifact, Runtime composition and Host gates",
     patchSeries: DSH_SEAM_PATCHES.map((path, index) => patchEvidence(path, index + 1)),
     decisions: [
       {

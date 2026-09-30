@@ -1,6 +1,6 @@
 # ADR 0005 — Guard root Agent and Session publication before visibility
 
-Current DSH `0.1.7-rc.2` disposition: retained as patch 0004; publication admission still precedes exposure. The [seam registry](../dsh/seam-decisions-v1.json) owns exact current patch identity; dated evidence below is historical.
+Current DSH `0.2.0-rc.2` disposition: retained as patch 0004; publication admission still precedes exposure. The [seam registry](../dsh/seam-decisions-v1.json) owns exact current patch identity; dated evidence below is historical.
 
 Status: accepted on 2026-08-16 for the fixed DSH source baseline
 

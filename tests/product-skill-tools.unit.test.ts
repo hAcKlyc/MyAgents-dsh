@@ -329,6 +329,23 @@ describe("static declarative Skill tool", () => {
     prepared?.dispose();
   });
 
+  it("strips frontmatter and expands arguments for Host inline skills", async () => {
+    const state = await mounted([]);
+    const source = "---\nname: inline-skill\ndescription: Inline document.\narguments: focus\nmetadata:\n  author: fixture\n---\n\nReview $focus.";
+    const prepared = state.dynamicController()?.prepare(Object.freeze({
+      componentId: "inline-skill", content: source, description: "Inline document.",
+      generation: Object.freeze({ digest: "d".repeat(64), revision: "dynamic-skills-v1" }),
+      invocation: Object.freeze({ modelInvocable: true, userInvocable: true }),
+      name: "inline-skill", rank: 300,
+      sourceSha256: createHash("sha256").update(source).digest("hex"),
+    }));
+    const unpublish = prepared?.install();
+    try {
+      const result = await state.execute({ skill: "inline-skill", args: "harness" });
+      expect(result).toMatchObject({ isError: false, value: { content: "Review harness.", argumentsExpanded: true } });
+    } finally { unpublish?.(); prepared?.dispose(); }
+  });
+
   it("rejects unknown and non-model-invocable skills before reading content", async () => {
     const state = await mounted([
       { id: "visible", name: "fixture-audit" },

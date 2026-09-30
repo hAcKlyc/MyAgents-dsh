@@ -27,7 +27,7 @@ jobs:
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
           repository: deepseek-ai/deepseek-harness
-          ref: 47f943859bef60e4160492346772ded9b24f765a
+          ref: 639ed015397290b3745d163aafe02ffee4aa3f84
           path: deepseek-harness
           fetch-depth: 0
           persist-credentials: false
@@ -35,7 +35,7 @@ jobs:
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
           repository: earendil-works/pi
-          ref: d981de1229ef899957bbe968bc8dcda02a21f477
+          ref: f07218c4d4bbc12bef056a7058c3dd49dfe41abe
           path: pi
           persist-credentials: false
       - name: Install pinned Node
@@ -60,8 +60,8 @@ jobs:
           PI_AI_SOURCE_DIR: ${{ github.workspace }}/pi
           RUNTIME_ARTIFACT_OUT: ${{ runner.temp }}/myagents-dsh-runtime-composition
         run: |
-          npm ci --prefix "$PI_AI_SOURCE_DIR" --ignore-scripts --no-audit --no-fund --workspace @earendil-works/pi-ai --include-workspace-root
-          npm cache add @earendil-works/pi-ai@0.85.1
+          npm ci --engine-strict=false --prefix "$PI_AI_SOURCE_DIR" --ignore-scripts --no-audit --no-fund --workspace @earendil-works/pi-ai --include-workspace-root
+          npm cache add @earendil-works/pi-ai@0.87.1
           artifact_digest=$(node -p "require('./packages/product-profile/manifests/accepted-patched-dsh-artifact-v1.json').manifestSha256")
           npm_cache=$(npm config get cache)
           npm run check:dsh-runtime-composition -- \
@@ -97,7 +97,7 @@ jobs:
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
           repository: deepseek-ai/deepseek-harness
-          ref: 47f943859bef60e4160492346772ded9b24f765a
+          ref: 639ed015397290b3745d163aafe02ffee4aa3f84
           path: deepseek-harness
           fetch-depth: 0
           persist-credentials: false
@@ -126,7 +126,7 @@ jobs:
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
           repository: earendil-works/pi
-          ref: d981de1229ef899957bbe968bc8dcda02a21f477
+          ref: f07218c4d4bbc12bef056a7058c3dd49dfe41abe
           path: pi
           persist-credentials: false
       - name: Validate installed Runtime composition
@@ -134,8 +134,8 @@ jobs:
           PI_AI_SOURCE_DIR: ${{ github.workspace }}/pi
           RUNTIME_ARTIFACT_OUT: ${{ runner.temp }}/myagents-dsh-runtime-composition
         run: |
-          npm ci --prefix "$PI_AI_SOURCE_DIR" --ignore-scripts --no-audit --no-fund --workspace @earendil-works/pi-ai --include-workspace-root
-          npm cache add @earendil-works/pi-ai@0.85.1
+          npm ci --engine-strict=false --prefix "$PI_AI_SOURCE_DIR" --ignore-scripts --no-audit --no-fund --workspace @earendil-works/pi-ai --include-workspace-root
+          npm cache add @earendil-works/pi-ai@0.87.1
           artifact_digest=$(node -p "require('./packages/product-profile/manifests/accepted-patched-dsh-artifact-v1.json').manifestSha256")
           npm_cache=$(npm config get cache)
           npm run check:dsh-runtime-composition -- \
@@ -166,7 +166,7 @@ jobs:
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
           repository: deepseek-ai/deepseek-harness
-          ref: 47f943859bef60e4160492346772ded9b24f765a
+          ref: 639ed015397290b3745d163aafe02ffee4aa3f84
           path: deepseek-harness
           fetch-depth: 0
           persist-credentials: false

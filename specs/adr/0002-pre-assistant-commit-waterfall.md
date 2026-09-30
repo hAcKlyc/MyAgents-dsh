@@ -1,6 +1,6 @@
 # ADR 0002 — Authoritative pre-assistant-commit waterfall
 
-Current DSH `0.1.7-rc.2` disposition: retained as patch 0002; governed final tool arguments still need one authoritative commit. The [seam registry](../dsh/seam-decisions-v1.json) owns exact current patch identity; dated evidence below is historical.
+Current DSH `0.2.0-rc.2` disposition: retained as patch 0002; governed final tool arguments still need one authoritative commit. The [seam registry](../dsh/seam-decisions-v1.json) owns exact current patch identity; dated evidence below is historical.
 
 Status: accepted on 2026-08-16 for the fixed DSH source baseline
 

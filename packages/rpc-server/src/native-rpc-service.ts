@@ -613,7 +613,6 @@ export class NativeRpcServer extends Service {
           const root = this.productSessionValue.requireAgent();
           const entries = await compositionAuthority.context.subagents.listDescendants(root.id, context.signal);
           return { items: entries.filter((entry) => entry.kind === "child").slice(0, 256).map((entry) => {
-            if (entry.kind !== "child") throw new Error("subagent catalog entry changed during projection");
             return {
               id: String(entry.id), parentId: String(entry.parentId), depth: entry.depth,
               mode: entry.mode, activity: entry.activity,

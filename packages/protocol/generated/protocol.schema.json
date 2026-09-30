@@ -8179,7 +8179,7 @@
                 "type": "string"
               },
               "distributionVersion": {
-                "const": "0.1.10",
+                "const": "0.1.11",
                 "type": "string"
               },
               "name": {
@@ -8187,7 +8187,7 @@
                 "type": "string"
               },
               "version": {
-                "const": "0.1.7-rc.2.myagents.477b4f420553.8d5f1cfa482e",
+                "const": "0.2.0-rc.2.myagents.639ed0153972.7ac2652ae40f",
                 "type": "string"
               }
             },
@@ -8206,7 +8206,7 @@
             "type": "string"
           },
           "runtimeVersion": {
-            "const": "0.1.10",
+            "const": "0.1.11",
             "type": "string"
           },
           "schemaSha256": {
@@ -11008,7 +11008,7 @@
                 "additionalProperties": false,
                 "properties": {
                   "contractSha256": {
-                    "const": "d2359ccd5533aac96e9ac8fe7b1dbfb920a39dc14b6cbf69419f44050a6b39be",
+                    "const": "2328363c025a310a373d1b959b3c6cb33e864e2e63a86981c30e49c777f3437c",
                     "type": "string"
                   },
                   "diagnostics": {
@@ -16480,7 +16480,7 @@
                 "additionalProperties": false,
                 "properties": {
                   "contractSha256": {
-                    "const": "d2359ccd5533aac96e9ac8fe7b1dbfb920a39dc14b6cbf69419f44050a6b39be",
+                    "const": "2328363c025a310a373d1b959b3c6cb33e864e2e63a86981c30e49c777f3437c",
                     "type": "string"
                   },
                   "diagnostics": {

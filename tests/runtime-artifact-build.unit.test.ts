@@ -1,4 +1,6 @@
 import { describe, expect, it } from "vitest";
+import { ACCEPTED_PATCHED_DSH_ARTIFACT } from "@myagents-dsh/product-profile";
+import { PI_AI_SOURCE } from "../scripts/pi-ai-seam.js";
 
 import {
   assertRuntimeProviderVersions,
@@ -14,22 +16,22 @@ describe("Runtime artifact public export projection", () => {
       "@deepseek-ai/dsh-llm-pi-ai": "0.1.7-rc.2",
       "@myagents-dsh/protocol": "0.0.0",
     }, "fixture dependencies")).toEqual({
-      "@deepseek-ai/dsh-agent": "0.1.7-rc.2.myagents.477b4f420553.8d5f1cfa482e",
-      "@deepseek-ai/dsh-llm-pi-ai": "0.1.7-rc.2.myagents.477b4f420553.8d5f1cfa482e",
+      "@deepseek-ai/dsh-agent": ACCEPTED_PATCHED_DSH_ARTIFACT.artifactVersion,
+      "@deepseek-ai/dsh-llm-pi-ai": ACCEPTED_PATCHED_DSH_ARTIFACT.artifactVersion,
       "@myagents-dsh/protocol": "0.0.0",
     });
   });
 
   it("requires the exact patched authorization peer for the pi-ai adapter", () => {
     expect(() => assertRuntimeProviderVersions(new Map([
-      ["@deepseek-ai/dsh-llm-pi-ai", new Set(["0.1.7-rc.2.myagents.477b4f420553.8d5f1cfa482e"])],
-      ["@earendil-works/pi-ai", new Set(["0.85.1"])],
+      ["@deepseek-ai/dsh-llm-pi-ai", new Set([ACCEPTED_PATCHED_DSH_ARTIFACT.artifactVersion])],
+      ["@earendil-works/pi-ai", new Set([PI_AI_SOURCE.packageVersion])],
     ]))).toThrow("authorization peer authority");
   });
 
   it("projects the shared typebox graph without floating Node types", () => {
     expect(projectRuntimeConsumerOverrides({
-      "@earendil-works/pi-ai": "0.85.1",
+      "@earendil-works/pi-ai": PI_AI_SOURCE.packageVersion,
       typebox: "1.3.7",
       zod: "4.4.3",
     })).toEqual({

@@ -1945,9 +1945,14 @@ export class SdkOperationService extends Service {
     }
   }
 
-  private foldValue(agent: Agent): ProductOperationFold {
+  private foldValue(agent: Agent, claim?: Readonly<{ messageId: string; dshTurn: number }>): ProductOperationFold {
     try {
-      return foldProductOperations(
+      const fold = claim === undefined ? foldProductOperations : (
+        events: Parameters<typeof foldProductOperations>[0],
+        id: Parameters<typeof foldProductOperations>[1],
+        owns: Parameters<typeof foldProductOperations>[2],
+      ) => foldProductOperationsForLiveClaim(events, claim, id, owns);
+      return fold(
         agent.session.snapshotEvents(),
         agent.id,
         (source, messageId) => this.configValue.ownsRootContextMessage(agent, source, messageId),
@@ -2014,8 +2019,7 @@ export class SdkOperationService extends Service {
   }
 
   private foldValueForContextClaim(agent: Agent, messageId: string, dshTurn: number): ProductOperationFold {
-    return foldProductOperationsForLiveClaim(agent.session.snapshotEvents(), { messageId, dshTurn }, agent.id,
-      (source, id) => this.configValue.ownsRootContextMessage(agent, source, id));
+    return this.foldValue(agent, { messageId, dshTurn });
   }
 
   private fence(cause: unknown): ProtocolError {

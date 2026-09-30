@@ -1,5 +1,7 @@
 import type { Context } from "@deepseek-ai/cordis";
 import type { Agent } from "@deepseek-ai/dsh-agent";
+import { z } from "zod";
+import type { ProjectionDefinition } from "@deepseek-ai/dsh-session-projection";
 import type { Session } from "@deepseek-ai/dsh-session";
 import { ProtocolError } from "@myagents-dsh/protocol";
 import type { ProductToolOperationAuthority } from "@myagents-dsh/tool-runtime-product";
@@ -8,13 +10,48 @@ import { createHash } from "node:crypto";
 
 type OperationIdentity = Readonly<{ clientOperationId: string; productTurnId: string }>;
 
-const openTurn = (session: Session): number | undefined => {
-  let turn: number | undefined;
-  for (const event of session.ownEvents()) {
-    if (event.type === "turn/start") turn = event.data.turn;
-    else if (event.type === "turn/end" && event.data.turn === turn) turn = undefined;
-  }
-  return turn;
+interface NativeChildState {
+  inheritedEventCount: number;
+  turn?: number | undefined;
+  mode?: string | undefined;
+  catalog: { id: string; turn?: number | undefined }[];
+}
+
+declare module "@deepseek-ai/dsh-session-projection/types" {
+  interface SessionProjectionStateMap { myagentsNativeChildAuthority: NativeChildState }
+}
+
+const projection: ProjectionDefinition<"myagentsNativeChildAuthority"> = {
+  key: "myagentsNativeChildAuthority",
+  stateVersion: 1,
+  stateSchema: z.object({
+    inheritedEventCount: z.number().int().nonnegative(),
+    turn: z.number().int().optional(), mode: z.string().optional(),
+    catalog: z.array(z.object({ id: z.string(), turn: z.number().int().optional() })),
+  }),
+  init: (_header, inheritedEventCount) => ({ inheritedEventCount, catalog: [] }),
+  apply: (state, event) => {
+    if (event.seq < state.inheritedEventCount) return state;
+    if (event.type === "turn/start") return { ...state, turn: event.data.turn };
+    if (event.type === "turn/end" && event.data.turn === state.turn) {
+      const next = { ...state };
+      delete next.turn;
+      return next;
+    }
+    if (event.type === "subagent/descriptor") return state.mode === undefined ? { ...state, mode: event.data.mode } : state;
+    if (event.type === "subagent/catalog") return { ...state, catalog: [...state.catalog,
+      { id: String(event.data.childId), ...(state.turn === undefined ? {} : { turn: state.turn }) }] };
+    return state;
+  },
+};
+
+export const installNativeChildAuthorityProjection = (ctx: Context): (() => void) =>
+  ctx.sessionProjections.register(projection);
+
+const childState = (ctx: Context, session: Session): NativeChildState => {
+  const state = ctx.sessionProjections.stateOf(session, "myagentsNativeChildAuthority");
+  if (!state) throw new ProtocolError("turn_operation_conflict", "native child operation projection is unavailable");
+  return state;
 };
 
 /** Derives the Product operation from DSH's parent-owned child catalog. */
@@ -46,18 +83,18 @@ export class NativeChildOperationAuthority {
       || child.session.header.origin !== "subagent") {
       throw new ProtocolError("turn_operation_conflict", "tool caller is not a live native child");
     }
-    const dshTurn = openTurn(child.session);
+    const dshTurn = childState(this.ctx, child.session).turn;
     if (dshTurn === undefined) throw new ProtocolError("turn_operation_conflict", "native child has no open turn");
     const identity = this.identity(child, new Set());
     const operation = this.ctx.sdkOperations.snapshot().operations.find((entry) =>
       entry.clientOperationId === identity.clientOperationId
       && entry.productTurnId === identity.productTurnId);
     if (operation === undefined) throw new ProtocolError("turn_operation_conflict", "native child has no root operation");
-    const descriptor = child.session.ownEvents().find((event) => event.type === "subagent/descriptor");
+    const mode = childState(this.ctx, child.session).mode;
     return Object.freeze({
       dshTurn,
       operation,
-      origin: descriptor?.type === "subagent/descriptor" && descriptor.data.mode === "continuable"
+      origin: mode === "continuable"
         ? "background_child" : "foreground_child",
       rootAgent: root,
     });
@@ -98,20 +135,14 @@ export class NativeChildOperationAuthority {
     const parentId = child.session.header.parentSession;
     const parent = parentId === undefined ? undefined : this.ctx.agents.get(parentId);
     if (parent === undefined) throw new ProtocolError("turn_operation_conflict", "native child has no live parent");
-    const catalog = parent.session.ownEvents().find((event) =>
-      event.type === "subagent/catalog" && event.data.childId === child.id);
+    const catalog = childState(this.ctx, parent.session).catalog.find((entry) => entry.id === String(child.id));
     if (catalog === undefined) {
       const initial = this.#initial.get(child);
       if (initial !== undefined) return initial;
       throw new ProtocolError("turn_operation_conflict", "native child has no durable parent catalog entry");
     }
     if (parent === this.ctx.productSession.requireAgent()) {
-      let turn: number | undefined;
-      for (const event of parent.session.ownEvents()) {
-        if (event.seq > catalog.seq) break;
-        if (event.type === "turn/start") turn = event.data.turn;
-        else if (event.type === "turn/end" && event.data.turn === turn) turn = undefined;
-      }
+      const turn = catalog.turn;
       const owners = this.ctx.sdkOperations.snapshot().operations.filter((entry) =>
         turn !== undefined && entry.dshTurns.includes(turn));
       if (owners.length !== 1 || owners[0] === undefined) {
