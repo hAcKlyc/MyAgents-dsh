@@ -428,7 +428,7 @@
     ]
   },
   "dsh": {
-    "baselineSha256": "820d6300fcae2d292308de054b8fb9a2c4fb625c93b24f88b59217e5f14aa74c",
+    "baselineSha256": "5498b31b7207e7e8999cbb383a713c5215055d0e914fafcfb00d4f8ebdb1a14c",
     "release": "0.2.0-rc.2"
   },
   "formatVersion": 1,
@@ -443,7 +443,7 @@
   },
   "profileId": "myagents-dsh-official-v1",
   "protocol": {
-    "schemaSha256": "651c420c55b1c8abfdbc0ec96b4d0946bec37de037975bb528de0cd17d5737f6",
+    "schemaSha256": "134b32627953f54c68f05fa9286121319fe49fa0e3afb36d49aa8cc33911bc08",
     "version": "6.0.0"
   },
   "runtimeActivation": "forbidden-until-patched-dsh-and-batch-1-gate",

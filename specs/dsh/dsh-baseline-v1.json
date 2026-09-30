@@ -267,6 +267,20 @@
       "compileEvidence": "runtime-package-root"
     },
     {
+      "id": "spill-local",
+      "package": "@deepseek-ai/dsh-spill-local",
+      "importPath": "@deepseek-ai/dsh-spill-local",
+      "classification": "provider",
+      "batchUse": [
+        "UPG-W10"
+      ],
+      "values": [
+        "LocalSpillStore"
+      ],
+      "types": [],
+      "compileEvidence": "runtime-package-root"
+    },
+    {
       "id": "shell-env",
       "package": "@deepseek-ai/dsh-shell-env",
       "importPath": "@deepseek-ai/dsh-shell-env",

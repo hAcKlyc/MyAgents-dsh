@@ -152,8 +152,13 @@ export class CanonicalFileTools extends Service {
         async (execution) => {
           const upstream = exec.signal;
           exec.signal = execution.signal;
-          try { return await ctx.productProcesses.runWithNativeSearch(execution, tool, next, before.root.displayPath); }
-          finally { exec.signal = upstream; }
+          try {
+            const result = await ctx.productProcesses.runWithNativeSearch(execution, tool, next, before.root.displayPath);
+            if (!result.isError || result.error.info?.code !== "SEARCH_INVALID_PATTERN") return result;
+            const reason = /(?:^|\n)error: ([^\n]+)/u.exec(result.error.message)?.[1] ?? "invalid search pattern";
+            const message = `${tool} pattern ${JSON.stringify(args.pattern)} was rejected: ${reason}`;
+            return { ...result, error: { ...result.error, message }, content: textBlocks(`Error: ${message}`) };
+          } finally { exec.signal = upstream; }
         });
       await this.#revalidateSearchRoot(ctx, product, tool, path, before);
       return result;

@@ -649,7 +649,13 @@ const applyUpdate = (
     if (selected === undefined) throw new ProductToolError("task_not_found", `Task does not exist: ${taskId}`);
     if ((candidate === "in_progress" || candidate === "completed")
       && unresolvedBlockers(mutable, selected).length > 0) {
-      throw new ProductToolError("task_graph_conflict", "Task cannot advance while dependencies are unresolved");
+      const blockers = unresolvedBlockers(mutable, selected).map((id) => mutable.find((task) => task.id === id))
+        .filter((task) => task !== undefined);
+      const visible = blockers.filter((task) => list !== "shared" || actor === undefined || actor === "root"
+        || task.owner === actor || task.offerTo?.includes(actor) === true);
+      const details = visible.map((task) => `${task.id} (${task.status})`).join(", ");
+      const hidden = visible.length < blockers.length ? " Additional dependencies are outside your visibility; ask the parent Agent to resolve them." : "";
+      throw new ProductToolError("task_graph_conflict", `Task cannot advance: unresolved dependencies${details ? `: ${details}` : "."}. Complete the required work, reopen a cancelled blocker with TaskUpdate(status: pending), or delete an obsolete blocker with TaskUpdate(status: deleted) to remove its dependency edges.${hidden}`);
     }
     if (list === "shared" && candidate === "in_progress" && selected.owner === undefined) {
       throw new ProductToolError("task_graph_conflict", "An in-progress shared task must have an owner");

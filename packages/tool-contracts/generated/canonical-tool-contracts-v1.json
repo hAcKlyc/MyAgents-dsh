@@ -3100,7 +3100,7 @@
       ],
       "checkpoint": "none",
       "concurrency": "session_serial",
-      "description": "Loads one model-invocable SKILL.md from the operation-visible approved DSH Skill catalog, strips frontmatter, expands deterministic arguments, and returns its bounded instructions inline.",
+      "description": "Loads one model-invocable SKILL.md from the operation-visible approved DSH Skill catalog, strips frontmatter, expands deterministic arguments, and returns its bounded instructions inline. Pass args as one string: $ARGUMENTS expands the full string, indexed/numbered placeholders expand parsed arguments; without placeholders the arguments are appended in an ARGUMENTS section.",
       "errorCodes": [
         {
           "code": "skill_not_found",
@@ -3369,6 +3369,11 @@
           "code": "permission_denied",
           "retryable": false,
           "when": "Host policy denies interruption."
+        },
+        {
+          "code": "agent_not_found",
+          "retryable": false,
+          "when": "The target is absent from the native Agent registry and child catalog."
         }
       ],
       "executionInputSchema": {

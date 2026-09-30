@@ -75,6 +75,17 @@ The generated `specs/contracts/canonical-tools-v1.md` describes the Product poli
 
 TaskCreate and TaskList default to the calling Agent's personal list. `list: "shared"` addresses the root's collaborative list. Root assignment or `offerTo` names a direct continuable DSH child. An offered child may atomically claim an unassigned, unblocked task; another Agent cannot take that owner away. Task IDs are unique within a list, not across all Agents. A child's shared view includes only tasks assigned or offered to it, so a root personal plan and unrelated shared work remain hidden. TaskUpdate commits before any native assignment notification; failed delivery is explicit in its result. Durable events bind list, Session and actor; older root events remain in the shared list. TaskUpdate follows Claude Code's correction and cleanup behavior: completed tasks can be edited or reopened; `status: "deleted"` removes a task and its incoming/outgoing dependency references, returning `task: null`. Deletion remains an append-only event; the list's creation high-water mark prevents ID reuse during replay. Empty/unchanged updates return `changedFields: []` and the existing revision without appending. The legacy `cancelled` value stays readable and does not satisfy dependencies; delete obsolete blockers instead. A child's `hasHiddenBlockers` reports only unresolved invisible dependencies, and all read/update results use the same full-list visibility projection. Metadata null removes a key. This behavior is covered by `tests/product-task-graph.unit.test.ts`.
 
+Search over-cap results use the official `LocalSpillStore` under the Runtime temporary root.
+Native Glob/Grep return its complete-result locator and retrieval hint; Read uses the existing
+filesystem/sandbox path for that absolute file. There is no additional search store or transcript.
+Invalid regex errors quote the submitted pattern and parser reason rather than the internal wrapper.
+
+Each assembled Agent context identifies its native Agent id, allowing children to recognize shared
+offers without exposing unrelated personal lists. Native interrupt requests reject unknown ids using
+DSH's live registry and durable descendant catalog; known inactive children retain native no-op semantics.
+Unresolved dependency errors identify only visible blockers and their status, explain reopen/delete,
+and report invisible blockers without revealing ids.
+
 ## 4. State and concurrency
 
 Operation birth freezes the catalog, permission, component, workspace, execution-environment, plan, and origin revisions used by every call. Tool concurrency follows the contract: independent reads may run in parallel, canonical-path mutations serialize, and Session-state changes use Session-level admission. Cancellation flows through the same owned call record and cleanup path.

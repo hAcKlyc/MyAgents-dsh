@@ -303,6 +303,20 @@ describe("durable Session-local product TaskGraph", () => {
     expect((list.tasks as Array<{ id: string }>).map(({ id }) => id)).toEqual(["task-1", "task-2"]);
   });
 
+  it("identifies cancelled blockers and explains the existing reopen/delete recovery", async () => {
+    const state = await mounted();
+    await successful(state, "TaskCreate", { subject: "Prerequisite", description: "Needed work" });
+    await successful(state, "TaskCreate", { subject: "Dependent", description: "Wait for prerequisite" });
+    await successful(state, "TaskUpdate", { taskId: "task-2", addBlockedBy: ["task-1"] });
+    await successful(state, "TaskUpdate", { taskId: "task-1", status: "cancelled" });
+    const blocked = await state.execute("TaskUpdate", { taskId: "task-2", status: "in_progress" });
+    expect(blocked.isError).toBe(true);
+    expect(JSON.stringify(blocked)).toContain("task-1 (cancelled)");
+    expect(JSON.stringify(blocked)).toContain("status: deleted");
+    await successful(state, "TaskUpdate", { taskId: "task-1", status: "deleted" });
+    expect((await state.execute("TaskUpdate", { taskId: "task-2", status: "in_progress" })).isError).toBe(false);
+  });
+
   it("deletes tasks and incident edges durably without reusing IDs, and permits reopen/no-op", async () => {
     const state = await mounted();
     const events: SessionEvent[] = [];

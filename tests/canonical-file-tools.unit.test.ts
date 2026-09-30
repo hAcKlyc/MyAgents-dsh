@@ -6,6 +6,7 @@ import { Context } from "@deepseek-ai/cordis";
 import type { Agent } from "@deepseek-ai/dsh-agent";
 import { ToolCallId, createToolResultMessage } from "@deepseek-ai/dsh-llm";
 import { ToolRuntime } from "@deepseek-ai/dsh-tools";
+import { LocalSpillStore } from "@deepseek-ai/dsh-spill-local";
 import * as ToolFsSearch from "@deepseek-ai/dsh-tool-fs-search";
 import { LocalSubprocessRuntime } from "@deepseek-ai/dsh-subprocess-local";
 import { SystemPrompt } from "@deepseek-ai/dsh-system-prompt";
@@ -94,7 +95,7 @@ const harness = async (options: Readonly<{ additionalReadRoot?: boolean; imageIn
     ...(options.additionalReadRoot === true ? [mkdir(additionalReadRoot)] : []),
   ]);
   const context = new Context();
-  const session = { id: "session-fixture", header: { cwd: workspace }, requestHeader: () => ({ config: {} }) };
+  const session = { id: "session-fixture", header: { id: "session-fixture", cwd: workspace }, requestHeader: () => ({ config: {} }) };
   const agent = {
     ctx: context,
     id: "session-fixture",
@@ -369,6 +370,46 @@ describe("canonical filesystem tools", () => {
     expect(await readFile(path, "utf8")).toBe("gamma\n");
     expect(state.checkpoints).toEqual([`prepare:Write:${path}`, "commit", `prepare:Edit:${path}`, "commit"]);
     await state.context.fiber.dispose();
+  });
+
+  it("saves complete over-cap native search results and reads the saved file", async () => {
+    const state = await harness();
+    try {
+      await state.context.plugin(LocalSpillStore, { root: join(dirname(state.workspace), "search-output"), cleanupPeriodDays: 0 });
+      const lines = Array.from({ length: 2100 }, (_, i) => `needle ${i + 1}`).join("\n");
+      await writeFile(join(state.workspace, "many.txt"), lines);
+      const output = Array.from({ length: 2100 }, (_, i) => JSON.stringify({ type: "match", data: {
+        path: { text: "many.txt" }, lines: { text: `needle ${i + 1}\n` }, line_number: i + 1,
+        submatches: [{ match: { text: "needle" }, start: 0, end: 6 }],
+      } })).join("\n");
+      vi.spyOn(state.context.subprocess, "spawn").mockReturnValue({
+        done: Promise.resolve({ exitCode: 0, signal: null }),
+        collected: {
+          stdout: { readFrom: () => ({ text: output, lossy: false }) },
+          stderr: { readFrom: () => ({ text: "", lossy: false }) },
+        },
+      } as never);
+      const result = await state.execute("grep", { pattern: "needle", path: state.workspace });
+      expect(result.isError, JSON.stringify(result)).toBe(false);
+      const text = result.content.flatMap((block) => block.type === "text" ? [block.text] : []).join("\n");
+      const path = /Full grep result stored at: (.+?)\. /u.exec(text)?.[1];
+      expect(path).toBeDefined();
+      const read = await state.execute("read", { file_path: path, offset: 2095, limit: 20 });
+      expect(read.isError).toBe(false);
+      expect(JSON.stringify(read)).toContain("needle 2100");
+    } finally { await state.context.fiber.dispose(); }
+  });
+
+  it("reports the submitted regex and parser reason without the native wrapper", async () => {
+    const state = await harness();
+    try {
+      vi.spyOn(state.context.subprocess, "spawn").mockReturnValue({
+        done: Promise.resolve({ exitCode: 2, signal: null }),
+        collected: { stdout: { readFrom: () => ({ text: "", lossy: false }) }, stderr: { readFrom: () => ({ text: "regex parse error:\n    (?m:()\nerror: unclosed group", lossy: false }) } },
+      } as never);
+      const result = await state.execute("grep", { pattern: "(" });
+      expect(result.error?.message).toBe('Grep pattern "(" was rejected: unclosed group');
+    } finally { await state.context.fiber.dispose(); }
   });
 
   it("gates DSH glob/grep on product search permission before subprocess spawn", async () => {

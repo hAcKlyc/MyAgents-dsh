@@ -103,6 +103,8 @@ The detailed current implementation is divided by authority and lifecycle domain
 | Assurance | [Compatibility/capability truth](./tech_docs/assurance/compatibility-and-capability-truth.md), [Security/trust boundaries](./tech_docs/assurance/security-and-trust-boundaries.md), [Verification/artifacts/handoff](./tech_docs/assurance/verification-artifacts-and-handoff.md) |
 | Host implementations | [Reference Web Host](./tech_docs/hosts/reference-web-host.md) |
 
+The existing tool guide also owns native search spill retrieval and native Agent identity/interrupt semantics; the reverse-port guide owns PNG admission/request normalization.
+
 These guides own module-level current explanation. The sections below retain the cross-module boundaries and authority model.
 
 ### 4.1 Consumer surfaces

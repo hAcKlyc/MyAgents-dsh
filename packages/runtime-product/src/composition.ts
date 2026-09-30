@@ -4,6 +4,7 @@ import * as ToolPwsh from "@deepseek-ai/dsh-tool-pwsh";
 import * as ToolJobs from "@deepseek-ai/dsh-tool-jobs";
 import * as ToolFsSearch from "@deepseek-ai/dsh-tool-fs-search";
 import * as ShellEnv from "@deepseek-ai/dsh-shell-env";
+import { LocalSpillStore } from "@deepseek-ai/dsh-spill-local";
 
 import { Context } from "@deepseek-ai/cordis";
 import type { Plugin } from "@deepseek-ai/cordis";
@@ -1252,6 +1253,9 @@ export const installCanonicalToolPlane = async (
     fibers.push(await root.plugin(SandboxPolicyService, { mode: "workspace-write" }));
     fibers.push(await root.plugin(LocalSandboxProvider));
     fibers.push(await root.plugin(LocalWorkspaceFileSystem, { platform }));
+    // Use the native search spill service; its locators are ordinary absolute
+    // files readable through the existing Read/sandbox authorization path.
+    fibers.push(await root.plugin(LocalSpillStore, { root: platform.normalizeAbsolutePath(`${temporaryRoot}/search-output`) }));
     fibers.push(await root.plugin(AgentInstructions, {
       candidateSelection: "first",
       fileTouchToolNames: ["read", "read_image", "write", "edit"],
@@ -1435,6 +1439,13 @@ export const installCanonicalToolPlane = async (
       root.productPlan.assertExternalTool(context, exec.name);
       const targetAgent = exec.arguments !== null && typeof exec.arguments === "object"
         ? Reflect.get(exec.arguments, "agent_id") as unknown : undefined;
+      if (exec.name === "interrupt_agent" && typeof targetAgent === "string"
+        && root.agents.get(SessionId(targetAgent)) === undefined) {
+        const children = await root.subagents.listDescendants(root.productSession.requireAgent().id, exec.signal);
+        if (!children.some((child) => String(child.id) === targetAgent)) {
+          throw new ProductToolError("agent_not_found", `Agent does not exist: ${targetAgent}. Use list_agents to select a continuable Agent.`);
+        }
+      }
       const decision = await root.productPermission.authorize(context, {
         permissionClass: policy.permissionClass,
         target: `${exec.name}:${typeof targetAgent === "string" ? targetAgent : String(exec.agent?.id)}`,
@@ -1626,6 +1637,15 @@ export const installCanonicalToolPlane = async (
         resolve: () => ({ DSH_PLATFORM: platform.target, DSH_SHELL_DIALECT: platform.shell.dialect, DSH_SHELL_EXECUTABLE: processConfig.executablePaths.shell }),
       });
     };
+    root.systemPrompt.context({
+      name: "runtime:agent-identity",
+      order: 92,
+      interpolate: false,
+      text: ({ scope }) => {
+        const agent = root.agents.list().find((candidate) => candidate === scope);
+        return agent === undefined ? "" : `Your Agent id is "${String(agent.id)}". Your Task personal list belongs to this Agent. Shared tasks are visible only when owned by or offered to you; use TaskList to read them.`;
+      },
+    });
     root.systemPrompt.context({
       name: "runtime:shell",
       order: 91,

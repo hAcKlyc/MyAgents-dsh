@@ -663,7 +663,7 @@ export const CANONICAL_TOOL_CONTRACTS = deepFreeze({
   }),
   Skill: contract({
     name: "Skill",
-    description: "Loads one model-invocable SKILL.md from the operation-visible approved DSH Skill catalog, strips frontmatter, expands deterministic arguments, and returns its bounded instructions inline.",
+    description: "Loads one model-invocable SKILL.md from the operation-visible approved DSH Skill catalog, strips frontmatter, expands deterministic arguments, and returns its bounded instructions inline. Pass args as one string: $ARGUMENTS expands the full string, indexed/numbered placeholders expand parsed arguments; without placeholders the arguments are appended in an ARGUMENTS section.",
     inputSchema: strictObject({ skill: boundedIdentifier, args: Type.Optional(Type.String({ maxLength: 65_536 })) }),
     outputSchema: strictObject({
       skill: boundedIdentifier,
@@ -717,7 +717,7 @@ export const CANONICAL_TOOL_CONTRACTS = deepFreeze({
     outputLimits: outputLimits(16_384, 16), permissionClass: "work.stop", checkpoint: "none",
     behaviorFixtureIds: ["native_turn_interrupt", "native_continuation_after_interrupt"],
     resultSemantics: "Native interrupt acceptance; no subtree stop or resource-finalization receipt.",
-    errorCodes: errors(["permission_denied", false, "Host policy denies interruption."]),
+    errorCodes: errors(["permission_denied", false, "Host policy denies interruption."], ["agent_not_found", false, "The target is absent from the native Agent registry and child catalog."]),
     lifecycle: lifecycle("host_policy", "allowed"),
   }),
   SendMessage: contract({
