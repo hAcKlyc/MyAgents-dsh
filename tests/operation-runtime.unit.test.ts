@@ -569,6 +569,8 @@ describe("durable product-operation fold", () => {
     fixture.agent.send(message, "next-step", false);
     fixture.agent.session.append("turn/start", { turn: 1 });
     const messages = fixture.inbox.claim("next-step", 1);
+    // DSH evaluates Skill prompt contexts before its awaited pre-step seam.
+    expect(fixture.service.readActiveToolOperation(fixture.agent)).toBeUndefined();
     const consumer = vi.fn(() => fixture.service.resolveActiveToolOperation(fixture.agent));
     const stopConsumer = fixture.context.on("agent/pre-step", (_payload, next) => { consumer(); return next(); });
     const stopAdmission = installNativeRootContext(fixture.context);

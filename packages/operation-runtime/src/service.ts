@@ -678,10 +678,11 @@ export class SdkOperationService extends Service {
     });
   }
 
-  resolveActiveToolOperation(agent: Agent): Readonly<{
+  /** Read-only prompt/catalog lookup; a native claim may precede operation admission. */
+  readActiveToolOperation(agent: Agent): Readonly<{
     dshTurn: number;
     operation: ProductOperationRecord;
-  }> {
+  }> | undefined {
     this.assertOpen();
     this.assertHealthy();
     if (agent !== this.primaryAgent() || agent !== this.configValue.requireAgent()) {
@@ -691,18 +692,26 @@ export class SdkOperationService extends Service {
       );
     }
     const dshTurn = this.openDshTurn(agent);
-    if (dshTurn === undefined) {
-      throw new ProtocolError(
-        "turn_operation_conflict",
-        "tool execution lacks one open DSH turn",
-      );
-    }
+    if (dshTurn === undefined) return undefined;
     const owners = this.foldValue(agent).operations.filter((operation) =>
       operation.state !== "terminal" && operation.dshTurns.includes(dshTurn));
+    if (owners.length === 0) return undefined;
     if (owners.length !== 1 || owners[0] === undefined) {
       throw this.fence(new Error("open DSH tool turn lacks one durable product-operation owner"));
     }
     return Object.freeze({ dshTurn, operation: owners[0] });
+  }
+
+  resolveActiveToolOperation(agent: Agent): Readonly<{
+    dshTurn: number;
+    operation: ProductOperationRecord;
+  }> {
+    const active = this.readActiveToolOperation(agent);
+    if (active !== undefined) return active;
+    if (this.openDshTurn(agent) === undefined) {
+      throw new ProtocolError("turn_operation_conflict", "tool execution lacks one open DSH turn");
+    }
+    throw this.fence(new Error("open DSH tool turn lacks one durable product-operation owner"));
   }
 
   createModelRequestAuthority(

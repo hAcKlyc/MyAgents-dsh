@@ -1571,7 +1571,9 @@ export const installCanonicalToolPlane = async (
     let dynamicSkills: ProductDynamicSkillController | undefined;
     fibers.push(await root.plugin(ProductSkillService, {
       catalog: skillCatalog,
-      resolveOperation: resolveProductToolOperation,
+      resolveOperation: (agent) => agent === root.productSession.requireAgent()
+        ? root.sdkOperations.readActiveToolOperation(agent)
+        : resolveProductToolOperation(agent),
       registerDynamicController: (controller) => {
         if (dynamicSkills !== undefined) throw new Error("dynamic Skill controller may register exactly once");
         dynamicSkills = controller;
