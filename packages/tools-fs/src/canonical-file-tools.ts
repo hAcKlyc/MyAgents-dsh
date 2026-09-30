@@ -316,7 +316,9 @@ export class CanonicalFileTools extends Service {
         const content = args.content as string;
         const afterBytes = Buffer.from(content, "utf8");
         const afterSha256 = sha256(content);
-        const checkpoint = authority.checkpointEligible
+        // New child files need the same directory journal as root files. These
+        // child-Session records do not extend the root rewind coverage.
+        const checkpoint = authority.checkpointEligible || (current === undefined && authority.parentPreparationEligible)
           ? await ctx.productTools.prepareCheckpoint(product, {
             afterBytes,
             afterSha256,
@@ -333,7 +335,8 @@ export class CanonicalFileTools extends Service {
         try {
           const refreshed = await this.#authorizedTarget(ctx, product, "Write", path, "write");
           if (String(refreshed.target.targetKey) !== String(target.targetKey)
-            || refreshed.checkpointEligible !== authority.checkpointEligible) {
+            || refreshed.checkpointEligible !== authority.checkpointEligible
+            || refreshed.parentPreparationEligible !== authority.parentPreparationEligible) {
             await settleCheckpoint(checkpoint, settlement, "conflict");
             throw new ProductToolError("mutation_conflict", "Write target identity changed before publication");
           }
@@ -647,10 +650,10 @@ export class CanonicalFileTools extends Service {
     tool: "Read" | "Write" | "Edit",
     path: string,
     mode: "read" | "write",
-  ): Promise<Readonly<{ checkpointEligible: boolean; target: FsTarget }>> {
+  ): Promise<Readonly<{ checkpointEligible: boolean; parentPreparationEligible: boolean; target: FsTarget }>> {
     throwIfProductToolAborted(product.signal);
     const planTarget = await ctx.productTools.resolvePlanFileTarget(product, tool, path, mode);
-    if (planTarget !== undefined) return Object.freeze({ checkpointEligible: false, target: planTarget });
+    if (planTarget !== undefined) return Object.freeze({ checkpointEligible: false, parentPreparationEligible: false, target: planTarget });
     let target: FsTarget;
     try {
       target = await ctx.fs.resolve(path, { cwd: product.environment.workspace.canonicalRoot, signal: product.signal });
@@ -669,8 +672,9 @@ export class CanonicalFileTools extends Service {
     // use the same governed file tool and permission path, but do not advertise a
     // checkpoint receipt that the checkpoint service cannot restore as child work.
     const workspace = await ctx.fs.resolve(product.environment.workspace.canonicalRoot, { signal: product.signal });
+    const withinWorkspace = ctx.fs.contains(workspace, target);
     return Object.freeze({ checkpointEligible: mode === "write" && product.origin === "root"
-      && ctx.fs.contains(workspace, target), target });
+      && withinWorkspace, parentPreparationEligible: tool === "Write" && withinWorkspace, target });
   }
 
   async #regularFile(ctx: Context, target: FsTarget, signal: AbortSignal): Promise<FsInfo> {

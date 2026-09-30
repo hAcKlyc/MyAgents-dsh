@@ -546,6 +546,20 @@ describe("canonical filesystem tools", () => {
     await state.context.fiber.dispose();
   });
 
+  it("prepares missing parents for native child Writes through the existing checkpoint owner", async () => {
+    const state = await harness();
+    const path = join(state.workspace, "child-created", "nested", "result.txt");
+    state.setCheckpointPrepareHook(async (request) => {
+      await mkdir(dirname(request.path), { recursive: true });
+    });
+    const result = await state.executeAsChild("write", { file_path: path, content: "child result" });
+    expect(result.isError).toBe(false);
+    expect(await readFile(path, "utf8")).toBe("child result");
+    expect(state.checkpoints).toEqual([`prepare:Write:${path}`, "commit"]);
+    expect(state.checkpointRequests).toHaveLength(1);
+    await state.context.fiber.dispose();
+  });
+
   it.skipIf(!supportsFileSymlinks)("fails closed on partial/stale reads, traversal, denial, and cancellation", async () => {
     const state = await harness();
     const path = join(state.workspace, "guarded.txt");

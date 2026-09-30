@@ -671,7 +671,10 @@ export class HostAttachmentStore extends AttachmentStore {
   }
 
   async #inspect(input: ReturnType<typeof imageInput>): Promise<PreparedImageFile> {
-    if (input.data.byteLength === 0 || input.data.byteLength > this.imageLimits.maxImageBytes) {
+    if (input.data.byteLength === 0) {
+      throw fixedAttachmentFailure("Image is empty.", "INVALID_IMAGE");
+    }
+    if (input.data.byteLength > this.imageLimits.maxImageBytes) {
       throw fixedAttachmentFailure("Image exceeds the configured byte limit.", "IMAGE_TOO_LARGE");
     }
     return prepareImageFile(input, this.imageLimits, NORMALIZATION_POLICY);

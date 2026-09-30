@@ -112,6 +112,16 @@ const requestScope = (harness: Harness, assertCurrent: () => void = () => undefi
   }));
 
 describe("HostAttachmentStore", () => {
+  it("reports an empty image as invalid before publishing an attachment", async () => {
+    const harness = await createHarness(Object.freeze({
+      readLease: () => { throw new Error("empty image must not acquire a lease"); },
+      stage: () => { throw new Error("empty image must not be published"); },
+    }));
+    await expect(harness.attachments.runWithRequestScope(requestScope(harness), () =>
+      harness.root.attachments.saveImage({ data: new Uint8Array(), mediaType: "image/png" })))
+      .rejects.toMatchObject({ code: "INVALID_IMAGE", message: "Image is empty." });
+  });
+
   it("validates before publication and releases every verified read lease", async () => {
     let discarded = 0;
     let reads = 0;

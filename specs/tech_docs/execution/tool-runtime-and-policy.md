@@ -126,7 +126,10 @@ Registered-output identity/IO errors remain errors from that owner. No second ou
 
 Root `Write` and `Edit` participate in managed-file rewind. New-file child `Write` uses internal checkpoint
 records for directory preparation, cancellation and crash recovery, keyed by its own DSH Session;
-its result does not advertise a root checkpoint receipt. Root rewind still excludes child, Bash,
+its result does not advertise a root checkpoint receipt. Native child `write` must invoke that
+same preparation path for a new workspace file, even though it is ineligible for root rewind;
+skipping preparation would leave `createParents: false` unable to create missing directories.
+Root rewind still excludes child, Bash,
 Host/MCP and external changes. Directory cleanup and rewind compensation are documented in
 [Mutations and checkpoints](../state/mutations-and-checkpoints.md#8-checkpoint-coverage-and-limits).
 
