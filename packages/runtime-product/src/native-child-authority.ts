@@ -19,12 +19,6 @@ interface NativeChildState {
   operation?: OperationIdentity | undefined;
 }
 
-declare module "@deepseek-ai/dsh-session/types" {
-  interface SessionEventMap {
-    "myagents/native-child-message-operation": OperationIdentity & { messageId: string };
-  }
-}
-
 declare module "@deepseek-ai/dsh-session-projection/types" {
   interface SessionProjectionStateMap { myagentsNativeChildAuthority: NativeChildState }
 }
@@ -70,6 +64,7 @@ export const installNativeChildAuthorityProjection = (ctx: Context): (() => void
     if (agent.session.header.origin !== "subagent") return;
     const source = message.source;
     if (!("senderSessionId" in source) || (source.kind !== "coordinator" && source.kind !== "agent-message")) return;
+    if (agent.session.header.parentSession !== source.senderSessionId) return;
     const sender = ctx.agents.get(source.senderSessionId);
     if (sender === undefined) return;
     const binding = sender === ctx.productSession.requireAgent()

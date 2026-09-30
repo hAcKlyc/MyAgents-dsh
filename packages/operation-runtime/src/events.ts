@@ -8,6 +8,7 @@ export const PRODUCT_OPERATION_EVENT_TYPES = Object.freeze([
   "myagents/operation/limit",
   "myagents/operation/terminal",
   "myagents/operation/recovery-wake",
+  "myagents/native-child-message-operation",
 ] as const);
 
 export type ProductOperationEventType = (typeof PRODUCT_OPERATION_EVENT_TYPES)[number];
@@ -106,6 +107,12 @@ export interface ProductOperationTerminal {
   readonly terminalAt: number;
 }
 
+export interface NativeChildMessageOperation {
+  readonly messageId: string;
+  readonly clientOperationId: string;
+  readonly productTurnId: string;
+}
+
 export interface ProductOperationRecoveryWake {
   readonly clientOperationId: string;
   readonly messageId: string;
@@ -130,6 +137,7 @@ declare module "@deepseek-ai/dsh-session/types" {
     "myagents/operation/limit": ProductOperationLimit;
     "myagents/operation/terminal": ProductOperationTerminal;
     "myagents/operation/recovery-wake": ProductOperationRecoveryWake;
+    "myagents/native-child-message-operation": NativeChildMessageOperation;
   }
 }
 

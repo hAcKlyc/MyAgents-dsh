@@ -488,6 +488,15 @@ const validateRecoveryWake = (value: unknown): ProductOperationRecoveryWake => {
   });
 };
 
+const validateNativeChildMessageOperation = (value: unknown) => {
+  const event = exactOwnDataObject(value, ["messageId", "clientOperationId", "productTurnId"], [], "native child message operation");
+  return Object.freeze({
+    messageId: boundedIdentifier(event.messageId, "native child message identity"),
+    clientOperationId: boundedIdentifier(event.clientOperationId, "native child operation identity"),
+    productTurnId: boundedIdentifier(event.productTurnId, "native child product turn identity"),
+  });
+};
+
 const operationPayloadValidators = Object.freeze({
   "myagents/operation/accepted": validateAccepted,
   "myagents/operation/message": validateMessage,
@@ -496,6 +505,7 @@ const operationPayloadValidators = Object.freeze({
   "myagents/operation/limit": validateLimit,
   "myagents/operation/terminal": validateTerminal,
   "myagents/operation/recovery-wake": validateRecoveryWake,
+  "myagents/native-child-message-operation": validateNativeChildMessageOperation,
 } satisfies Record<ProductOperationEventType, (value: unknown) => unknown>);
 
 /** Reuse the fold's exact payload validators at the durable storage boundary. */

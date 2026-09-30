@@ -1,8 +1,9 @@
 import { Context } from "@deepseek-ai/cordis";
 import type { Agent } from "@deepseek-ai/dsh-agent";
 import { MessageId, freezeMessage } from "@deepseek-ai/dsh-llm";
-import { SessionId, SessionStore } from "@deepseek-ai/dsh-session";
+import { SessionId, SessionStore, type SessionEvent } from "@deepseek-ai/dsh-session";
 import { SessionProjectionRegistry } from "@deepseek-ai/dsh-session-projection";
+import { validateProductStoredEvents } from "../packages/persistence-product/src/storage-contract.js";
 import type { ProductOperationRecord } from "@myagents-dsh/operation-runtime";
 import { expect, it } from "vitest";
 import { installNativeChildAuthorityProjection, nativeChildAuthority } from "../packages/runtime-product/src/native-child-authority.js";
@@ -15,6 +16,8 @@ it("binds a native continuation to the message sender's operation rather than it
   const childSession = ctx.sessions.create(SessionId("child"), { meta: { origin: "subagent", parentSession: rootSession.id } });
   const root = { id: rootSession.id, session: rootSession } as Agent;
   const child = { id: childSession.id, session: childSession } as Agent;
+  const childEvents: SessionEvent[] = [];
+  ctx.on("session/event", (session, event) => { if (session === childSession) childEvents.push(event); });
   ctx.provide("agents", { get: (id: string) => id === root.id ? root : id === child.id ? child : undefined } as never);
   ctx.provide("productSession", { requireAgent: () => root } as never);
   const record = (id: string, turn: number): ProductOperationRecord => ({
@@ -50,6 +53,7 @@ it("binds a native continuation to the message sender's operation rather than it
     expect(authority.resolve(child).operation.birth.permissionRevision).toBe("permission-dispatch");
     expect(authority.createModelRequestAuthority(child, "config-dispatch").clientOperationId).toBe("dispatch");
     expect(() => authority.createModelRequestAuthority(child, "config-original")).toThrow("configuration");
+    expect(() => validateProductStoredEvents(childSession.header, [...childEvents])).not.toThrow();
     stop();
     const stopReplay = installNativeChildAuthorityProjection(ctx);
     expect(authority.resolve(child).operation).toBe(dispatch);
