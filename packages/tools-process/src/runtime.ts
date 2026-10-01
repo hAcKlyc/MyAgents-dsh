@@ -10,7 +10,6 @@ import { ProductToolError, type ProductToolContext, type ProductToolExecutionEnv
 import { AsyncLocalStorage } from "node:async_hooks";
 import { isProxy } from "node:util/types";
 import { isAbsolute, relative, resolve } from "node:path";
-import { realpathSync } from "node:fs";
 
 declare module "@deepseek-ai/cordis" { interface Context { productProcesses: ProductProcessRuntime } }
 type JsonObject = Record<string, unknown>;
@@ -393,9 +392,10 @@ export class ProductProcessRuntime extends Service {
     if (call?.search === undefined) return undefined;
     this.runtimeContext.productTools.assertCurrent(call.product, call.search);
     const authority = this.authorityFor(call.product);
-    if (spec.cwd !== authority.cwd || spec.argv[1] !== "--no-config"
-      || realpathSync(spec.argv[0] ?? "") !== authority.ripgrepPath) {
-      throw new ProductToolError("search_failed", "official search command differs from sealed ripgrep authority");
+    // DSH resolves its own bundled helper; the Host selects the actual executable
+    // and cwd below. Different package locations or OS path aliases are valid.
+    if (spec.argv[1] !== "--no-config") {
+      throw new ProductToolError("search_failed", "official search command lacks its no-config argument");
     }
     if (this.live.size >= authority.maxChildren) {
       throw new ProductToolError("search_failed", "search process quota is exhausted");

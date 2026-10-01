@@ -2,7 +2,7 @@
 type: technical-architecture
 status: implemented
 module: platform-and-local-execution
-updated: 2026-09-12
+updated: 2026-10-01
 ---
 
 # Platform and local execution
@@ -63,7 +63,7 @@ Foreground spill registration canonicalizes the parent directory before capturin
 
 If capture cannot grant Read authority, product middleware removes only that stream's `spillPath` from the successful official value. It retains the bounded tail, truncation and exact exit/signal/timeout facts; the official renderer reports unavailable full output and DSH regenerates content/meta from that value. Other streams remain independently usable. Cancellation still follows the caller signal. A bounded stderr warning records tool/call/stream and a stable error code through the existing Host diagnostic path, without commands, file paths, output or raw exceptions. No output files, fallback executor or retry policy are added. R5 coverage includes synthetic aliases and invalid files plus real packed foreground spills and Host governed Read, rather than only manually created canonical fixture paths.
 
-Glob/Grep retain their sealed search policy over the same subprocess seam. Managed MCP stdio remains a separate declarative argv/cwd/credential boundary and does not inherit Shell tool authorization.
+Glob/Grep retain their sealed search policy over the same subprocess seam. The Host-selected, verified ripgrep executable and workspace govern spawn; the native plugin's default helper path and cwd are replaced, not treated as competing executable authority. Different npm package locations and OS path aliases must not reject otherwise valid native search. The packed conformance fixture copies ripgrep to a separate Host-selected path to cover this boundary. Managed MCP stdio remains a separate declarative argv/cwd/credential boundary and does not inherit Shell tool authorization.
 
 ## 5. Filesystem and path identity
 

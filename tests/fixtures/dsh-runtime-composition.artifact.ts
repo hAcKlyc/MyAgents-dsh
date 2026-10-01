@@ -9,7 +9,7 @@ declare module "@deepseek-ai/dsh-session/types" {
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
 import { writeSync } from "node:fs";
-import { chmod, mkdir, mkdtemp, readFile, readdir, realpath, rm, unlink, writeFile } from "node:fs/promises";
+import { chmod, copyFile, mkdir, mkdtemp, readFile, readdir, realpath, rm, unlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, sep } from "node:path";
 import { PassThrough } from "node:stream";
@@ -1050,7 +1050,10 @@ assert.throws(() => createHostBackedInteractionProvider(composition, Object.free
 let preAssistantCommitTransformHits = 0;
 const fileToolEvidence: string[] = [];
 const interactionToolEvidence: string[] = [];
-const artifactRipgrepPath = await realpath(await resolveRgPath());
+// Host executable selection need not equal the native plugin dependency path.
+const artifactRipgrepPath = join(fixtureRoot, process.platform === "win32" ? "host-rg.exe" : "host-rg");
+await copyFile(await resolveRgPath(), artifactRipgrepPath);
+await chmod(artifactRipgrepPath, 0o700);
 const artifactShellPath = await realpath(process.platform === "win32"
   ? resolvePwshPath()
   : "/bin/bash");
