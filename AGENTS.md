@@ -62,7 +62,7 @@ The root `package.json` and lockfile own the exact command definitions and toolc
 
 When asked to generate, refresh, or package the MyAgents integration delivery, use the official builder; do not hand-write a delivery README or assemble selected files manually. Read `specs/tech_docs/assurance/verification-artifacts-and-handoff.md` and `specs/tech_docs/runtime/protocol.md` first.
 
-The builder requires a clean checkout, a Runtime artifact whose `repositoryHead` equals the current Git `HEAD`, and content-addressed platform evidence. It accepts one native target for local handoff/release-target construction or the four-target historical input. Local Dev uses a pending native-validation claim; each current Release target runs a native campaign and requires `verified`. Old Runtime or platform evidence cannot be relabeled for a newer source commit. Rebuild any missing inputs for the current commit before generating the handoff.
+The builder requires a clean checkout, a Runtime artifact whose `repositoryHead` equals the current Git `HEAD`, and content-addressed platform evidence. It accepts one native target for local handoff/release-target construction or the four-target historical input. Local Dev uses a pending native-validation claim; each current Release target runs deterministic native self-check/installed-process conformance and requires `verified`. Real-model campaigns are explicitly optional and do not gate packaging. Old Runtime or platform evidence cannot be relabeled for a newer source commit. Rebuild any missing inputs for the current commit before generating the handoff.
 
 ```bash
 npm run build:batch-3-integration-handoff -- \

@@ -106,7 +106,6 @@ jobs:
         working-directory: myagents-dsh
         env:
           RELEASE_WORK_DIR: ${{ runner.temp }}/myagents-dsh-release
-          DSH_RELEASE_PROVIDER_KEY: ${{ secrets.DSH_RELEASE_PROVIDER_KEY }}
           NODE_OPTIONS: --max-old-space-size=6144
         run: npm run release:target
       - name: Preserve failed artifact for reproducibility diagnosis
@@ -118,7 +117,7 @@ jobs:
             ${{ runner.temp }}/myagents-dsh-release/patched-dsh-artifact/*
             ${{ runner.temp }}/myagents-dsh-release/native-campaign/native-campaign.json
             ${{ runner.temp }}/myagents-dsh-release/native-campaign/dynamic/*/campaign.json
-            ${{ runner.temp }}/myagents-dsh-release/native-campaign/dynamic/*/runs/*/evidence/*.json
+            ${{ runner.temp }}/myagents-dsh-release/native-campaign/dynamic/*/runs/*/evidence/*
           if-no-files-found: ignore
           retention-days: 2
       - name: Transfer only the verified target pair

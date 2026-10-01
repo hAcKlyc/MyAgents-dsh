@@ -39,7 +39,7 @@ export function nativeReleaseTarget(platform = process.platform, arch = process.
   return target;
 }
 
-export function buildNativeHandoff({ work, source, piAiSource, credentialEnv, artifact }) {
+export function buildNativeHandoff({ work, source, piAiSource, credentialEnv, artifact, validateNative = false }) {
   const target = nativeReleaseTarget();
   if (credentialEnv && !process.env[credentialEnv]) {
     throw new Error(`${credentialEnv} is required for the native campaign`);
@@ -63,15 +63,18 @@ export function buildNativeHandoff({ work, source, piAiSource, credentialEnv, ar
     "--expected-manifest-sha256", expected, "--npm-cache", npmCache,
     "--pi-ai-source", piAiSource, "--runtime-artifact-out", runtime]);
   const runtimeSha = sha256(readFileSync(resolve(runtime, "runtime-artifact-v1.json")));
-  const claim = credentialEnv ? "verified" : "implementation-complete_pending-native-validation";
+  const claim = validateNative || credentialEnv ? "verified" : "implementation-complete_pending-native-validation";
   let report;
-  if (credentialEnv) {
+  if (validateNative || credentialEnv) {
     const campaign = resolve(work, "native-campaign");
     run("npm", ["run", "e2e:native", "--", "--artifact", runtime,
       "--expected-manifest-sha256", runtimeSha,
-      "--route-config", resolve(root, "packages/dynamic-e2e/routes/deepseek-official-v4-flash.json"),
-      "--compaction-route-config", resolve(root, "packages/dynamic-e2e/routes/deepseek-official-v4-flash-compaction.json"),
-      "--credential-env", credentialEnv, "--npm-cache", npmCache, "--out", campaign]);
+      "--npm-cache", npmCache, "--out", campaign,
+      ...(credentialEnv ? [
+        "--route-config", resolve(root, "packages/dynamic-e2e/routes/deepseek-official-v4-flash.json"),
+        "--compaction-route-config", resolve(root, "packages/dynamic-e2e/routes/deepseek-official-v4-flash-compaction.json"),
+        "--credential-env", credentialEnv,
+      ] : [])]);
     report = readFileSync(resolve(campaign, "native-campaign.json"));
     const native = JSON.parse(report);
     if (native.outcome !== "passed" || native.target !== target

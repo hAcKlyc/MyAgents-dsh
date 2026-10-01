@@ -43,6 +43,7 @@ export class DynamicArtifactHostProcess {
       env: {
         PATH: globalThis.process.env.PATH ?? "/usr/bin:/bin",
         TMPDIR: options.temporaryRoot,
+        MYAGENTS_DSH_COMPOSITION_DIAGNOSTICS: "1",
       },
       detached: globalThis.process.platform !== "win32",
       shell: false,

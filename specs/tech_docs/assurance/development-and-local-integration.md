@@ -28,7 +28,7 @@ On Windows PowerShell, use `npm.cmd exec -- node scripts/build-local-handoff.mjs
 
 If setup used existing DSH or pi-ai repositories through `--dsh-source` or `--pi-ai-source`, pass those same absolute paths to this command. Otherwise it uses setup's sources under `tmp/setup/sources/`. An accepted patched artifact at a different location can be selected with `--artifact /absolute/path`.
 
-The command reuses the accepted patched DSH artifact, runs source/pre-artifact checks, builds the Runtime, and generates `/absolute/path/to/new-local-work/handoff`. Its JSON result includes the handoff path, SHA-256, native target, pending validation claim, and source commit. Local Dev packaging does not require a model key or a native campaign. The handoff records `implementation-complete_pending-native-validation`; only the Release path runs the credentialed native campaign and can record `verified`. This command does not create or push a tag or GitHub Release.
+The command reuses the accepted patched DSH artifact, runs source/pre-artifact checks, builds the Runtime, and generates `/absolute/path/to/new-local-work/handoff`. Its JSON result includes the handoff path, SHA-256, native target, pending validation claim, and source commit. Local Dev packaging does not require a model key or a native campaign. The handoff records `implementation-complete_pending-native-validation`; the Release path runs deterministic packed Runtime self-check and installed-process conformance on each target and records `verified`, without a model key. Live Provider campaigns are explicit optional acceptance work, separate from packaging. This command does not create or push a tag or GitHub Release.
 
 ## Package MyAgents with those exact bytes
 

@@ -726,6 +726,12 @@ export class ApprovedRouteDynamicDriver implements DynamicRunDriver {
           attachmentLeases: 0,
         }),
       });
+    } catch (error) {
+      input.evidence.recordDiagnosticFact({
+        kind: "runtime_failure_context",
+        runtimes: runtimes.map((candidate) => ({ stderr: candidate.stderr, fatalErrors: candidate.fatalErrors })),
+      });
+      throw error;
     } finally {
       for (const stop of stopNotifications.reverse()) stop();
       await Promise.all(runtimes.map((candidate) => candidate.close()));

@@ -1915,7 +1915,7 @@ globalThis.fetch = (_input: string | URL | Request, init?: RequestInit): Promise
     ? { type: "tool_use" as const, id: "artifact-host-model-child-call", name: "subagent", input: {
         description: "Verify child model lineage",
         prompt: "Return one concise child result through the approved Host model route.",
-        background: false,
+        run_in_background: false,
       } }
     : hostModelFetchSequence === 2
       ? { type: "text" as const, text: "child credential route verified" }

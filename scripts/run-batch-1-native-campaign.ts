@@ -102,12 +102,11 @@ const main = async (): Promise<number> => {
     values["expected-manifest-sha256"],
     "expected-manifest-sha256",
   );
-  const routeConfig = resolve(required(values["route-config"], "route-config"));
-  const compactionRouteConfig = resolve(required(
-    values["compaction-route-config"],
-    "compaction-route-config",
-  ));
-  const credentialEnvironmentName = required(values["credential-env"], "credential-env");
+  const credentialEnvironmentName = values["credential-env"];
+  const routeConfig = credentialEnvironmentName === undefined ? undefined
+    : resolve(required(values["route-config"], "route-config"));
+  const compactionRouteConfig = credentialEnvironmentName === undefined ? undefined
+    : resolve(required(values["compaction-route-config"], "compaction-route-config"));
   const npmCache = resolve(required(values["npm-cache"], "npm-cache"));
   const requestedOutput = required(values.out, "out");
   if (!isAbsolute(requestedOutput)) throw new TypeError("--out must be absolute");
@@ -120,20 +119,22 @@ const main = async (): Promise<number> => {
   const target = resolveRuntimePlatformTarget(process.platform, process.arch);
   const artifact = inspectDynamicArtifact(artifactRoot, expectedManifestSha256);
 
-  let routeAvailable = true;
-  let routeConfigSha256 = sha256(readFileSync(routeConfig));
-  let compactionRouteConfigSha256 = sha256(readFileSync(compactionRouteConfig));
-  try {
-    const route = await loadApprovedDynamicRoute(routeConfig, credentialEnvironmentName);
-    routeConfigSha256 = route.routeConfigSha256;
-    const compactionRoute = await loadApprovedDynamicRoute(
-      compactionRouteConfig,
-      credentialEnvironmentName,
-    );
-    compactionRouteConfigSha256 = compactionRoute.routeConfigSha256;
-  } catch (error) {
-    if (!(error instanceof ApprovedDynamicRouteCredentialUnavailableError)) throw error;
-    routeAvailable = false;
+  let routeEvidence;
+  if (credentialEnvironmentName !== undefined && routeConfig !== undefined
+    && compactionRouteConfig !== undefined) {
+    let available = true;
+    let routeConfigSha256 = sha256(readFileSync(routeConfig));
+    let compactionRouteConfigSha256 = sha256(readFileSync(compactionRouteConfig));
+    try {
+      const route = await loadApprovedDynamicRoute(routeConfig, credentialEnvironmentName);
+      routeConfigSha256 = route.routeConfigSha256;
+      const compactionRoute = await loadApprovedDynamicRoute(compactionRouteConfig, credentialEnvironmentName);
+      compactionRouteConfigSha256 = compactionRoute.routeConfigSha256;
+    } catch (error) {
+      if (!(error instanceof ApprovedDynamicRouteCredentialUnavailableError)) throw error;
+      available = false;
+    }
+    routeEvidence = { routeConfigSha256, compactionRouteConfigSha256, available };
   }
 
   const selfCheck = run(process.execPath, [artifact.entrypoint, "--self-check"], 120_000);
@@ -150,29 +151,41 @@ const main = async (): Promise<number> => {
     "--expected-runtime-manifest-sha256", expectedManifestSha256,
     "--npm-cache", npmCache,
   ], 600_000);
-  const dynamicOutput = resolve(outputRoot, "dynamic");
-  const dynamic = run("npm", [
-    "run", "e2e:dynamic", "--", "campaign",
-    "--artifact", artifactRoot,
-    "--expected-manifest-sha256", expectedManifestSha256,
-    "--route-config", routeConfig,
-    "--compaction-route-config", compactionRouteConfig,
-    "--credential-env", credentialEnvironmentName,
-    "--jobs", "1",
-    "--out", dynamicOutput,
-  ], 3_600_000, [0, 2]);
-  const dynamicJson = extractFinalCliJson(dynamic.output);
-  const campaignRoot = dynamicJson.root;
-  const campaignManifestSha256 = dynamicJson.manifestSha256;
-  if (typeof campaignRoot !== "string" || typeof campaignManifestSha256 !== "string") {
-    throw new Error("dynamic campaign output lacks its exact evidence identity");
+  let outcome: "passed" | "unavailable" = "passed";
+  let dynamicEvidence;
+  if (credentialEnvironmentName !== undefined && routeConfig !== undefined
+    && compactionRouteConfig !== undefined) {
+    const dynamicOutput = resolve(outputRoot, "dynamic");
+    const dynamic = run("npm", [
+      "run", "e2e:dynamic", "--", "campaign",
+      "--artifact", artifactRoot,
+      "--expected-manifest-sha256", expectedManifestSha256,
+      "--route-config", routeConfig,
+      "--compaction-route-config", compactionRouteConfig,
+      "--credential-env", credentialEnvironmentName,
+      "--jobs", "1",
+      "--out", dynamicOutput,
+    ], 3_600_000, [0, 2]);
+    const dynamicJson = extractFinalCliJson(dynamic.output);
+    const campaignRoot = dynamicJson.root;
+    const campaignManifestSha256 = dynamicJson.manifestSha256;
+    if (typeof campaignRoot !== "string" || typeof campaignManifestSha256 !== "string") {
+      throw new Error("dynamic campaign output lacks its exact evidence identity");
+    }
+    const verified = run("npm", [
+      "run", "e2e:dynamic", "--", "verify",
+      "--campaign", campaignRoot,
+      "--expected-manifest-sha256", campaignManifestSha256,
+    ], 120_000);
+    outcome = dynamic.status === 0 ? "passed" : "unavailable";
+    dynamicEvidence = {
+      status: dynamic.status,
+      outputSha256: dynamic.outputSha256,
+      campaignRoot: `dynamic/${basename(campaignRoot)}`,
+      campaignManifestSha256,
+      verificationOutputSha256: verified.outputSha256,
+    };
   }
-  const verified = run("npm", [
-    "run", "e2e:dynamic", "--", "verify",
-    "--campaign", campaignRoot,
-    "--expected-manifest-sha256", campaignManifestSha256,
-  ], 120_000);
-  const outcome = dynamic.status === 0 ? "passed" : "unavailable";
   const report = {
     schemaVersion: BATCH_1_NATIVE_CAMPAIGN_VERSION,
     outcome,
@@ -183,16 +196,10 @@ const main = async (): Promise<number> => {
       fileCount: artifact.fileCount,
       repositoryHead: artifact.repositoryHead,
     },
-    route: { routeConfigSha256, compactionRouteConfigSha256, available: routeAvailable },
+    ...(routeEvidence === undefined ? {} : { route: routeEvidence }),
     selfCheck: { outputSha256: selfCheck.outputSha256 },
     installedArtifact: { outputSha256: installed.outputSha256 },
-    dynamic: {
-      status: dynamic.status,
-      outputSha256: dynamic.outputSha256,
-      campaignRoot: `dynamic/${basename(campaignRoot)}`,
-      campaignManifestSha256,
-      verificationOutputSha256: verified.outputSha256,
-    },
+    ...(dynamicEvidence === undefined ? {} : { dynamic: dynamicEvidence }),
   } as const;
   const bytes = `${canonicalize(report)}\n`;
   const reportSha256 = sha256(bytes);
