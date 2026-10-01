@@ -187,17 +187,6 @@ const boundedIdentifier = (value: unknown, description: string): string => {
   return value;
 };
 
-const exactNativePromise = <T>(value: unknown, description: string): Promise<T> => {
-  if (value !== null && typeof value === "object" && utilTypes.isProxy(value)) {
-    throw new TypeError(`${description} must not return a Proxy thenable`);
-  }
-  if (!utilTypes.isPromise(value) || Object.getPrototypeOf(value) !== Promise.prototype
-    || Reflect.ownKeys(value).length !== 0) {
-    throw new TypeError(`${description} must return an exact native Promise`);
-  }
-  return value as Promise<T>;
-};
-
 const dataFunction = (
   owner: object,
   key: string,
@@ -562,10 +551,7 @@ export class ProductCheckpointService extends Service {
           || sha256(request.beforeBytes) !== request.beforeSha256))) {
       throw new ProductToolError("checkpoint_unavailable", "checkpoint mutation bytes or digests are invalid");
     }
-    const snapshot = validateFileSnapshot(await exactNativePromise<ProductCheckpointFileSnapshot>(
-      this.#config.io.capture(context.environment, request.path, MAX_CHECKPOINT_FILE_BYTES, context.signal),
-      "checkpoint filesystem capture",
-    ), request.path);
+    const snapshot = validateFileSnapshot(await Promise.resolve<ProductCheckpointFileSnapshot>(this.#config.io.capture(context.environment, request.path, MAX_CHECKPOINT_FILE_BYTES, context.signal)), request.path);
     context.signal.throwIfAborted();
     if (snapshot.path !== request.path
       || (request.beforeBytes === undefined
@@ -575,12 +561,11 @@ export class ProductCheckpointService extends Service {
       throw new ProductToolError("mutation_conflict", "checkpoint preimage differs from the managed file");
     }
     const directoryPlan = request.tool === "Write" && request.beforeBytes === undefined && this.#config.io.directories !== undefined
-      ? await exactNativePromise<CheckpointDirectoryPlan | undefined>(
-        this.#config.io.directories.plan(context.environment, request.path, context.signal), "checkpoint parent planning")
+      ? await Promise.resolve<CheckpointDirectoryPlan | undefined>(this.#config.io.directories.plan(context.environment, request.path, context.signal))
       : undefined;
     const id = checkpointId(context, request, policyRevision);
     const store = this.#requireStore();
-    const record = await exactNativePromise<ProductCheckpointRecord>(store.prepare(Object.freeze({
+    const record = await Promise.resolve<ProductCheckpointRecord>(store.prepare(Object.freeze({
       ...(request.beforeBytes === undefined ? {} : { beforeBytes: Uint8Array.from(request.beforeBytes) }),
       ...(directoryPlan === undefined ? {} : { directoryPlan: validateCheckpointDirectoryPlan(directoryPlan) }),
       callId: context.callId,
@@ -594,7 +579,7 @@ export class ProductCheckpointService extends Service {
       productTurnId: context.productTurnId,
       sessionId: String(context.agent.id),
       tool: request.tool,
-    }), context.signal), "checkpoint Store prepare");
+    }), context.signal));
     const folded = foldProductCheckpoints(context.agent.session);
     const known = folded.get(id);
     if (known === undefined) {
@@ -642,35 +627,29 @@ export class ProductCheckpointService extends Service {
     boundedIdentifier(token, "rewind token");
     const operationSignal = signal ?? new AbortController().signal;
     const store = this.#requireStore();
-    const files = await exactNativePromise<readonly ProductCheckpointRewindFile[]>(
-      store.listRewindFiles(token, operationSignal),
-      "rewind file plan lookup",
-    );
+    const files = await Promise.resolve<readonly ProductCheckpointRewindFile[]>(store.listRewindFiles(token, operationSignal));
     for (const file of files) {
       operationSignal.throwIfAborted();
       if (file.sealed) continue;
-      const directories = await exactNativePromise<readonly ProductCheckpointRecord[]>(store.listRewindDirectoryPlans(token, operationSignal), "rewind parent verification plans");
+      const directories = await Promise.resolve<readonly ProductCheckpointRecord[]>(store.listRewindDirectoryPlans(token, operationSignal));
       for (const record of directories) await this.#verifyParents(record.checkpointId, this.#config.environment(), operationSignal);
-      const current = validateFileSnapshot(await exactNativePromise<ProductCheckpointFileSnapshot>(
-        this.#config.io.capture(
+      const current = validateFileSnapshot(await Promise.resolve<ProductCheckpointFileSnapshot>(this.#config.io.capture(
           this.#config.environment(),
           file.path,
           MAX_CHECKPOINT_FILE_BYTES,
           operationSignal,
-        ),
-        "rewind current file capture",
-      ), file.path);
+        )), file.path);
       if (!current.exists || current.sha256 !== file.expectedCurrentSha256
         || current.bytes === undefined) {
         throw new ProductToolError("mutation_conflict", "rewind current managed file differs from its journal");
       }
-      await exactNativePromise<ProductCheckpointRewindFile>(store.sealRewindFile(
+      await Promise.resolve<ProductCheckpointRewindFile>(store.sealRewindFile(
         token,
         file.path,
         current.bytes,
         current.sha256,
         operationSignal,
-      ), "rewind file plan seal");
+      ));
     }
   }
 
@@ -680,10 +659,7 @@ export class ProductCheckpointService extends Service {
     this.#assertHealthy();
     const operationSignal = signal ?? new AbortController().signal;
     const store = this.#requireStore();
-    const files = await exactNativePromise<readonly ProductCheckpointRewindFile[]>(
-      store.listRewindFiles(token, operationSignal),
-      "rewind file plan lookup",
-    );
+    const files = await Promise.resolve<readonly ProductCheckpointRewindFile[]>(store.listRewindFiles(token, operationSignal));
     if (files.some((file) => !file.sealed)) {
       throw new ProductToolError("checkpoint_uncertain", "rewind file plan is not sealed");
     }
@@ -699,27 +675,24 @@ export class ProductCheckpointService extends Service {
         const actualSha256 = restored.exists ? restored.sha256 : undefined;
         let transitioned: ProductCheckpointRewindFile;
         try {
-          transitioned = await exactNativePromise<ProductCheckpointRewindFile>(
-            store.transitionRewindFile(
+          transitioned = await Promise.resolve<ProductCheckpointRewindFile>(store.transitionRewindFile(
               token,
               file.path,
               [sourcePhase],
               "published",
               actualSha256,
               operationSignal,
-            ),
-            "rewind file publication journal",
-          );
+            ));
         } catch (journalError) {
           try {
-            await exactNativePromise<ProductCheckpointFileSnapshot>(this.#config.io.restore(
+            await Promise.resolve<ProductCheckpointFileSnapshot>(this.#config.io.restore(
               this.#config.environment(),
               file.path,
               file.targetSha256,
               file.rollbackBytes,
               file.rollbackSha256,
               new AbortController().signal,
-            ), "rewind unjournaled publication compensation");
+            ));
           } catch (cleanupError) {
             this.#failure ??= new AggregateError(
               [journalError, cleanupError],
@@ -731,7 +704,7 @@ export class ProductCheckpointService extends Service {
         }
         published.push(transitioned);
       }
-      const directories = await exactNativePromise<readonly ProductCheckpointRecord[]>(store.listRewindDirectoryPlans(token, operationSignal), "rewind directory cleanup plans");
+      const directories = await Promise.resolve<readonly ProductCheckpointRecord[]>(store.listRewindDirectoryPlans(token, operationSignal));
       for (const record of [...directories].reverse()) {
         await this.#removeParents(record, this.#config.environment(), operationSignal);
       }
@@ -746,25 +719,22 @@ export class ProductCheckpointService extends Service {
       }
       for (const file of published.reverse()) {
         try {
-          const restored = validateFileSnapshot(await exactNativePromise<ProductCheckpointFileSnapshot>(
-            this.#config.io.restore(
+          const restored = validateFileSnapshot(await Promise.resolve<ProductCheckpointFileSnapshot>(this.#config.io.restore(
               this.#config.environment(),
               file.path,
               file.targetSha256,
               file.rollbackBytes,
               file.rollbackSha256,
               cleanupSignal,
-            ),
-            "rewind publication compensation",
-          ), file.path);
-          await exactNativePromise<ProductCheckpointRewindFile>(store.transitionRewindFile(
+            )), file.path);
+          await Promise.resolve<ProductCheckpointRewindFile>(store.transitionRewindFile(
             token,
             file.path,
             ["published"],
             "rolled_back",
             restored.exists ? restored.sha256 : undefined,
             cleanupSignal,
-          ), "rewind publication compensation journal");
+          ));
         } catch (cleanupError) {
           cleanupErrors.push(cleanupError);
         }
@@ -783,10 +753,7 @@ export class ProductCheckpointService extends Service {
     this.#assertHealthy();
     const operationSignal = signal ?? new AbortController().signal;
     const store = this.#requireStore();
-    const files = await exactNativePromise<readonly ProductCheckpointRewindFile[]>(
-      store.listRewindFiles(token, operationSignal),
-      "rewind file plan lookup",
-    );
+    const files = await Promise.resolve<readonly ProductCheckpointRewindFile[]>(store.listRewindFiles(token, operationSignal));
     await this.#restoreRewindParents(token, operationSignal);
     for (const file of [...files].reverse()) {
       operationSignal.throwIfAborted();
@@ -796,14 +763,14 @@ export class ProductCheckpointService extends Service {
         throw new ProductToolError("checkpoint_uncertain", "rewind rollback file plan is invalid");
       }
       const restored = await this.#restoreRewindFile(file, "rolled_back", operationSignal);
-      await exactNativePromise<ProductCheckpointRewindFile>(store.transitionRewindFile(
+      await Promise.resolve<ProductCheckpointRewindFile>(store.transitionRewindFile(
         token,
         file.path,
         [file.phase],
         "rolled_back",
         restored.exists ? restored.sha256 : undefined,
         operationSignal,
-      ), "rewind rollback file journal");
+      ));
     }
   }
 
@@ -818,10 +785,7 @@ export class ProductCheckpointService extends Service {
     if (owner !== this) return owner.reconcile(agent);
     const folded = foldCheckpointLineages(agent.session);
     const store = this.#requireStore();
-    const records = await exactNativePromise<readonly ProductCheckpointRecord[]>(
-      store.listUnsettled(String(agent.id)),
-      "checkpoint Store recovery scan",
-    );
+    const records = await Promise.resolve<readonly ProductCheckpointRecord[]>(store.listUnsettled(String(agent.id)));
     for (const stored of records) {
       let record = stored;
       const known = folded.get(record.checkpointId);
@@ -837,11 +801,11 @@ export class ProductCheckpointService extends Service {
         continue;
       } else if (known.data.phase === record.phase) {
         if (record.lastEventPhase !== record.phase || record.lastEventSeq !== known.eventSeq) {
-          record = await exactNativePromise<ProductCheckpointRecord>(store.markEvent(
+          record = await Promise.resolve<ProductCheckpointRecord>(store.markEvent(
             record.checkpointId,
             record.phase,
             known.eventSeq,
-          ), "checkpoint recovery event correlation");
+          ));
         }
       } else {
         record = await this.#appendPhase(
@@ -859,10 +823,7 @@ export class ProductCheckpointService extends Service {
       }
       const environment = this.#config.environment();
       const signal = new AbortController().signal;
-      const actual = validateFileSnapshot(await exactNativePromise<ProductCheckpointFileSnapshot>(
-        this.#config.io.capture(environment, record.path, MAX_CHECKPOINT_FILE_BYTES, signal),
-        "checkpoint recovery filesystem capture",
-      ), record.path);
+      const actual = validateFileSnapshot(await Promise.resolve<ProductCheckpointFileSnapshot>(this.#config.io.capture(environment, record.path, MAX_CHECKPOINT_FILE_BYTES, signal)), record.path);
       const actualSha = actual.exists ? actual.sha256 : undefined;
       const priorMatches = record.priorSha256 === null ? !actual.exists : actualSha === record.priorSha256;
       const expectedMatches = actualSha === record.expectedSha256;
@@ -885,19 +846,17 @@ export class ProductCheckpointService extends Service {
 
   async #restoreRewindFile(file: ProductCheckpointRewindFile, direction: "published" | "rolled_back", signal: AbortSignal): Promise<ProductCheckpointFileSnapshot> {
     const environment = this.#config.environment();
-    const current = validateFileSnapshot(await exactNativePromise<ProductCheckpointFileSnapshot>(
-      this.#config.io.capture(environment, file.path, MAX_CHECKPOINT_FILE_BYTES, signal), "rewind filesystem adjudication",
-    ), file.path);
+    const current = validateFileSnapshot(await Promise.resolve<ProductCheckpointFileSnapshot>(this.#config.io.capture(environment, file.path, MAX_CHECKPOINT_FILE_BYTES, signal)), file.path);
     const desiredSha = direction === "published" ? file.targetSha256 : file.rollbackSha256;
     const sourceSha = direction === "published" ? file.expectedCurrentSha256 : file.targetSha256;
     const currentSha = current.exists ? current.sha256 : undefined;
     if (currentSha === desiredSha) return current;
     if (currentSha !== sourceSha) throw new ProductToolError("mutation_conflict", "rewind file matches neither sealed side of the transaction");
-    return validateFileSnapshot(await exactNativePromise<ProductCheckpointFileSnapshot>(this.#config.io.restore(
+    return validateFileSnapshot(await Promise.resolve<ProductCheckpointFileSnapshot>(this.#config.io.restore(
       environment, file.path, sourceSha,
       direction === "published" ? file.targetBytes : file.rollbackBytes,
       desiredSha, signal,
-    ), "rewind filesystem publication"), file.path);
+    )), file.path);
   }
 
   #ensureRecovered(agent: Agent): Promise<void> {
@@ -910,7 +869,7 @@ export class ProductCheckpointService extends Service {
   }
 
   async #verifyParents(checkpointId: string, environment: ProductToolExecutionEnvironment, signal: AbortSignal): Promise<void> {
-    const record = await exactNativePromise<ProductCheckpointRecord | undefined>(this.#requireStore().get(checkpointId, signal), "checkpoint directory verification lookup");
+    const record = await Promise.resolve<ProductCheckpointRecord | undefined>(this.#requireStore().get(checkpointId, signal));
     if (record === undefined) throw new ProductToolError("checkpoint_uncertain", "checkpoint owner is unavailable");
     const plan = record.directoryPlan;
     if (plan === undefined) return;
@@ -918,7 +877,7 @@ export class ProductCheckpointService extends Service {
     if (io === undefined) throw new ProductToolError("checkpoint_unavailable", "checkpoint directory authority is unavailable");
     for (const entry of [plan.anchor, ...plan.entries]) {
       if (entry.identity === undefined || ("state" in entry && entry.state !== "created")
-        || await exactNativePromise<string | undefined>(io.inspect(environment, entry.path, signal), "checkpoint directory verification") !== entry.identity) {
+        || await Promise.resolve<string | undefined>(io.inspect(environment, entry.path, signal)) !== entry.identity) {
         throw new ProductToolError("mutation_conflict", "checkpoint directory identity changed before publication");
       }
     }
@@ -937,10 +896,10 @@ export class ProductCheckpointService extends Service {
     const store = this.#requireStore();
     const save = async (next: CheckpointDirectoryPlan): Promise<void> => {
       if (plan === undefined) throw new Error("checkpoint directory plan disappeared");
-      await exactNativePromise(store.updateDirectoryPlan(record.checkpointId, plan, next), "checkpoint directory receipt");
+      await Promise.resolve(store.updateDirectoryPlan(record.checkpointId, plan, next));
       plan = next;
     };
-    const actualAnchor = await exactNativePromise<string | undefined>(io.inspect(environment, plan.anchor.path, signal), "checkpoint parent anchor inspection");
+    const actualAnchor = await Promise.resolve<string | undefined>(io.inspect(environment, plan.anchor.path, signal));
     const managedAnchor = managedAnchors.get(plan.anchor.path);
     if (actualAnchor !== plan.anchor.identity) {
       if (actualAnchor === undefined || managedAnchor !== actualAnchor) {
@@ -953,7 +912,7 @@ export class ProductCheckpointService extends Service {
       signal.throwIfAborted();
       let entry = plan.entries[index];
       if (entry === undefined) throw new Error("checkpoint directory entry disappeared");
-      let actual = await exactNativePromise<string | undefined>(io.inspect(environment, entry.path, signal), "checkpoint parent inspection");
+      let actual = await Promise.resolve<string | undefined>(io.inspect(environment, entry.path, signal));
       const update = async (next: typeof entry): Promise<void> => {
         if (plan === undefined || next === undefined) throw new Error("checkpoint directory plan disappeared");
         await save(validateCheckpointDirectoryPlan({ ...plan, entries: plan.entries.map((value, offset) => offset === index ? next : value) }));
@@ -968,7 +927,7 @@ export class ProductCheckpointService extends Service {
       } else {
         if (actual !== undefined) throw new ProductToolError("checkpoint_uncertain", "checkpoint directory has no matching creation receipt");
         if (entry.state === "removed") await update({ ...entry, state: "restoring" });
-        actual = await exactNativePromise<string>(io.create(environment, entry.path, parent, signal), "checkpoint directory creation");
+        actual = await Promise.resolve<string>(io.create(environment, entry.path, parent, signal));
         await update({ path: entry.path, identity: actual, state: "created" });
       }
       if (actual === undefined) throw new ProductToolError("checkpoint_uncertain", "checkpoint directory lacks an inode receipt");
@@ -978,7 +937,7 @@ export class ProductCheckpointService extends Service {
 
   async #removeParents(record: ProductCheckpointRecord, environment: ProductToolExecutionEnvironment, signal: AbortSignal): Promise<void> {
     const store = this.#requireStore();
-    const fresh = await exactNativePromise<ProductCheckpointRecord | undefined>(store.get(record.checkpointId, signal), "checkpoint directory cleanup lookup");
+    const fresh = await Promise.resolve<ProductCheckpointRecord | undefined>(store.get(record.checkpointId, signal));
     let plan = fresh?.directoryPlan;
     if (plan === undefined) return;
     const io = this.#config.io.directories;
@@ -991,24 +950,24 @@ export class ProductCheckpointService extends Service {
       const update = async (state: "removing" | "removed" | "created"): Promise<void> => {
         if (plan === undefined) throw new Error("checkpoint directory plan disappeared");
         const next = validateCheckpointDirectoryPlan({ ...plan, entries: plan.entries.map((value, offset) => offset === index ? { ...entry, state } : value) });
-        await exactNativePromise(store.updateDirectoryPlan(record.checkpointId, plan, next), "checkpoint directory cleanup journal");
+        await Promise.resolve(store.updateDirectoryPlan(record.checkpointId, plan, next));
         plan = next;
       };
       if (entry.state !== "removing") await update("removing");
-      const removed = await exactNativePromise<boolean>(io.remove(environment, entry.path, entry.identity, signal), "checkpoint owned empty directory cleanup");
+      const removed = await Promise.resolve<boolean>(io.remove(environment, entry.path, entry.identity, signal));
       await update(removed ? "removed" : "created");
     }
   }
 
   async #restoreRewindParents(token: string, signal: AbortSignal): Promise<void> {
     const store = this.#requireStore();
-    const records = await exactNativePromise<readonly ProductCheckpointRecord[]>(store.listRewindDirectoryPlans(token, signal), "rewind directory plan lookup");
+    const records = await Promise.resolve<readonly ProductCheckpointRecord[]>(store.listRewindDirectoryPlans(token, signal));
     const managed = new Map<string, string>();
     for (const record of records) {
       if (record.directoryPlan?.entries.some((entry) => entry.state === "removed" || entry.state === "removing" || entry.state === "restoring")) {
         await this.#createParents(record, this.#config.environment(), signal, managed);
       }
-      const current = await exactNativePromise<ProductCheckpointRecord | undefined>(store.get(record.checkpointId, signal), "rewind directory receipt lookup");
+      const current = await Promise.resolve<ProductCheckpointRecord | undefined>(store.get(record.checkpointId, signal));
       for (const entry of current?.directoryPlan?.entries ?? []) {
         if (entry.state === "created" && entry.identity !== undefined) managed.set(entry.path, entry.identity);
       }
@@ -1023,10 +982,7 @@ export class ProductCheckpointService extends Service {
     this.#assertHealthy();
     const signal = branch === "commit" ? context.signal : new AbortController().signal;
     const store = this.#requireStore();
-    const record = await exactNativePromise<ProductCheckpointRecord | undefined>(
-      store.get(checkpoint, signal),
-      "checkpoint Store handle lookup",
-    );
+    const record = await Promise.resolve<ProductCheckpointRecord | undefined>(store.get(checkpoint, signal));
     if (record === undefined) {
       throw new ProductToolError("checkpoint_uncertain", "checkpoint handle is unavailable");
     }
@@ -1041,10 +997,7 @@ export class ProductCheckpointService extends Service {
     if (record.phase !== "prepared") {
       throw new ProductToolError("checkpoint_uncertain", "checkpoint handle is already settled differently");
     }
-    const actual = validateFileSnapshot(await exactNativePromise<ProductCheckpointFileSnapshot>(
-      this.#config.io.capture(context.environment, record.path, MAX_CHECKPOINT_FILE_BYTES, signal),
-      "checkpoint settlement filesystem capture",
-    ), record.path);
+    const actual = validateFileSnapshot(await Promise.resolve<ProductCheckpointFileSnapshot>(this.#config.io.capture(context.environment, record.path, MAX_CHECKPOINT_FILE_BYTES, signal)), record.path);
     const actualSha = actual.exists ? actual.sha256 : undefined;
     const priorMatches = record.priorSha256 === null ? !actual.exists : actualSha === record.priorSha256;
     const expectedMatches = actualSha === record.expectedSha256;
@@ -1090,13 +1043,13 @@ export class ProductCheckpointService extends Service {
     signal: AbortSignal,
   ): Promise<ProductCheckpointRecord> {
     const store = this.#requireStore();
-    const transitioned = await exactNativePromise<ProductCheckpointRecord>(store.transition(
+    const transitioned = await Promise.resolve<ProductCheckpointRecord>(store.transition(
       record.checkpointId,
       [record.phase],
       next,
       actualSha256,
       signal,
-    ), "checkpoint Store transition");
+    ));
     return await this.#appendPhase(session, transitioned, next, actualSha256, signal);
   }
 
@@ -1123,15 +1076,9 @@ export class ProductCheckpointService extends Service {
       sessionId: record.sessionId,
       tool: record.tool,
     });
-    const flushed = await exactNativePromise<unknown>(
-      this.#config.durability.flush(session),
-      "checkpoint Session durability flush",
-    );
+    const flushed = await Promise.resolve<unknown>(this.#config.durability.flush(session));
     if (flushed !== true) throw new Error("no Session durability Provider participated in checkpoint flush");
-    return await exactNativePromise<ProductCheckpointRecord>(
-      this.#requireStore().markEvent(record.checkpointId, phase, event.seq, signal),
-      "checkpoint Store event correlation",
-    );
+    return await Promise.resolve<ProductCheckpointRecord>(this.#requireStore().markEvent(record.checkpointId, phase, event.seq, signal));
   }
 
   #callKey(sessionId: string, turn: number, callId: string): string {

@@ -2,7 +2,7 @@
 type: technical-architecture
 status: implemented
 module: declarative-components
-updated: 2026-09-02
+updated: 2026-10-02
 ---
 
 # Declarative components
@@ -105,6 +105,10 @@ definitions become visible only at component commit through the one DSH `ctx.too
 Model calls to committed MCP and Host Tools then pass generation birth, Plan and ProductPermission.
 Hooks instead execute automatically through the Host reverse port in priority/order, are root-scoped
 by default and fail closed according to their `deny`/`abort_operation` result.
+
+MCP and Host tool input schemas remain object-rooted, bounded foreign JSON Schema declarations. The transport does not impose a second keyword whitelist or the native structured-output subset on them; the selected remote/Host executor owns input semantics. Standard schema annotations and constraints must not remove otherwise usable tools.
+
+MCP results tolerate standard envelope/content metadata (`structuredContent`, `_meta`, annotations). Structured data and embedded text/resources are projected into bounded text without fetching resource links. Unsupported audio/blob/image presentation retains usable text with an explicit omission and `truncated`; unavailable/failed image publication cannot replace a successful remote tool result. Cancellation, current-generation authority, attachment integrity and explicit remote `isError` remain authoritative. All projected text shares the existing byte budget and known credential redaction.
 
 The stock DSH MCP plugin is reference evidence, not the official profile owner, because literal credential configuration and immediate registration do not satisfy these Host-secret and unpublished-generation boundaries.
 

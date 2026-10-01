@@ -27,7 +27,7 @@ import {
   canonicalOutputSchemaForDsh,
   normalizeCanonicalJson,
   stableJson,
-  validateCanonicalToolInput,
+  parseCanonicalToolInput,
   validateCanonicalToolOutput,
 } from "@myagents-dsh/tool-contracts";
 import {
@@ -1178,7 +1178,7 @@ export class ProductSkillService extends Service {
       }),
       isConcurrencySafe: () => false,
       execute: async (value: unknown, exec: ToolRunContext) => {
-        const input = validateCanonicalToolInput("Skill", value) as Readonly<{ skill: string; args?: string }>;
+        const input = parseCanonicalToolInput("Skill", value) as Readonly<{ skill: string; args?: string }>;
         const product = ctx.productTools.resolve(exec);
         const generationKey = this.#generationKey({
             digest: product.birth.componentDigest,

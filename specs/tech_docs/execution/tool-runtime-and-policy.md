@@ -2,7 +2,7 @@
 type: technical-architecture
 status: implemented
 module: tool-runtime-and-policy
-updated: 2026-09-30
+updated: 2026-10-02
 ---
 
 # Tool runtime and policy
@@ -28,10 +28,10 @@ All model-visible tools register into the one DSH `ctx.tools` registry and execu
 visible definition + frozen operation scope
   -> parse and losslessly snapshot original model input
   -> governed PreToolUse transform
-  -> validate transformed input against the visible definition
+  -> normalize declared argument decorations against the visible definition
   -> commit authoritative assistant/tool-call representation
   -> DSH ToolRuntime scheduling and body dispatch
-       -> visible native schema or custom-tool input validation
+       -> visible native schema or custom-tool argument parsing and validation
        -> operation / catalog / origin / Plan guards
        -> tool-specific workspace / identity guards
        -> permission, PermissionRequest Hook and interaction without a human-decision deadline
@@ -43,6 +43,10 @@ visible definition + frozen operation scope
 ```
 
 Visibility and permission remain separate. Hiding a tool does not authorize execution, and a visible definition still revalidates workspace, revision, mode, origin, and hard policy at the delayed execution boundary.
+
+Custom model-facing tools use `parseCanonicalToolInput` to discard undeclared fields in declared object/array arguments before validating their execution arguments. This accepts provider-added decorations such as `reason` on the parameterless `EnterPlanMode` and `ExitPlanMode` without giving those fields execution authority. Declared types and required values still follow the canonical schema. Open business maps (such as task metadata), composed/ref/pattern schemas and open native Shell schemas retain their data; parsing does not guess foreign schema branches. `validateCanonicalToolInput` remains strict for durable-history consumers, and output validation is unchanged. Parsing returns a detached object and never modifies the original model call.
+
+PreToolUse uses the same `normalizeToolArguments` policy against the actual visible definition before committing its transformed input. A passthrough Hook therefore cannot turn a harmless extra field into a schema failure; all selected Hooks still receive the original input and retain their deny/transform authority. Actual argument validation belongs to the selected executor. A malformed or unknown call produces its individual tool error rather than rejecting the whole assistant tool batch, and foreign input schemas are not interpreted as DSH structured-output schemas.
 
 Human waiting is not execution time. For the native tools, the selected stock definitions declare timeouts, but the composition excludes those names from the outer DSH timeout policy and starts Product execution deadlines after permission. Unchanged tools retain the DSH timeout policy. Transport registration/response, network/provider calls, MCP calls, process work and cleanup retain their own bounded owners.
 
@@ -168,7 +172,7 @@ A tool change must update the handwritten contract source, generated catalog/sch
 
 ## Trusted service callbacks
 
-Composition-installed callbacks use ordinary Promise/thenable semantics. Promise subclasses, own observation fields and Proxy functions do not establish a security boundary inside trusted Runtime JavaScript. The tool service caches the parsed catalog by its immutable source identity and compares admitted revision/digest during execution. Model arguments, external RPC declarations, path/URL/attachment identity and post-approval policy checks retain their boundary validation.
+Composition-installed callbacks use ordinary Promise/thenable semantics, including Plan, TaskGraph, checkpoint, components, Hooks, Host tools, attachment I/O and safe-HTTP callbacks. Node async tracing legitimately adds symbol properties to native Promises; Promise prototype/own-key checks must not turn successful execution or durability into a recovery failure. Promise subclasses, own observation fields and Proxy functions do not establish a security boundary inside trusted Runtime JavaScript. The tool service caches the parsed catalog by its immutable source identity and compares admitted revision/digest during execution. Model arguments, external RPC declarations, path/URL/attachment identity and post-approval policy checks retain their boundary validation.
 
 A governed Edit without a current complete Read instructs the caller to read a range covering the whole file, or omit offset and limit, and then retry. This improves recovery guidance without changing ReadState authority or permitting a partial/stale read to authorize a mutation.
 

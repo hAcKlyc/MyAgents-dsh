@@ -2,7 +2,7 @@
 type: technical-architecture
 status: implemented
 module: permissions-interactions-and-plan
-updated: 2026-09-25
+updated: 2026-10-02
 wire_authority: ../../../packages/protocol/src/contract-source.ts
 ---
 
@@ -106,11 +106,15 @@ An unbounded human wait must not retain an execution resource. Governed file mut
 
 Permission decisions are `deny`, `allow_once`, `always_allow` and `cancelled`. AskUser and plan approval use `answered` or `cancelled`. Calls sharing the same executing Agent, client operation, origin and exact authorization tuple serialize behind one gate: one prompt is pending at a time, an `always_allow` leader releases matching waiters through the exact operation-local proof, while `allow_once`, deny and cancellation remain call-scoped and allow a later waiter to ask independently. Different Agents or tuples never share settlement.
 
+Question header brevity and option word counts are display guidance, not execution refusal conditions. Omitted `multiSelect` defaults to false. Equal question text remains independently answerable through per-question IDs; nested provider decorations are discarded by the shared model argument parser. Bounds on payload size, question/option count and answer identity remain enforced.
+
 The safe interaction classes skip an ordinary permission card and retain the question or plan review. `AskUserQuestion` first authorizes `interaction.ask`, then opens `ask_user`; `ExitPlanMode` first authorizes `session.plan.exit`, then reads exact managed Plan bytes and opens `plan_approval`. `EnterPlanMode` uses the safe `session.plan.enter` class and normally skips a permission card. DSH approval audit facts are written in the executing root or child Session, while durable permission rules and Plan ownership remain in the primary root Session. The Host UI is a disposable projection.
 
 ## 6. Host-controlled Plan state
 
 Plan is not a fifth permission mode. `ProductPlanService` owns one durable `normal | plan` state, the managed plan artifact, prompt contribution and monotonic tool guard. Model-visible `EnterPlanMode` and `ExitPlanMode` continue to use that service.
+
+Both Plan tools have no business parameters. Their model-call parser ignores extra top-level fields (including provider-injected `reason`) and passes `{}` to the existing Plan service. An extra field cannot select the mode, approve the plan or change operation authority; entry and review still follow the same durable owner and interaction lifecycle.
 
 Plan keeps the platform's ordinary `bash` or `pwsh` tool available for research, matching the Explore role's prompt-guided read-only use. The Plan prompt permits inspection and forbids file changes, dependency installation, builds, configuration changes and other Shell side effects. The Runtime does not classify command text or claim a read-only process sandbox. Shell calls still traverse the existing permission, Hook, operation-revision, sandbox and executable checks; Plan itself grants no Shell approval. Governed `Write`/`Edit` remain limited to the managed plan file, and submitting the plan still requires explicit review.
 

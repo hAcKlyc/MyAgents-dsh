@@ -28,7 +28,7 @@ import { symbols, type Context } from "@deepseek-ai/cordis";
 import { createHash } from "node:crypto";
 import sharp from "sharp";
 import { AsyncLocalStorage } from "node:async_hooks";
-import { isPromise, isProxy } from "node:util/types";
+import { isProxy } from "node:util/types";
 
 import {
   HostPortService,
@@ -712,9 +712,6 @@ export class HostAttachmentStore extends AttachmentStore {
     let discardStaging: (() => Promise<void>) | undefined;
     return runWithCleanup(async () => {
       const pending: unknown = this.#io.stage(scope.stagingRoot, input.bytes, signal);
-      if (pending === null || typeof pending !== "object" || isProxy(pending) || !isPromise(pending)) {
-        throw new TypeError("Host attachment staging authority must return a native Promise");
-      }
       const stagedValue: unknown = await pending;
       if (stagedValue !== null && typeof stagedValue === "object" && !isProxy(stagedValue)) {
         const descriptor = Object.getOwnPropertyDescriptor(stagedValue, "discard");
@@ -722,12 +719,7 @@ export class HostAttachmentStore extends AttachmentStore {
           && typeof descriptor.value === "function" && !isProxy(descriptor.value)) {
           const cleanup = descriptor.value as HostAttachmentStagingFile["discard"];
           discardStaging = async () => {
-            const cleanupPending: unknown = Reflect.apply(cleanup, stagedValue, []);
-            if (cleanupPending === null || typeof cleanupPending !== "object"
-              || isProxy(cleanupPending) || !isPromise(cleanupPending)) {
-              throw new TypeError("Host attachment staging cleanup must return a native Promise");
-            }
-            await cleanupPending;
+            await Reflect.apply(cleanup, stagedValue, []);
           };
         }
       }
@@ -825,9 +817,6 @@ export class HostAttachmentStore extends AttachmentStore {
         this.imageLimits.maxImageBytes,
         signal,
       );
-      if (pending === null || typeof pending !== "object" || isProxy(pending) || !isPromise(pending)) {
-        throw new TypeError("Host attachment lease reader must return a native Promise");
-      }
       const bytes: unknown = await pending;
       if (isProxy(bytes) || !(bytes instanceof Uint8Array)) {
         throw new TypeError("Host attachment lease reader must resolve to a native Uint8Array");
@@ -921,9 +910,6 @@ export class HostAttachmentStore extends AttachmentStore {
         this.imageLimits.maxImageBytes,
         signal,
       );
-      if (pending === null || typeof pending !== "object" || isProxy(pending) || !isPromise(pending)) {
-        throw new TypeError("Host attachment lease reader must return a native Promise");
-      }
       const bytes: unknown = await pending;
       if (isProxy(bytes) || !(bytes instanceof Uint8Array)) {
         throw new TypeError("Host attachment lease reader must resolve to a native Uint8Array");

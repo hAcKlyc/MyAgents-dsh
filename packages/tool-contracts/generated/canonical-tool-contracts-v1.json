@@ -2651,7 +2651,8 @@
               "additionalProperties": false,
               "properties": {
                 "header": {
-                  "maxLength": 12,
+                  "description": "Short display heading; prefer twelve characters or fewer.",
+                  "maxLength": 256,
                   "minLength": 1,
                   "type": "string"
                 },
@@ -2670,7 +2671,6 @@
                       "label": {
                         "maxLength": 80,
                         "minLength": 1,
-                        "pattern": "^(?:\\S+)(?:\\s+\\S+){0,4}$",
                         "type": "string"
                       },
                       "preview": {
@@ -2697,8 +2697,7 @@
               "required": [
                 "question",
                 "header",
-                "options",
-                "multiSelect"
+                "options"
               ],
               "type": "object"
             },
@@ -2720,7 +2719,8 @@
               "additionalProperties": false,
               "properties": {
                 "header": {
-                  "maxLength": 12,
+                  "description": "Short display heading; prefer twelve characters or fewer.",
+                  "maxLength": 256,
                   "minLength": 1,
                   "type": "string"
                 },
@@ -2739,7 +2739,6 @@
                       "label": {
                         "maxLength": 80,
                         "minLength": 1,
-                        "pattern": "^(?:\\S+)(?:\\s+\\S+){0,4}$",
                         "type": "string"
                       },
                       "preview": {
@@ -2766,8 +2765,7 @@
               "required": [
                 "question",
                 "header",
-                "options",
-                "multiSelect"
+                "options"
               ],
               "type": "object"
             },

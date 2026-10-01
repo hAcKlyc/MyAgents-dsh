@@ -22,6 +22,7 @@ import {
   CANONICAL_TOOL_SCHEMA_FIXTURES,
   canonicalInputSchemaForDsh,
   effectiveToolCatalogDigest,
+  parseCanonicalToolInput,
   validateCanonicalToolInput,
   validateCanonicalToolOutput,
   validateEffectiveToolCatalog,
@@ -163,6 +164,36 @@ describe("canonical tool contract authority", () => {
     const exactPiLongPath = "x".repeat(32_769);
     expect(validateCanonicalToolInput("ls", { path: exactPiLongPath })).toEqual({ path: exactPiLongPath });
     expect(() => validateCanonicalToolInput("ls", { limit: Number.POSITIVE_INFINITY })).toThrow();
+  });
+
+  it("ignores extra model arguments while retaining declared values and strict history validation", () => {
+    for (const name of CANONICAL_TOOL_NAMES) {
+      const input = Object.freeze({ ...CANONICAL_TOOL_SCHEMA_FIXTURES[name].input, unexpected: true });
+      expect(parseCanonicalToolInput(name, input)).toEqual(isOfficialShellTool(name)
+        ? input : CANONICAL_TOOL_SCHEMA_FIXTURES[name].input);
+      expect(input.unexpected).toBe(true);
+    }
+    for (const name of ["EnterPlanMode", "ExitPlanMode"] as const) {
+      expect(parseCanonicalToolInput(name, { reason: "Provider placeholder" })).toEqual({});
+      expect(() => validateCanonicalToolInput(name, { reason: "Provider placeholder" })).toThrow();
+      for (const invalid of [null, [], "reason", 1]) {
+        expect(() => parseCanonicalToolInput(name, invalid)).toThrow();
+      }
+    }
+    const task = {
+      subject: "Keep declared metadata",
+      description: "Transport extras do not change task state",
+      metadata: { reason: "real business value", priority: 3 },
+    };
+    expect(parseCanonicalToolInput("TaskCreate", { ...task, reason: "transport extra" })).toEqual(task);
+    expect(() => parseCanonicalToolInput("Skill", { reason: "missing skill" })).toThrow();
+    expect(() => parseCanonicalToolInput("Skill", { skill: 42, reason: "invalid skill" })).toThrow();
+    expect(() => parseCanonicalToolInput("TaskCreate", {
+      ...task, metadata: { nested: { value: true } }, reason: "extra",
+    })).toThrow();
+    expect(() => validateCanonicalToolOutput("EnterPlanMode", {
+      ...CANONICAL_TOOL_SCHEMA_FIXTURES.EnterPlanMode.output, reason: "extra",
+    })).toThrow();
   });
 
   it("projects portable reference-free Task metadata schemas for every Provider family", () => {

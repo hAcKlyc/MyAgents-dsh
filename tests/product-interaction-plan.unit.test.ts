@@ -1,3 +1,4 @@
+import { createHook } from "node:async_hooks";
 import { modelToolNames } from "@myagents-dsh/protocol";
 import { Context } from "@deepseek-ai/cordis";
 import { AgentRegistry, type Agent } from "@deepseek-ai/dsh-agent";
@@ -318,6 +319,29 @@ const mounted = async (options: MountedOptions = {}) => {
 };
 
 describe("canonical interaction and DSH-backed plan mode", () => {
+  it("ignores extra model parameters while entering and approving plan mode", async () => {
+    const state = await mounted();
+    const entered = state.output(await state.execute("EnterPlanMode", {
+      reason: "Live test plan mode write gate",
+      mode: "normal",
+    })) as Readonly<{ mode: string; planPath: string }>;
+    expect(entered.mode).toBe("plan");
+    expect(state.context.productPlan.snapshot(state.agent).mode).toBe("plan");
+    expect((await state.execute("write", {
+      file_path: entered.planPath,
+      content: "# Reviewed plan\n",
+    })).isError).toBe(false);
+
+    state.questionResponders.push(state.answer(["Approve"]));
+    const exited = state.output(await state.execute("ExitPlanMode", {
+      reason: "Submit the reviewed plan",
+      disposition: "rejected",
+    }));
+    expect(exited).toMatchObject({ disposition: "approved", mode: "normal" });
+    expect(state.questionRequests).toHaveLength(1);
+    expect(state.context.productPlan.snapshot(state.agent).mode).toBe("normal");
+  });
+
   it("keeps plan approval pending beyond the former outer tool timeout", async () => {
     vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
     const state = await mounted();
@@ -397,7 +421,7 @@ describe("canonical interaction and DSH-backed plan mode", () => {
     expect(state.flushes.filter((entry) => entry.startsWith("plan:"))).toHaveLength(2);
   });
 
-  it("asks structured questions once and rejects duplicate question identity", async () => {
+  it("asks structured questions and distinguishes equal text by question identity", async () => {
     const state = await mounted();
     state.questionResponders.push(state.answer(["Continue"]));
     const result = await state.execute("AskUserQuestion", {
@@ -420,14 +444,17 @@ describe("canonical interaction and DSH-backed plan mode", () => {
     expect(state.questionRequests).toHaveLength(1);
     expect(state.questionRequests[0]?.questions[0]?.options?.[0]?.description).toContain("bounded preview");
 
+    state.questionResponders.push(state.answer(["A"]));
     const duplicate = await state.execute("AskUserQuestion", {
       questions: [
         { header: "One", multiSelect: false, options: [{ label: "A", description: "A" }, { label: "B", description: "B" }], question: "same" },
         { header: "Two", multiSelect: false, options: [{ label: "A", description: "A" }, { label: "B", description: "B" }], question: "same" },
       ],
     });
-    expect(duplicate.isError).toBe(true);
-    expect(state.questionRequests).toHaveLength(1);
+    expect(duplicate.isError).toBe(false);
+    expect(state.questionRequests).toHaveLength(2);
+    const repeatedQuestions = state.questionRequests[1]?.questions;
+    expect(repeatedQuestions?.[0]?.id).not.toBe(repeatedQuestions?.[1]?.id);
 
     state.questionResponders.push(state.answer(["First", "Second"], "free-form detail"));
     const multi = state.output(await state.execute("AskUserQuestion", {
@@ -719,7 +746,7 @@ describe("canonical interaction and DSH-backed plan mode", () => {
       .toThrow(expect.objectContaining({ code: "plan_recovery_required" }));
   });
 
-  it("rejects deceptive plan Provider promises and values before reflecting them", async () => {
+  it("accepts Promise subclasses and rejects invalid plan target values", async () => {
     class ForeignPromise<T> extends Promise<T> {}
     const foreignPromise = await mounted({
       planIo: (base) => Object.freeze({
@@ -732,8 +759,8 @@ describe("canonical interaction and DSH-backed plan mode", () => {
         },
       }),
     });
-    expect((await foreignPromise.execute("EnterPlanMode", {})).isError).toBe(true);
-    expect(foreignPromise.context.productPlan.snapshot(foreignPromise.agent).mode).toBe("normal");
+    expect((await foreignPromise.execute("EnterPlanMode", {})).isError).toBe(false);
+    expect(foreignPromise.context.productPlan.snapshot(foreignPromise.agent).mode).toBe("plan");
 
     let traps = 0;
     const proxyTarget = new Proxy({}, {
@@ -853,4 +880,31 @@ describe("canonical interaction and DSH-backed plan mode", () => {
     expect(requestSignal.aborted).toBe(true);
     await expect(pending).resolves.toMatchObject({ isError: true });
   });
+
+  it("accepts nested decorations and display guidance without losing the question", async () => {
+    const state = await mounted();
+    const label = "Please continue with this proposed action";
+    state.questionResponders.push(state.answer([label]));
+    const result = state.output(await state.execute("AskUserQuestion", {
+      reason: "Extra transport field",
+      questions: [{
+        question: "Continue with the operation?", header: "Longer display heading", reason: "Question decoration",
+        options: [{ label, description: "Proceed", reason: "Option decoration" }, { label: "Stop", description: "Stop" }],
+      }],
+    }));
+    expect(result).toMatchObject({ answers: [{ selectedLabels: [label] }] });
+    expect(state.questionRequests[0]?.questions[0]).toMatchObject({
+      header: "Longer display heading", multiSelect: false,
+      options: [{ label, description: "Proceed" }, { label: "Stop", description: "Stop" }],
+    });
+  });
+
+  it("enters plan mode with normal Promises carrying Node async tracking symbols", async () => {
+    const state = await mounted();
+    const hook = createHook({ init: () => undefined }).enable();
+    try {
+      expect(state.output(await state.execute("EnterPlanMode", {}))).toMatchObject({ mode: "plan" });
+    } finally { hook.disable(); }
+  });
+
 });

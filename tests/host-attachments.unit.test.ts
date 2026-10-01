@@ -412,13 +412,13 @@ describe("HostAttachmentStore", () => {
     expect(acquires).toBe(0);
   });
 
-  it("rejects a proxy lease reader promise without executing its traps and still releases the lease", async () => {
+  it("releases a lease when a trusted reader then getter fails", async () => {
     let proxyTraps = 0;
     const releases: string[] = [];
     const proxiedPromise = new Proxy(Promise.resolve(Uint8Array.from(PNG)), {
       get: () => {
         proxyTraps += 1;
-        throw new Error("proxy lease promise trap must not execute");
+        throw new Error("synthetic lease reader then getter failed");
       },
     });
     const harness = await createHarness(Object.freeze({
@@ -445,9 +445,9 @@ describe("HostAttachmentStore", () => {
       name: "pixel.png",
       sha256: PNG_SHA256,
       sizeBytes: PNG.byteLength,
-    }))).rejects.toThrow("Host attachment lease reader must return a native Promise");
+    }))).rejects.toThrow("synthetic lease reader then getter failed");
     expect({ proxyTraps, releases }).toEqual({
-      proxyTraps: 0,
+      proxyTraps: 1,
       releases: ["lease-proxy-promise"],
     });
   });

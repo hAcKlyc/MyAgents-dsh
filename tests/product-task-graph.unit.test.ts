@@ -1,3 +1,4 @@
+import { createHook } from "node:async_hooks";
 import { Context } from "@deepseek-ai/cordis";
 import { AgentRegistry, type Agent } from "@deepseek-ai/dsh-agent";
 import { ToolCallId } from "@deepseek-ai/dsh-llm";
@@ -469,9 +470,8 @@ describe("durable Session-local product TaskGraph", () => {
 
     class ForeignPromise<T> extends Promise<T> {}
     const foreignFlush = await mounted({ flush: () => ForeignPromise.resolve(true) });
-    expect((await foreignFlush.execute("TaskCreate", { subject: "Foreign", description: "Foreign" })).isError).toBe(true);
-    expect(() => foreignFlush.context.productTaskGraph.snapshot(foreignFlush.agent))
-      .toThrow(expect.objectContaining({ code: "task_graph_unavailable" }));
+    expect((await foreignFlush.execute("TaskCreate", { subject: "Foreign", description: "Foreign" })).isError).toBe(false);
+    expect(foreignFlush.context.productTaskGraph.snapshot(foreignFlush.agent, "personal").tasks).toHaveLength(1);
   });
 
   it("rejects stale operation authority before TaskGraph publication", async () => {
@@ -525,6 +525,18 @@ describe("durable Session-local product TaskGraph", () => {
     expect(third.task).toMatchObject({ id: "task-2" });
     expect(state.context.productTaskGraph.snapshot(state.agent, "personal").sequence).toBe(2);
   });
+
+  it("keeps task mutations usable with Node async tracking enabled", async () => {
+    const state = await mounted();
+    const hook = createHook({ init: () => undefined }).enable();
+    try {
+      const created = await successful(state, "TaskCreate", { subject: "Tracked", description: "Tracked task" });
+      expect(created.task).toMatchObject({ subject: "Tracked" });
+      expect((await state.execute("TaskList", {})).isError).toBe(false);
+      expect(state.flushes).toHaveLength(1);
+    } finally { hook.disable(); }
+  });
+
 });
 
 const assertTaskEvent = (event: SessionEvent | undefined, expectedTool: "TaskCreate" | "TaskUpdate"): void => {

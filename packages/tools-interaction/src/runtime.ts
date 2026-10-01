@@ -15,7 +15,7 @@ import {
   canonicalInputSchemaForDsh,
   canonicalOutputSchemaForDsh,
   normalizeCanonicalJson,
-  validateCanonicalToolInput,
+  parseCanonicalToolInput,
   validateCanonicalToolOutput,
   type CanonicalToolName,
 } from "@myagents-dsh/tool-contracts";
@@ -225,17 +225,6 @@ const snapshotPlanRead = (value: unknown, maxBytes: number): ProductPlanArtifact
     revision: read.revision,
     target: snapshotFsTarget(read.target, "managed plan artifact read target"),
   });
-};
-
-const exactNativePromise = <T>(value: unknown, description: string): Promise<T> => {
-  if (value !== null && typeof value === "object" && utilTypes.isProxy(value)) {
-    throw new TypeError(`${description} must not be a Proxy thenable`);
-  }
-  if (!utilTypes.isPromise(value) || Object.getPrototypeOf(value) !== Promise.prototype
-    || Reflect.ownKeys(value).length !== 0) {
-    throw new TypeError(`${description} must be a native Promise`);
-  }
-  return value as Promise<T>;
 };
 
 const hash = (...parts: readonly string[]): string => {
@@ -711,10 +700,7 @@ export class ProductPlanService extends Service {
     let transitionStarted = false;
     try {
       if (request.mode === "plan") {
-        const target = snapshotFsTarget(await this.track(exactNativePromise<FsTarget>(
-          this.configValue.io.prepare(planRoot, sessionId, controller.signal),
-          "Host managed plan artifact preparation",
-        )), "Host managed plan artifact preparation result");
+        const target = snapshotFsTarget(await this.track(Promise.resolve<FsTarget>(this.configValue.io.prepare(planRoot, sessionId, controller.signal))), "Host managed plan artifact preparation result");
         const expectedPath = this.configValue.io.pathFor(planRoot, sessionId);
         if (target.displayPath !== expectedPath) {
           throw new ProductToolError("plan_state_conflict", "Host plan artifact identity changed");
@@ -840,16 +826,13 @@ export class ProductPlanService extends Service {
       throw new ProductToolError("plan_artifact_unavailable", "managed plan artifact is available only in plan mode");
     }
     try {
-      return snapshotFsTarget(await exactNativePromise<FsTarget>(
-        this.configValue.io.resolve(
+      return snapshotFsTarget(await Promise.resolve<FsTarget>(this.configValue.io.resolve(
           planRoot,
           sessionId,
           path,
           tool === "Write",
           context.signal,
-        ),
-        "plan artifact resolution",
-      ), "plan artifact resolution result");
+        )), "plan artifact resolution result");
     } catch (error) {
       throwIfProductToolAborted(context.signal);
       throw new ProductToolError("plan_artifact_unavailable", safeErrorCodes(error).has("FS_NOT_FOUND")
@@ -866,7 +849,7 @@ export class ProductPlanService extends Service {
     return Object.freeze({
       description: contract.description,
       execute: async (value: unknown, exec: ToolRunContext) => {
-        const input = validateCanonicalToolInput(name, value);
+        const input = parseCanonicalToolInput(name, value);
         const args = exactDataObject(input, Object.keys(input as JsonObject), [], `${name} input`);
         return validateCanonicalToolOutput(name, await execute(args, exec));
       },
@@ -885,7 +868,6 @@ export class ProductPlanService extends Service {
       const context = this.ctx.productTools.resolve(exec);
       const questions = normalizeCanonicalJson(args.questions, "AskUserQuestion questions");
       if (!Array.isArray(questions)) throw new ProductToolError("interaction_unavailable", "question list is invalid");
-      const seenQuestionText = new Set<string>();
       const interactionId = hash(
         "myagents-ask-user-v1",
         String(productRootAgent(context).session.id),
@@ -894,12 +876,8 @@ export class ProductPlanService extends Service {
         JSON.stringify(questions),
       );
       const dshQuestions = questions.map((raw, index) => {
-        const question = exactDataObject(raw, ["header", "multiSelect", "options", "question"], [], `question[${index}]`);
+        const question = exactDataObject(raw, ["header", "options", "question"], ["multiSelect"], `question[${index}]`);
         const text = String(question.question);
-        if (seenQuestionText.has(text)) {
-          throw new ProductToolError("interaction_unavailable", "question text must be unique within one call");
-        }
-        seenQuestionText.add(text);
         if (!Array.isArray(question.options)) throw new ProductToolError("interaction_unavailable", "question options are invalid");
         const options = question.options.map((rawOption, optionIndex) => {
           const option = exactDataObject(rawOption, ["description", "label"], ["preview"], `question[${index}] option[${optionIndex}]`);
@@ -915,7 +893,7 @@ export class ProductPlanService extends Service {
           header: String(question.header),
           question: text,
           options,
-          multiSelect: question.multiSelect as boolean,
+          multiSelect: question.multiSelect === true,
         });
       });
       await this.ctx.productTools.authorize(context, {
@@ -927,14 +905,11 @@ export class ProductPlanService extends Service {
       try {
         let answer: AskUserQuestionAnswer;
         try {
-          answer = await this.track(exactNativePromise<AskUserQuestionAnswer>(
-            this.ctx.userQuestions.ask({
+          answer = await this.track(Promise.resolve<AskUserQuestionAnswer>(this.ctx.userQuestions.ask({
               agent: context.agent,
               questions: dshQuestions,
               signal: controller.signal,
-            }),
-            "AskUserQuestion settlement",
-          ));
+            })));
         } catch (error) {
           throwIfProductToolAborted(context.signal);
           throw interactionError(error, "interaction_rejected", "question interaction failed closed");
@@ -981,10 +956,7 @@ export class ProductPlanService extends Service {
           const controller = this.controller(context.signal);
           let transitionStarted = false;
           try {
-            const target = snapshotFsTarget(await this.track(exactNativePromise<FsTarget>(
-              this.configValue.io.prepare(planRoot, sessionId, controller.signal),
-              "managed plan artifact preparation",
-            )), "managed plan artifact preparation result");
+            const target = snapshotFsTarget(await this.track(Promise.resolve<FsTarget>(this.configValue.io.prepare(planRoot, sessionId, controller.signal))), "managed plan artifact preparation result");
             throwIfProductToolAborted(context.signal);
             if (before.mode === "plan") {
               if (target.displayPath !== before.planPath) {
@@ -1040,8 +1012,7 @@ export class ProductPlanService extends Service {
         const reviewId = `plan-review-${approval.revision.slice(0, 32)}`;
         let answer: AskUserQuestionAnswer;
         try {
-          answer = await this.track(exactNativePromise<AskUserQuestionAnswer>(
-            this.ctx.userQuestions.ask({
+          answer = await this.track(Promise.resolve<AskUserQuestionAnswer>(this.ctx.userQuestions.ask({
               agent: context.agent,
               signal: controller.signal,
               questions: [Object.freeze({
@@ -1056,9 +1027,7 @@ export class ProductPlanService extends Service {
                 multiSelect: false,
                 intent: Object.freeze({ kind: "plan-review" as const, approve: "Approve" }),
               })],
-            }),
-            "plan approval interaction",
-          ));
+            })));
         } catch (error) {
           throwIfProductToolAborted(context.signal);
           const codes = safeErrorCodes(error);
@@ -1131,10 +1100,7 @@ export class ProductPlanService extends Service {
   }
 
   private readPlan(planRoot: string, sessionId: string, path: string, signal: AbortSignal): Promise<ProductPlanArtifactRead> {
-    return this.track(exactNativePromise<unknown>(
-      this.configValue.io.read(planRoot, sessionId, path, 240_000, signal),
-      "managed plan artifact read",
-    )).then((value) => snapshotPlanRead(value, 240_000)).catch((error: unknown) => {
+    return this.track(Promise.resolve<unknown>(this.configValue.io.read(planRoot, sessionId, path, 240_000, signal))).then((value) => snapshotPlanRead(value, 240_000)).catch((error: unknown) => {
       signal.throwIfAborted();
       throw new ProductToolError("stale_plan_revision", safeErrorCodes(error).has("FS_NOT_FOUND")
         ? `No plan has been written. Use Write on ${path}, then retry ExitPlanMode; the Host mode selector can also leave Plan mode.`
@@ -1202,10 +1168,7 @@ export class ProductPlanService extends Service {
   private hasTransitionPermit(): boolean { return this.permit !== undefined; }
 
   private async flush(session: Session, description: string): Promise<void> {
-    const result = await this.track(exactNativePromise<unknown>(
-      this.configValue.durability.flush(session),
-      `${description} durability flush`,
-    ));
+    const result = await this.track(Promise.resolve<unknown>(this.configValue.durability.flush(session)));
     if (result !== true) throw new Error(`no Session durability Provider participated in ${description}`);
   }
 

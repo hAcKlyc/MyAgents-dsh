@@ -170,6 +170,34 @@ const validateToolValue = (
 export const validateCanonicalToolInput = (name: CanonicalToolName, value: unknown): unknown =>
   validateToolValue(name, "input", value);
 
+/** Discard decorations in declared object/array arguments; preserve business values and open maps. */
+export const normalizeToolArguments = (
+  schema: Readonly<{ type?: unknown; additionalProperties?: unknown; properties?: unknown; items?: unknown }>,
+  value: unknown,
+): unknown => {
+  const normalized = normalizeCanonicalJson(value, "tool arguments");
+  const project = (node: unknown, input: unknown): unknown => {
+    if (node === null || typeof node !== "object" || Array.isArray(node)) return input;
+    const shape = node as Record<string, unknown>;
+    // Composed/ref/pattern schemas belong to their executor; do not guess a branch or drop keys.
+    if (["$ref", "allOf", "anyOf", "oneOf", "patternProperties"].some((key) => Object.hasOwn(shape, key))) return input;
+    if (shape.type === "array" && Array.isArray(input)) {
+      return input.map((item) => project(shape.items, item));
+    }
+    if (shape.type !== "object" || input === null || typeof input !== "object" || Array.isArray(input)) return input;
+    const properties = (shape.properties ?? {}) as Record<string, unknown>;
+    return Object.fromEntries(Object.entries(input).flatMap(([key, item]) => {
+      if (Object.hasOwn(properties, key)) return [[key, project(properties[key], item)]];
+      return shape.additionalProperties === false ? [] : [[key, item]];
+    }));
+  };
+  return project(schema, normalized);
+};
+
+/** Parse model calls; durable-history readers use strict validation directly. */
+export const parseCanonicalToolInput = (name: CanonicalToolName, value: unknown): unknown =>
+  validateCanonicalToolInput(name, normalizeToolArguments(CANONICAL_TOOL_CONTRACTS[name].executionInputSchema, value));
+
 export const validateCanonicalToolOutput = (name: CanonicalToolName, value: unknown): unknown =>
   validateToolValue(name, "output", value);
 

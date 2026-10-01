@@ -405,4 +405,18 @@ describe("generation-owned Host tool component compiler", () => {
     );
     expect(getter).not.toHaveBeenCalled();
   });
+  it("preserves full Host input schemas without applying structured-output restrictions", async () => {
+    const harness = await mount();
+    const inputSchema = {
+      type: "object", $schema: "https://json-schema.org/draft/2020-12/schema",
+      properties: { value: { anyOf: [{ type: "string", minLength: 1 }, { type: "null" }] } },
+    };
+    await harness.componentController.configure({
+      catalog: catalog(),
+      compilers: [compiler(harness.root, harness.hostPortController, (execution) => toolContext(execution.signal))],
+      initialSnapshot: snapshot("full-host-schema-v1", [hostToolComponent({ inputSchema })]),
+    });
+    expect(harness.root.tools.get("mcp__fixture__echo")?.parameters).toEqual(inputSchema);
+  });
+
 });

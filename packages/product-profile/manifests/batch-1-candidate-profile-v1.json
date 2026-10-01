@@ -59,7 +59,7 @@
     }
   },
   "dsh": {
-    "artifactManifestSha256": "5c9177e61393169014d9698b088c2e7a4355815eceeccbca8660c17b69c717c5",
+    "artifactManifestSha256": "18057cae5d7fe1f4c6dc6e3196b715bcfc6b2c2d869703f2ad0c192c93ee4f17",
     "artifactVersion": "0.2.0-rc.2.myagents.639ed0153972.7ac2652ae40f",
     "runtimePackages": {
       "@deepseek-ai/cordis": "4.0.4",
@@ -184,13 +184,13 @@
       "host/attachment/acquire",
       "host/attachment/release"
     ],
-    "schemaSha256": "83a96a5e441f603184f7f98494132666ca0fa6007c192e18b29251afcdb893d9",
+    "schemaSha256": "32f78b25dea8f2dfa9dd8a71bc9d197b049019d8b02252ff8c2e64728abe3157",
     "version": "6.0.0"
   },
   "runtimeActivation": "workstream-evidence-only",
   "stage": "batch-1-w4-a11",
   "tools": {
     "contractProfile": "canonical-agent-experience-v1",
-    "contractSha256": "2bf5f2b9ecddeb7b86a3f8d8ab0caab4ac357dae2975d58913e6d43f8c30d46e"
+    "contractSha256": "cc4ff4710d2a1f7b2569e17c834a5e3377269ca45cfe31e086d8d9b6bbb93efa"
   }
 }

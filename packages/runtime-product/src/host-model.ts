@@ -498,13 +498,12 @@ export const validateHostPiAiProfile = (profile: ProviderProfile): ProviderProfi
   validatePiAiEndpoint(candidate.baseUrl);
   validatePiAiCompatibility(candidate);
   validateReasoningEfforts(candidate);
-  if (candidate.inputModalities === undefined
-    || candidate.inputModalities.length === 0
-    || candidate.inputModalities[0] !== "text"
-    || new Set(candidate.inputModalities).size !== candidate.inputModalities.length) {
+  if (candidate.inputModalities !== undefined && (candidate.inputModalities.length === 0
+    || !candidate.inputModalities.includes("text")
+    || new Set(candidate.inputModalities).size !== candidate.inputModalities.length)) {
     throw new ProtocolError(
       "provider_profile_invalid",
-      "pi-ai Provider profiles require an exact text-first modality declaration",
+      "pi-ai Provider profiles must support text when modalities are declared",
     );
   }
   return detachedProfile(candidate);
@@ -522,13 +521,7 @@ export const translateHostPiAiProfile = (
   const profile = validateHostPiAiProfile(profileValue);
   const compat = validatePiAiCompatibility(profile);
   const reasoningEfforts = validateReasoningEfforts(profile);
-  const inputModalities = profile.inputModalities;
-  if (inputModalities === undefined) {
-    throw new ProtocolError(
-      "provider_profile_invalid",
-      "pi-ai Provider profiles require an exact modality declaration",
-    );
-  }
+  const inputModalities = profile.inputModalities ?? ["text"];
   const model: PiAiModelProfile = {
     id: profile.modelId,
     name: profile.modelId,

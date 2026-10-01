@@ -291,13 +291,13 @@
         },
         "runtimeEngine": {
           "distribution": "myagents-dsh",
-          "distributionVersion": "0.1.12",
+          "distributionVersion": "0.1.13",
           "name": "deepseek-harness",
           "version": "0.2.0-rc.2.myagents.639ed0153972.7ac2652ae40f"
         },
         "runtimeGeneration": "generation-1",
-        "runtimeVersion": "0.1.12",
-        "schemaSha256": "83a96a5e441f603184f7f98494132666ca0fa6007c192e18b29251afcdb893d9",
+        "runtimeVersion": "0.1.13",
+        "schemaSha256": "32f78b25dea8f2dfa9dd8a71bc9d197b049019d8b02252ff8c2e64728abe3157",
         "sessionFormat": "dsh-session-events-v2"
       }
     },
@@ -326,7 +326,7 @@
         "runtimeSessionId": "runtime-session-1",
         "state": "ready",
         "toolCatalog": {
-          "contractSha256": "2bf5f2b9ecddeb7b86a3f8d8ab0caab4ac357dae2975d58913e6d43f8c30d46e",
+          "contractSha256": "cc4ff4710d2a1f7b2569e17c834a5e3377269ca45cfe31e086d8d9b6bbb93efa",
           "diagnostics": [
             {
               "available": true,
@@ -437,7 +437,7 @@
               "tool": "TaskUpdate"
             }
           ],
-          "digest": "a0de1b0418719497a6ef65447d4fdb5eadd85bc34bf65135c9a9bff956411d12",
+          "digest": "30e16c58dc7190090517bfd9c4317f8a64a715148eb004490e7c1d51918df95a",
           "effectiveTools": [
             "read",
             "read_image",
@@ -1227,7 +1227,7 @@
     }
   ],
   "protocolVersion": "6.0.0",
-  "schemaSha256": "83a96a5e441f603184f7f98494132666ca0fa6007c192e18b29251afcdb893d9",
+  "schemaSha256": "32f78b25dea8f2dfa9dd8a71bc9d197b049019d8b02252ff8c2e64728abe3157",
   "valid": [
     {
       "frame": {
@@ -1430,13 +1430,13 @@
           },
           "runtimeEngine": {
             "distribution": "myagents-dsh",
-            "distributionVersion": "0.1.12",
+            "distributionVersion": "0.1.13",
             "name": "deepseek-harness",
             "version": "0.2.0-rc.2.myagents.639ed0153972.7ac2652ae40f"
           },
           "runtimeGeneration": "generation-1",
-          "runtimeVersion": "0.1.12",
-          "schemaSha256": "83a96a5e441f603184f7f98494132666ca0fa6007c192e18b29251afcdb893d9",
+          "runtimeVersion": "0.1.13",
+          "schemaSha256": "32f78b25dea8f2dfa9dd8a71bc9d197b049019d8b02252ff8c2e64728abe3157",
           "sessionFormat": "dsh-session-events-v2"
         }
       },

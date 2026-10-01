@@ -387,9 +387,6 @@ const normalizePlan = (
     contributions: Object.freeze(contributions),
     dispose: async () => {
       const pending: unknown = Reflect.apply(disposeValue, value, []);
-      if (isProxy(pending) || !(pending instanceof Promise)) {
-        throw new TypeError("prepared component disposer must return one native Promise");
-      }
       await pending;
     },
   });
@@ -634,9 +631,6 @@ export class ProductComponentService extends Service {
             signal,
             this.#prepareAuthority(component, snapshot, signal),
           );
-          if (isProxy(pending) || !(pending instanceof Promise)) {
-            throw new TypeError("component compiler must return one native Promise");
-          }
           plan = normalizePlan(await pending, component);
         } catch {
           signal.throwIfAborted();

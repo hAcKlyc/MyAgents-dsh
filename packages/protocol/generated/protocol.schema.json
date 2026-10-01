@@ -3649,289 +3649,17 @@
                           "type": "string"
                         },
                         "inputSchema": {
-                          "$defs": {
-                            "Node": {
-                              "$id": "Node",
-                              "additionalProperties": false,
-                              "properties": {
-                                "additionalProperties": {
-                                  "const": false,
-                                  "type": "boolean"
-                                },
-                                "description": {
-                                  "maxLength": 8192,
-                                  "type": "string"
-                                },
-                                "enum": {
-                                  "items": {
-                                    "anyOf": [
-                                      {
-                                        "maxLength": 65536,
-                                        "type": "string"
-                                      },
-                                      {
-                                        "type": "number"
-                                      },
-                                      {
-                                        "type": "boolean"
-                                      },
-                                      {
-                                        "type": "null"
-                                      }
-                                    ]
-                                  },
-                                  "maxItems": 256,
-                                  "minItems": 1,
-                                  "type": "array",
-                                  "uniqueItems": true
-                                },
-                                "format": {
-                                  "anyOf": [
-                                    {
-                                      "const": "date-time",
-                                      "type": "string"
-                                    },
-                                    {
-                                      "const": "email",
-                                      "type": "string"
-                                    },
-                                    {
-                                      "const": "hostname",
-                                      "type": "string"
-                                    },
-                                    {
-                                      "const": "ipv4",
-                                      "type": "string"
-                                    },
-                                    {
-                                      "const": "ipv6",
-                                      "type": "string"
-                                    },
-                                    {
-                                      "const": "uri",
-                                      "type": "string"
-                                    },
-                                    {
-                                      "const": "uuid",
-                                      "type": "string"
-                                    }
-                                  ]
-                                },
-                                "items": {
-                                  "$ref": "Node"
-                                },
-                                "maxItems": {
-                                  "minimum": 0,
-                                  "type": "integer"
-                                },
-                                "maxLength": {
-                                  "minimum": 0,
-                                  "type": "integer"
-                                },
-                                "maximum": {
-                                  "type": "number"
-                                },
-                                "minItems": {
-                                  "minimum": 0,
-                                  "type": "integer"
-                                },
-                                "minLength": {
-                                  "minimum": 0,
-                                  "type": "integer"
-                                },
-                                "minimum": {
-                                  "type": "number"
-                                },
-                                "properties": {
-                                  "patternProperties": {
-                                    "^[A-Za-z_][A-Za-z0-9_.-]{0,127}$": {
-                                      "$ref": "Node"
-                                    }
-                                  },
-                                  "type": "object"
-                                },
-                                "required": {
-                                  "items": {
-                                    "pattern": "^[A-Za-z_][A-Za-z0-9_.-]{0,127}$",
-                                    "type": "string"
-                                  },
-                                  "maxItems": 256,
-                                  "type": "array",
-                                  "uniqueItems": true
-                                },
-                                "title": {
-                                  "maxLength": 512,
-                                  "type": "string"
-                                },
-                                "type": {
-                                  "anyOf": [
-                                    {
-                                      "const": "object",
-                                      "type": "string"
-                                    },
-                                    {
-                                      "const": "array",
-                                      "type": "string"
-                                    },
-                                    {
-                                      "const": "string",
-                                      "type": "string"
-                                    },
-                                    {
-                                      "const": "number",
-                                      "type": "string"
-                                    },
-                                    {
-                                      "const": "integer",
-                                      "type": "string"
-                                    },
-                                    {
-                                      "const": "boolean",
-                                      "type": "string"
-                                    },
-                                    {
-                                      "const": "null",
-                                      "type": "string"
-                                    }
-                                  ]
-                                },
-                                "uniqueItems": {
-                                  "type": "boolean"
-                                }
-                              },
-                              "required": [
-                                "type"
-                              ],
-                              "type": "object"
-                            },
-                            "Root": {
-                              "$id": "Root",
-                              "additionalProperties": false,
-                              "properties": {
-                                "additionalProperties": {
-                                  "const": false,
-                                  "type": "boolean"
-                                },
-                                "description": {
-                                  "maxLength": 8192,
-                                  "type": "string"
-                                },
-                                "enum": {
-                                  "items": {
-                                    "anyOf": [
-                                      {
-                                        "maxLength": 65536,
-                                        "type": "string"
-                                      },
-                                      {
-                                        "type": "number"
-                                      },
-                                      {
-                                        "type": "boolean"
-                                      },
-                                      {
-                                        "type": "null"
-                                      }
-                                    ]
-                                  },
-                                  "maxItems": 256,
-                                  "minItems": 1,
-                                  "type": "array",
-                                  "uniqueItems": true
-                                },
-                                "format": {
-                                  "anyOf": [
-                                    {
-                                      "const": "date-time",
-                                      "type": "string"
-                                    },
-                                    {
-                                      "const": "email",
-                                      "type": "string"
-                                    },
-                                    {
-                                      "const": "hostname",
-                                      "type": "string"
-                                    },
-                                    {
-                                      "const": "ipv4",
-                                      "type": "string"
-                                    },
-                                    {
-                                      "const": "ipv6",
-                                      "type": "string"
-                                    },
-                                    {
-                                      "const": "uri",
-                                      "type": "string"
-                                    },
-                                    {
-                                      "const": "uuid",
-                                      "type": "string"
-                                    }
-                                  ]
-                                },
-                                "items": {
-                                  "$ref": "Node"
-                                },
-                                "maxItems": {
-                                  "minimum": 0,
-                                  "type": "integer"
-                                },
-                                "maxLength": {
-                                  "minimum": 0,
-                                  "type": "integer"
-                                },
-                                "maximum": {
-                                  "type": "number"
-                                },
-                                "minItems": {
-                                  "minimum": 0,
-                                  "type": "integer"
-                                },
-                                "minLength": {
-                                  "minimum": 0,
-                                  "type": "integer"
-                                },
-                                "minimum": {
-                                  "type": "number"
-                                },
-                                "properties": {
-                                  "patternProperties": {
-                                    "^[A-Za-z_][A-Za-z0-9_.-]{0,127}$": {
-                                      "$ref": "Node"
-                                    }
-                                  },
-                                  "type": "object"
-                                },
-                                "required": {
-                                  "items": {
-                                    "pattern": "^[A-Za-z_][A-Za-z0-9_.-]{0,127}$",
-                                    "type": "string"
-                                  },
-                                  "maxItems": 256,
-                                  "type": "array",
-                                  "uniqueItems": true
-                                },
-                                "title": {
-                                  "maxLength": 512,
-                                  "type": "string"
-                                },
-                                "type": {
-                                  "const": "object",
-                                  "type": "string"
-                                },
-                                "uniqueItems": {
-                                  "type": "boolean"
-                                }
-                              },
-                              "required": [
-                                "type"
-                              ],
-                              "type": "object"
+                          "additionalProperties": true,
+                          "properties": {
+                            "type": {
+                              "const": "object",
+                              "type": "string"
                             }
                           },
-                          "$ref": "Root"
+                          "required": [
+                            "type"
+                          ],
+                          "type": "object"
                         },
                         "serverId": {
                           "maxLength": 256,
@@ -8179,7 +7907,7 @@
                 "type": "string"
               },
               "distributionVersion": {
-                "const": "0.1.12",
+                "const": "0.1.13",
                 "type": "string"
               },
               "name": {
@@ -8206,7 +7934,7 @@
             "type": "string"
           },
           "runtimeVersion": {
-            "const": "0.1.12",
+            "const": "0.1.13",
             "type": "string"
           },
           "schemaSha256": {
@@ -11008,7 +10736,7 @@
                 "additionalProperties": false,
                 "properties": {
                   "contractSha256": {
-                    "const": "2bf5f2b9ecddeb7b86a3f8d8ab0caab4ac357dae2975d58913e6d43f8c30d46e",
+                    "const": "cc4ff4710d2a1f7b2569e17c834a5e3377269ca45cfe31e086d8d9b6bbb93efa",
                     "type": "string"
                   },
                   "diagnostics": {
@@ -15194,7 +14922,7 @@
                 "additionalProperties": false,
                 "properties": {
                   "contractSha256": {
-                    "const": "2bf5f2b9ecddeb7b86a3f8d8ab0caab4ac357dae2975d58913e6d43f8c30d46e",
+                    "const": "cc4ff4710d2a1f7b2569e17c834a5e3377269ca45cfe31e086d8d9b6bbb93efa",
                     "type": "string"
                   },
                   "diagnostics": {

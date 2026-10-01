@@ -2,7 +2,7 @@
 type: technical-architecture
 status: implemented
 module: model-provider-plane
-updated: 2026-09-25
+updated: 2026-10-02
 ---
 
 # Model Provider plane
@@ -30,7 +30,7 @@ The official composition registers two deliberately different routes behind DSH 
 The Host lock selects the accepted Runtime and adapter bytes. DeepSeek's resolved model metadata passes explicit `systemPromptUpdate: in-history`
 through `prepareCall` to the native AgentLoop. With that declaration, changed system instructions
 append in history; without it, the native loop updates the leading system message. Model capability
-is never inferred from the Provider name, and undeclared input modalities default to text only.
+is never inferred from the Provider name, and undeclared input modalities default to text only. Ordinary API profiles accept either ordering of declared text/image modalities; array order is not a model-admission policy.
 Real LlmRuntime/AgentLoop fixtures verify the resulting second-request wire using fake SSE and Host
 credentials. They do not claim live Provider acceptance.
 

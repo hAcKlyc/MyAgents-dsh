@@ -4,7 +4,7 @@ import { request as httpRequest, type ClientRequest, type IncomingMessage } from
 import { request as httpsRequest } from "node:https";
 import { BlockList, isIP, type LookupFunction } from "node:net";
 import { brotliDecompressSync, gunzipSync, inflateSync } from "node:zlib";
-import { isPromise, isProxy } from "node:util/types";
+import { isProxy } from "node:util/types";
 
 import { ProductToolError, type ProductToolContext } from "@myagents-dsh/tool-runtime-product";
 
@@ -735,9 +735,6 @@ export class ProductSafeHttpClient {
       release = await this.#acquire(signal);
       const url = parseSafeUrl(rawUrl, this.#policy);
       const dispatched = this.#dispatch(url, signal, normalized.request);
-      if (!isPromise(dispatched) || isProxy(dispatched)) {
-        throw new ProductToolError("unsafe_destination", "safe HTTP transport must return a native Promise");
-      }
       response = await dispatched;
       if ([301, 302, 303, 307, 308].includes(response.statusCode)) {
         throw new ProductToolError("unsafe_destination", "safe HTTP request rejected a redirect");
@@ -799,9 +796,6 @@ export class ProductSafeHttpClient {
           const signal = network.signal;
           release = await this.#acquire(signal);
           const dispatched = this.#dispatch(current, signal);
-          if (!isPromise(dispatched) || isProxy(dispatched)) {
-            throw new ProductToolError("unsafe_destination", "WebFetch transport must return a native Promise");
-          }
           const response = await dispatched;
           try {
             signal.throwIfAborted();
@@ -887,9 +881,6 @@ export class ProductSafeHttpClient {
       }
       dispatched = Reflect.apply(dispatch.value as ProductHttpProxyTransport["dispatch"], proxy, [url, signal, outgoingRequest]);
     }
-    if (!isPromise(dispatched) || isProxy(dispatched)) {
-      throw new ProductToolError("unsafe_destination", "safe HTTP transport must return a native Promise");
-    }
     return dispatched;
   }
 
@@ -962,9 +953,6 @@ export class ProductSafeHttpClient {
     for (;;) {
       signal.throwIfAborted();
       const pending: unknown = Reflect.apply(next, iterator, []);
-      if (!isPromise(pending) || isProxy(pending)) {
-        throw new ProductToolError("unsupported_content", "WebFetch transport body iterator must return a native Promise");
-      }
       const step: unknown = await pending;
       signal.throwIfAborted();
       if (step === null || typeof step !== "object" || Array.isArray(step) || isProxy(step)) {

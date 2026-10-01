@@ -19,10 +19,10 @@ import type {
 import type { HostHookExecuteRequest } from "@myagents-dsh/host-ports";
 import type { OperationBirthSnapshot } from "@myagents-dsh/operation-runtime";
 import { ProtocolError, type MethodResult } from "@myagents-dsh/protocol";
-import { deepFreeze, normalizeCanonicalJson } from "@myagents-dsh/tool-contracts";
+import { deepFreeze, normalizeCanonicalJson, normalizeToolArguments } from "@myagents-dsh/tool-contracts";
 import type { ProductToolContext } from "@myagents-dsh/tool-runtime-product";
 import { Buffer } from "node:buffer";
-import { isPromise, isProxy } from "node:util/types";
+import { isProxy } from "node:util/types";
 
 declare module "@deepseek-ai/cordis" {
   interface Context {
@@ -161,14 +161,6 @@ const exactObject = (
     }
   }
   return value as JsonObject;
-};
-
-const exactPromise = (value: unknown, description: string): Promise<unknown> => {
-  if (isProxy(value) || !isPromise(value) || Object.getPrototypeOf(value) !== Promise.prototype
-    || Reflect.ownKeys(value).length !== 0) {
-    throw new TypeError(`${description} must return one exact native Promise`);
-  }
-  return value;
 };
 
 const callable = (value: unknown, description: string): UnknownCallable => {
@@ -413,14 +405,10 @@ export class ProductHookRuntime extends Service {
         }),
         signal,
       })]);
-      const resolved = await exactPromise(pending, "Host Hook image resolver");
+      const resolved = await Promise.resolve(pending);
       signal.throwIfAborted();
       operation.assertCurrent();
-      if (resolved === null || typeof resolved !== "object" || isProxy(resolved)
-        || (resolved as ContentBlock).type !== "image") {
-        throw new ProtocolError("hook_output_invalid", "Host Hook image resolver returned an invalid block");
-      }
-      result.push(resolved as Extract<ContentBlock, { type: "image" }>);
+      result.push(resolved);
     }
     return result;
   }
@@ -476,9 +464,11 @@ export class ProductHookRuntime extends Service {
         if (result.updatedInput !== undefined) input = normalizedJson(result.updatedInput, "PreToolUse updated input");
       }
       const definition = this.ctx.tools.get(call.name, agent);
-      if (definition === undefined || validateJsonSchemaValue(definition.parameters, input).length !== 0) {
-        throw new ProtocolError("hook_input_invalid", "PreToolUse transformed input failed the exact tool schema");
+      if (definition !== undefined) {
+        input = normalizedJson(normalizeToolArguments(definition.parameters, input), "PreToolUse execution input");
       }
+      // The executor owns argument validation (including foreign MCP/Host schemas).
+      // A bad call becomes its own tool error instead of rejecting the assistant's whole batch.
       prepared.push(Object.freeze({
         callId: call.callId,
         name: call.name,
@@ -666,10 +656,10 @@ export const createHookComponentCompiler = (configValue: HookComponentCompilerCo
             rootCallId,
             signal: callSignal,
           });
-          const pending = exactPromise(execute(invocation, request), "Host Hook reverse request");
+          const pending = Promise.resolve(execute(invocation, request));
           calls.add(pending);
           try {
-            const result = await pending as HookResult;
+            const result = await pending;
             callSignal.throwIfAborted();
             authority.assertCurrent();
             return result;
