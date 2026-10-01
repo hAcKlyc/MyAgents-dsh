@@ -26,9 +26,11 @@ This table records the current source boundaries. Exact artifact evidence and th
 | Batch 3 integration handoff | Ingested by the MyAgents Host | The MyAgents `dsh-release.json` selects the Release version; generated `src/shared/integrated-runtimes/dsh-lock.json` records the installed Runtime, contracts and platform evidence; its digest and claims are the installed-byte authority. [Release delivery](./tech_docs/assurance/verification-artifacts-and-handoff.md) packages accepted target handoffs under fixed asset names; publication remains gated. |
 | Reference Web Host | A1–A4 implementation complete; A5/reviews/distribution/user acceptance open | Its older frozen web artifact does not prove the current Runtime source. |
 | Standalone Agent SDK | Not started | Batch 2 target; no Agent SDK package exists in this repository yet. |
-| Platforms | Four source targets; native claims are artifact-specific | macOS arm64 and x64, Windows x64 and Linux x64 share official DSH subprocess semantics. Intel macOS has source support but still needs its own x64 Runtime and native campaign. New bytes require new native evidence; Windows/Linux remain pending until their native campaigns pass. |
+| Platforms | Four source targets; native claims are artifact-specific | macOS arm64 and x64, Windows x64 and Linux x64 share official DSH subprocess semantics. Each target needs its own Runtime and deterministic native campaign. New bytes require new native evidence; Windows/Linux remain pending until their native campaigns pass. |
 
 Earlier Runtime/handoff pairs remain historical evidence for their original bytes. No profile, protocol or platform evidence is relabeled across upgrades. The official candidate profile remains `workstream-evidence-only`; source completion or Host ingestion does not promote a public product release.
+
+The Host-selected ripgrep executable governs native search spawn; DSH supplies search argv rather than a competing executable-path authority. See [Platform and local execution](./tech_docs/boundaries/platform-and-local-execution.md).
 
 ## 2. Product boundaries
 
