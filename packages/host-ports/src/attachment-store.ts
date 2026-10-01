@@ -1,5 +1,6 @@
 import {
   AttachmentError,
+  ImageVariantId,
   AttachmentStore,
   type AttachmentErrorCode,
   type ImageAttachmentLimits,
@@ -25,6 +26,7 @@ import {
 } from "@deepseek-ai/dsh-attachment-local";
 import { symbols, type Context } from "@deepseek-ai/cordis";
 import { createHash } from "node:crypto";
+import sharp from "sharp";
 import { AsyncLocalStorage } from "node:async_hooks";
 import { isPromise, isProxy } from "node:util/types";
 
@@ -670,11 +672,20 @@ export class HostAttachmentStore extends AttachmentStore {
     return Object.freeze({ scope, signal: fused });
   }
 
-  async #inspect(input: ReturnType<typeof imageInput>): Promise<PreparedImageFile> {
-    if (input.data.byteLength === 0 || input.data.byteLength > this.imageLimits.maxImageBytes) {
+  async #inspect(input: ReturnType<typeof imageInput>, canonicalize = true): Promise<PreparedImageFile> {
+    if (input.data.byteLength === 0) {
+      throw fixedAttachmentFailure("Image is empty.", "INVALID_IMAGE");
+    }
+    if (input.data.byteLength > this.imageLimits.maxImageBytes) {
       throw fixedAttachmentFailure("Image exceeds the configured byte limit.", "IMAGE_TOO_LARGE");
     }
-    return prepareImageFile(input, this.imageLimits, NORMALIZATION_POLICY);
+    const prepared = await prepareImageFile(input, this.imageLimits, NORMALIZATION_POLICY);
+    if (!canonicalize || prepared.ref.mediaType !== "image/png") return prepared;
+    // DSH deliberately permits decoder-valid PNG passthrough. Providers can
+    // reject incomplete containers (e.g. missing IEND) on every subsequent turn.
+    // Encode decoded pixels once at the Host attachment boundary instead.
+    const data = await sharp(prepared.data).png().toBuffer();
+    return prepareImageFile({ ...input, data, mediaType: "image/png" }, this.imageLimits, NORMALIZATION_POLICY);
   }
 
   async #saveImage(input: ReturnType<typeof imageInput>): Promise<ImageAttachmentRef> {
@@ -832,7 +843,7 @@ export class HostAttachmentStore extends AttachmentStore {
         data,
         mediaType: normalized.ref.mediaType,
         ...(normalized.ref.name === undefined ? {} : { name: normalized.ref.name }),
-      }));
+      }), false);
       scope.assertCurrent();
       signal.throwIfAborted();
       if (prepared.ref.attachmentId !== normalized.ref.attachmentId
@@ -861,7 +872,13 @@ export class HostAttachmentStore extends AttachmentStore {
     const projected = await readRequestImageFile(scope.stagingRoot, stored, target, signal);
     scope.assertCurrent();
     signal.throwIfAborted();
-    return projected;
+    if (projected.mediaType !== "image/png") return projected;
+    // Also repair projections of historical attachments without changing their
+    // durable content address or transcript reference.
+    const data = await sharp(projected.data).png().toBuffer();
+    scope.assertCurrent();
+    signal.throwIfAborted();
+    return Object.freeze({ ...projected, data, bytes: data.byteLength, variantId: ImageVariantId(`sha256:${createHash("sha256").update(projected.variantId).update(":host-png-v1:").update(data).digest("hex")}`) });
   }
 
   async #readHostImage(input: ReturnType<typeof normalizeHostReference>): Promise<ImageAttachmentRef> {

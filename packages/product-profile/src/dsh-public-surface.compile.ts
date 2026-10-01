@@ -3,6 +3,7 @@ import { LocalFileSystem, prepareTextEdit } from "@deepseek-ai/dsh-fs-local";
 import { createReadTool, createReadImageTool, createWriteTool, createEditTool, type ReadToolCaps } from "@deepseek-ai/dsh-tool-fs";
 import * as OfficialBashLocal from "@deepseek-ai/dsh-bash-local";
 import * as OfficialPwshLocal from "@deepseek-ai/dsh-pwsh-local";
+import { LocalSpillStore } from "@deepseek-ai/dsh-spill-local";
 import * as OfficialShellEnv from "@deepseek-ai/dsh-shell-env";
 import * as OfficialToolBash from "@deepseek-ai/dsh-tool-bash";
 import * as OfficialToolJobs from "@deepseek-ai/dsh-tool-jobs";
@@ -131,6 +132,7 @@ import type { WebFetchProvider, WebSearchProvider } from "@deepseek-ai/dsh-web";
 
 export const dshPublicSurfaceValues = Object.freeze({
   officialShell: [OfficialBashLocal, OfficialPwshLocal, OfficialShellEnv, OfficialToolBash, OfficialToolJobs, OfficialToolPwsh],
+  LocalSpillStore,
   AgentLoop,
   AgentRegistry,
   AgentInstructionsConfigValue,

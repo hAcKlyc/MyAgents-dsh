@@ -1,3 +1,4 @@
+import { AttachmentId } from "@deepseek-ai/dsh-attachment";
 import { Context } from "@deepseek-ai/cordis";
 import {
   HostAttachmentStore,
@@ -11,6 +12,7 @@ import { GeneratedHostClient } from "@myagents-dsh/protocol/generated/host-clien
 import { createInMemoryPeerPair, StandardTestHost } from "@myagents-dsh/test-host";
 import { LocalWorkspaceFileSystem } from "@myagents-dsh/tools-fs";
 import { createHash } from "node:crypto";
+import sharp from "sharp";
 import { chmod, link, mkdir, mkdtemp, readFile, realpath, rename, rm, stat, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -112,6 +114,42 @@ const requestScope = (harness: Harness, assertCurrent: () => void = () => undefi
   }));
 
 describe("HostAttachmentStore", () => {
+  it("reports an empty image as invalid before publishing an attachment", async () => {
+    const harness = await createHarness(Object.freeze({
+      readLease: () => { throw new Error("empty image must not acquire a lease"); },
+      stage: () => { throw new Error("empty image must not be published"); },
+    }));
+    await expect(harness.attachments.runWithRequestScope(requestScope(harness), () =>
+      harness.root.attachments.saveImage({ data: new Uint8Array(), mediaType: "image/png" })))
+      .rejects.toMatchObject({ code: "INVALID_IMAGE", message: "Image is empty." });
+  });
+
+  it("repairs decoder-valid PNG containers before publication and historical model requests", async () => {
+    const complete = await sharp({ create: { width: 64, height: 48, channels: 3, background: "red" } }).png().toBuffer();
+    const incomplete = complete.subarray(0, complete.length - 12);
+    const originalHash = createHash("sha256").update(incomplete).digest("hex");
+    let published: Uint8Array | undefined;
+    const harness = await createHarness({
+      readLease: () => Promise.resolve(incomplete),
+      stage: (_root, data) => { published = data; return stageImage(data); },
+    }, {
+      "host/attachment/acquire": (params) => ({ leaseId: "historical-png", readOnlyPath: "/fixture/staging/png", mimeType: params.expectedMimeType, sizeBytes: params.expectedSizeBytes, sha256: params.expectedSha256 }),
+    });
+    harness.attachments.bindLeaseLimit(2);
+    const scope = requestScope(harness);
+    const saved = await harness.attachments.runWithRequestScope(scope, () =>
+      harness.root.attachments.saveImage({ data: incomplete, mediaType: "image/png" }));
+    expect(saved.attachmentId).not.toBe(`sha256:${originalHash}`);
+    if (published === undefined) throw new Error("image was not published");
+    expect(Buffer.from(published).subarray(-12).equals(complete.subarray(-12))).toBe(true);
+    const ref = { attachmentId: AttachmentId(`sha256:${originalHash}`), bytes: incomplete.length, mediaType: "image/png" as const, width: 64, height: 48 };
+    const projected = await harness.attachments.runWithRequestScope(scope, () =>
+      harness.root.attachments.readImageRequest(ref, { width: 2048, height: 2048, maxBytes: 4 * 1024 * 1024 }));
+    expect(projected.attachment).toEqual(ref);
+    expect(Buffer.from(projected.data).subarray(-12).equals(complete.subarray(-12))).toBe(true);
+    expect(projected.bytes).toBe(projected.data.length);
+  });
+
   it("validates before publication and releases every verified read lease", async () => {
     let discarded = 0;
     let reads = 0;

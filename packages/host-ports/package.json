@@ -11,7 +11,8 @@
     ".": "./src/index.ts"
   },
   "dependencies": {
-    "@myagents-dsh/protocol": "0.0.0"
+    "@myagents-dsh/protocol": "0.0.0",
+    "sharp": "0.35.4"
   },
   "peerDependencies": {
     "@deepseek-ai/cordis": "4.0.4",

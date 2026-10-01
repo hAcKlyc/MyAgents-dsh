@@ -1,3 +1,4 @@
+import { modelToolNames } from "@myagents-dsh/protocol";
 import { Context } from "@deepseek-ai/cordis";
 import { ToolCallId } from "@deepseek-ai/dsh-llm";
 import { SystemPrompt } from "@deepseek-ai/dsh-system-prompt";
@@ -43,10 +44,10 @@ const catalog = (): EffectiveToolCatalogSnapshot => {
   const authority = Object.freeze({
     formatVersion: 1 as const,
     contractSha256: CANONICAL_TOOL_CONTRACT_SHA256,
-    implementationCatalog: CANONICAL_TOOL_NAMES,
-    effectiveTools: CANONICAL_TOOL_NAMES,
+    implementationCatalog: modelToolNames(CANONICAL_TOOL_NAMES),
+    effectiveTools: modelToolNames(CANONICAL_TOOL_NAMES),
     revision: "canonical-tools-v1",
-    diagnostics: Object.freeze(CANONICAL_TOOL_NAMES.map((tool) => Object.freeze({ tool, available: true }))),
+    diagnostics: Object.freeze(modelToolNames(CANONICAL_TOOL_NAMES).map((tool) => Object.freeze({ tool, available: true }))),
   });
   return Object.freeze({ ...authority, digest: effectiveToolCatalogDigest(authority) });
 };

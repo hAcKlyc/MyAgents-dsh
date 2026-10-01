@@ -35,9 +35,6 @@
       "path": "../component-runtime"
     },
     {
-      "path": "../components-agents"
-    },
-    {
       "path": "../components-commands"
     },
     {

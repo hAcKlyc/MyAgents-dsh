@@ -190,7 +190,7 @@ contention and corrupted/unknown/ignorable input.
 | Persistence decisions | ADR 0003 and ADR 0004 |
 | Tests | `tests/product-session-handle.unit.test.ts`, ownership unit/native fixtures, existing persistence/mutation and primary-admission regressions; full Runtime/Host campaigns remain pending |
 
-The Primary Session admission `afterReady` hook owns the final recovery activation boundary: the exact Agent is published as ready before durable ProductWork/operation messages can wake it. The hook is awaited under the existing settlement deadline; failure retires that handle and leaves recovery required. Pre-publication reconciliation validates facts with execution deferred.
+The Primary Session admission `afterReady` hook owns the final recovery activation boundary: the exact Agent is published as ready before durable native collaboration/operation messages can wake it. The hook is awaited under the existing settlement deadline; failure retires that handle and leaves recovery required. Pre-publication reconciliation validates facts with execution deferred.
 
 Schema 10 retains nullable checkpoint directory plans from the preceding physical table layout.
 Directory prepare/cleanup/replay semantics remain owned by

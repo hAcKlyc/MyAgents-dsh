@@ -34,6 +34,16 @@ export interface ProductHttpResponse {
   dispose(): Promise<void>;
 }
 
+const networkFailureReason = (cause: unknown): string => {
+  let current = cause;
+  for (let depth = 0; depth < 8 && current instanceof Error; depth += 1) {
+    const code: unknown = Reflect.get(current, "code");
+    if (typeof code === "string" && /^[A-Z_0-9]{2,64}$/u.test(code)) return ` (${code})`;
+    current = current.cause;
+  }
+  return "";
+};
+
 const boundedDeadline = (source: AbortSignal, timeoutMs: number): Readonly<{
   readonly close: () => void;
   readonly signal: AbortSignal;
@@ -759,7 +769,7 @@ export class ProductSafeHttpClient {
         throw new ProductToolError("network_policy_denied", "safe HTTP request exceeded its network deadline");
       }
       if (error instanceof ProductToolError) throw error;
-      throw new ProductToolError("network_policy_denied", "safe HTTP transport failed safely", { cause: error });
+      throw new ProductToolError("network_policy_denied", `Network request failed${networkFailureReason(error)}. Check DNS, connection, TLS and the Host proxy settings.`, { cause: error });
     } finally {
       release?.();
     }
@@ -846,7 +856,7 @@ export class ProductSafeHttpClient {
     } catch (error) {
       if (context.signal.aborted) throw context.signal.reason;
       if (error instanceof ProductToolError) throw error;
-      throw new ProductToolError("network_policy_denied", "WebFetch transport failed safely", { cause: error });
+      throw new ProductToolError("network_policy_denied", `WebFetch network request failed${networkFailureReason(error)}. Check DNS, connection, TLS and the Host proxy settings.`, { cause: error });
     }
   }
 

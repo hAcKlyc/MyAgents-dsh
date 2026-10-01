@@ -1,5 +1,6 @@
+import type {} from "@deepseek-ai/dsh-subagent";
 import { installNativeRootContext } from "@myagents-dsh/runtime-product";
-import { installProductContextProjection, ownsProductWorkRootContextMessage } from "@myagents-dsh/tools-agent";
+import { installProductContextProjection, ownsRootContextMessage } from "@myagents-dsh/tools-agent";
 import { SessionProjectionRegistry } from "@deepseek-ai/dsh-session-projection";
 import { FixtureInbox as Inbox } from "./fixtures/inbox-events.js";
 import { SessionSeq } from "@deepseek-ai/dsh-session";
@@ -526,7 +527,7 @@ describe("durable product-operation fold", () => {
     expect(fixture.service.snapshot().recoveryRequired).toBe(false);
   });
 
-  it.each(["claim", "cancel"] as const)("correlates a ProductWork message without rewriting its sender or source (%s)", async (action) => {
+  it.each(["claim", "cancel"] as const)("correlates a native child message without rewriting its sender or source (%s)", async (action) => {
     const messageId = MessageId("correlated-agent-message");
     const owner = (_agent: Agent, source: MessageSource | undefined, id: string) =>
       id === messageId && source?.kind === "agent-message" && source.senderSessionId === "actual-child";
@@ -547,12 +548,12 @@ describe("durable product-operation fold", () => {
     expect(folded.operations[0]?.messages.at(-1)).toMatchObject({ contextMessage: true, state: action === "claim" ? "claimed" : "cancelled" });
     const inserted = events.flatMap((event) => event.type === "agent/inbox/spliced" ? event.data.inserted : []).find((message) => message.id === messageId);
     expect(inserted?.source).toEqual(source);
-    expect(() => foldProductOperations(events, fixture.agent.id)).toThrow("independent ProductWork source authority");
+    expect(() => foldProductOperations(events, fixture.agent.id)).toThrow("independent native message source authority");
   });
 
   it("admits an idle native reply before an earlier registered pre-step request consumer", async () => {
     const fixture = await mountService({ capture: () => ({ ...birth(), limits: {} }) }, undefined, undefined, undefined, undefined, true, undefined, undefined,
-      (agent, source, id) => ownsProductWorkRootContextMessage(agent.session, source, id, agent.ctx));
+      (agent, source, id) => ownsRootContextMessage(agent.session, source, id, agent.ctx));
     await fixture.context.plugin(SessionProjectionRegistry);
     const stopProjection = installProductContextProjection(fixture.context);
     Object.assign(fixture.context.productSession, {

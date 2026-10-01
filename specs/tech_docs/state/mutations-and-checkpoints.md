@@ -47,7 +47,7 @@ that the Store rechecks. Their legal phases differ:
 
 `status` reads the journal to recover response loss. Revalidation is operation-specific rather than
 one common checklist: fork waits for root Agent idle and rechecks source locator/revision/boundary;
-rewind and delete retire the generation and drain ProductWork/jobs; only rewind owns transcript
+rewind and delete retire the generation and drain native subagents/jobs; only rewind owns transcript
 postconditions, excluded-child plans and governed-file hashes. Wire results may fold internal
 `committing`, `rolling_back` or `aborting` phases into their public status vocabulary.
 
@@ -88,7 +88,7 @@ journal reaches `committing`, target activation is idempotent, then the source j
 ## 7. Delete
 
 Delete tombstones the current Runtime Session locator and active generation; "Session graph" here
-means this Session's SQLite relation graph, not ProductWork child Session lineage. A committed,
+means this Session's SQLite relation graph, not native child Session lineage. A committed,
 non-purged delete can roll back. Optional purge removes this Session's
 generations/events/boundaries/checkpoints/source mutation journals and garbage-collects checkpoint
 blobs no longer referenced anywhere in the database; purge is not rollbackable. It does not delete

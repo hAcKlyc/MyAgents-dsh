@@ -45,7 +45,6 @@ export const PACKED_WORKSPACE_POLICIES: readonly PackedWorkspacePolicy[] = Objec
       "src/official-composition.ts",
       "src/process.ts",
       "src/self-check.ts",
-      "src/tool-strategy.build.ts",
     ],
   },
   {
@@ -86,11 +85,6 @@ export const PACKED_WORKSPACE_POLICIES: readonly PackedWorkspacePolicy[] = Objec
     packageName: "@myagents-dsh/component-runtime",
     relativeDirectory: "packages/component-runtime",
     allowedFiles: ["package.json", "src/descriptors.ts", "src/index.ts", "src/service.ts"],
-  },
-  {
-    packageName: "@myagents-dsh/components-agents",
-    relativeDirectory: "packages/components-agents",
-    allowedFiles: ["package.json", "src/index.ts"],
   },
   {
     packageName: "@myagents-dsh/components-commands",
@@ -198,7 +192,7 @@ export const PACKED_WORKSPACE_POLICIES: readonly PackedWorkspacePolicy[] = Objec
       "src/session-read.ts",
       "src/tool-catalog-schema.ts",
       "src/tool-catalog.ts",
-      "src/tool-strategy.ts",
+      "src/native-tool-names.ts",
       "src/validation.ts",
     ],
   },
@@ -276,7 +270,7 @@ export const PACKED_WORKSPACE_POLICIES: readonly PackedWorkspacePolicy[] = Objec
   {
     packageName: "@myagents-dsh/tools-agent",
     relativeDirectory: "packages/tools-agent",
-    allowedFiles: ["package.json", "src/index.ts", "src/skill-runtime.ts", "src/work-lineage.ts", "src/work-runtime.ts"],
+    allowedFiles: ["package.json", "src/index.ts", "src/skill-runtime.ts", "src/context-provenance.ts", "src/historical-work-events.ts"],
   },
   {
     packageName: "@myagents-dsh/tools-fs",

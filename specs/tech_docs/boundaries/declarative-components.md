@@ -9,14 +9,16 @@ updated: 2026-09-02
 
 ## 1. Purpose and authority
 
-This guide explains how trusted Host data contributes MCP servers, Skills, Agent descriptors, Commands, Hooks and Host Tools without installing arbitrary JavaScript in a live Session. `packages/component-runtime/` owns desired/effective generations; each `packages/components-*` compiler owns one kind.
+This guide explains how trusted Host data contributes MCP servers, Skills, Commands, Hooks and Host Tools without installing arbitrary JavaScript in a live Session. `packages/component-runtime/` owns desired/effective generations; each `packages/components-*` compiler owns one kind.
 
 ## 2. Relationships
 
 - **Owns:** declarative snapshot validation, bounded resource/reference identity, per-kind compilation, prepare/commit/drain, effective catalog and projected component status.
 - **Depends on:** canonical protocol schemas, trusted build-time compilers, Host reverse ports, DSH public registries and quiescent configuration boundaries.
-- **Consumed by:** operation birth snapshots, Tool/Agent/Command/Skill catalogs, Host extension UI, MCP connections, Hooks and Host extension status.
+- **Consumed by:** operation birth snapshots, Tool/Command/Skill catalogs, Host extension UI, MCP connections, Hooks and Host extension status.
 - **Does not own:** arbitrary plugin installation, credentials, Host workspace discovery, core tool catalog, model loop, or product compatibility claims.
+
+Agent descriptor wire shapes remain reserved for protocol compatibility; the official Runtime has no role compiler and does not turn them into children. Native subagent tools create DSH children.
 
 ## 3. Component kinds
 
@@ -24,7 +26,6 @@ This guide explains how trusted Host data contributes MCP servers, Skills, Agent
 | --- | --- | --- |
 | MCP | server launch/connection profile and namespaced discovered tools | `packages/components-mcp/` |
 | Skill | immutable `SKILL.md` resource, catalog entry and optional governed project resource base | `packages/components-skills/` |
-| Agent | named child descriptor, persona/tool/Skill policy and optional birth-profile guard | `packages/components-agents/` |
 | Command | named template/aliases and Host invocation binding | `packages/components-commands/` |
 | Hook | PreToolUse/PostToolUse/PermissionRequest declaration | `packages/components-hooks/` |
 | Host Tool | schema plus reverse execution identity | `packages/components-host-tools/` |
@@ -52,7 +53,7 @@ becomes effective. The protocol currently exposes only desired/effective revisio
 and `{key, state, reason}` per component. It has no phase, timestamp, snapshot digest or durable
 component receipt, and caught compiler exceptions are reduced to bounded generic reasons rather
 than preserved as a detailed Host log. Although the internal plan type supports `needs_auth`, the
-six official compilers currently produce `ready` or throw; unavailable MCP credentials therefore
+five official compilers currently produce `ready` or throw; unavailable MCP credentials therefore
 project as `degraded/mcp_prepare_failed`, not `needs_auth`.
 
 Failure classes are distinct:
@@ -128,10 +129,4 @@ belongs in a trusted new Runtime distribution and artifact—not an extension sn
 
 ## 9. Verification and implementation map
 
-| Concern | Source or evidence |
-| --- | --- |
-| Snapshot validation/catalog | `packages/component-runtime/src/descriptors.ts` |
-| Generation prepare/commit/drain | `packages/component-runtime/src/service.ts` |
-| Kind compilers | `packages/components-mcp/`, `components-skills/`, `components-agents/`, `components-commands/`, `components-hooks/`, `components-host-tools/` |
-| Exact schemas | `packages/protocol/src/contract-source.ts` |
-| Tests | `tests/product-component-runtime.unit.test.ts`, `tests/product-declarative-components.unit.test.ts`, `tests/product-mcp-components.unit.test.ts`, `tests/product-host-tools.unit.test.ts`, `tests/product-host-hooks.unit.test.ts` and replacement/failure packed campaigns |
+| Kind compilers | `packages/components-mcp/`, `components-skills/`, `components-commands/`, `components-hooks/`, `components-host-tools/` |

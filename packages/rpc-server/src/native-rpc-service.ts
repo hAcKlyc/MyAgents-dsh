@@ -42,7 +42,7 @@ import {
 } from "@myagents-dsh/runtime-product";
 import { Readable, Writable } from "node:stream";
 
-import { RuntimeEventProjector, projectWorkStatusSnapshot } from "./event-projector.js";
+import { RuntimeEventProjector } from "./event-projector.js";
 
 declare module "@deepseek-ai/cordis" {
   interface Context {
@@ -588,26 +588,8 @@ export class NativeRpcServer extends Service {
         })),
         registered("session/rewind/status", this.peerValue.registerRequestHandler("session/rewind/status", (params, context) =>
           this.productSessionValue.rewindStatus(params, context.signal))),
-        registered("work/list", this.peerValue.registerRequestHandler("work/list", async (params, context) => {
-          this.productSessionValue.requireAgent();
-          const work = compositionAuthority.context.get("productWork");
-          if (work === undefined) return { items: [] };
-          const snapshots = await work.readSnapshots(context.signal, params.afterTaskId);
-          const items: MethodResult<"work/list">["items"] = [];
-          // Stable creation-order pages, one bounded preview per Agent, and the
-          // largest legal RPC envelope keep a retained tree within negotiated limits.
-          const budget = this.peerValue.maxFrameBytes - 2_048;
-          for (const snapshot of snapshots.slice(0, 32)) {
-            const result = snapshot.result?.slice(0, 1_024);
-            const item = projectWorkStatusSnapshot({ ...snapshot,
-              ...(result === undefined ? {} : { result, resultTruncated: (snapshot.resultTruncated ?? false) || result.length < (snapshot.result?.length ?? 0) }),
-            });
-            if (Buffer.byteLength(JSON.stringify({ items: [...items, item], nextTaskId: snapshot.taskId })) > budget) break;
-            items.push(item);
-          }
-          if (items.length === 0 && snapshots.length > 0) throw new ProtocolError("resource_limit_exceeded", "Agent preview exceeds the negotiated frame limit");
-          const nextTaskId = snapshots.length > items.length ? items.at(-1)?.taskId : undefined;
-          return { items, ...(nextTaskId === undefined ? {} : { nextTaskId }) };
+        registered("work/list", this.peerValue.registerRequestHandler("work/list", () => {
+          throw new ProtocolError("method_unavailable", "Legacy ProductWork controls were removed; use native subagent methods");
         })),
         registered("subagent/list", this.peerValue.registerRequestHandler("subagent/list", async (_params, context) => {
           const root = this.productSessionValue.requireAgent();
@@ -685,26 +667,14 @@ export class NativeRpcServer extends Service {
           compositionAuthority.context.subagents.interruptByParent(child.id, child.parentId, "continuable");
           return { ok: true as const };
         })),
-        registered("work/agent/resume", this.peerValue.registerRequestHandler("work/agent/resume", async (params, context) => {
-          context.signal.throwIfAborted(); this.productSessionValue.requireAgent(); context.commit();
-          const work = compositionAuthority.context.get("productWork");
-          if (work === undefined) throw new ProtocolError("method_unavailable", "legacy Agent resume is unavailable with native DSH subagents");
-          await work.resumeFromHost(params.agentId, params.clientRequestId, params.expectedHandleRevision, context.signal);
-          return { ok: true as const };
+        registered("work/agent/resume", this.peerValue.registerRequestHandler("work/agent/resume", () => {
+          throw new ProtocolError("method_unavailable", "Legacy ProductWork controls were removed; use native subagent methods");
         })),
-        registered("work/agent/stop", this.peerValue.registerRequestHandler("work/agent/stop", async (params, context) => {
-          context.signal.throwIfAborted(); this.productSessionValue.requireAgent(); context.commit();
-          const work = compositionAuthority.context.get("productWork");
-          if (work === undefined) throw new ProtocolError("method_unavailable", "legacy Agent stop is unavailable with native DSH subagents");
-          await work.stopFromHost(params.agentId, params.expectedHandleRevision, context.signal);
-          return { ok: true as const };
+        registered("work/agent/stop", this.peerValue.registerRequestHandler("work/agent/stop", () => {
+          throw new ProtocolError("method_unavailable", "Legacy ProductWork controls were removed; use native subagent methods");
         })),
-        registered("work/agent/message", this.peerValue.registerRequestHandler("work/agent/message", async (params, context) => {
-          context.signal.throwIfAborted(); this.productSessionValue.requireAgent(); context.commit();
-          const work = compositionAuthority.context.get("productWork");
-          if (work === undefined) throw new ProtocolError("method_unavailable", "legacy Agent message is unavailable with native DSH subagents");
-          await work.messageFromHost(params.agentId, params.clientMessageId, params.message, context.signal);
-          return { ok: true as const };
+        registered("work/agent/message", this.peerValue.registerRequestHandler("work/agent/message", () => {
+          throw new ProtocolError("method_unavailable", "Legacy ProductWork controls were removed; use native subagent methods");
         })),
         registered("turn/start", this.peerValue.registerRequestHandler("turn/start", (params, context) =>
           this.operationsValue.start(params, Object.freeze({

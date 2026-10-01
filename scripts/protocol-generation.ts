@@ -1,3 +1,4 @@
+import { modelToolNames } from "../packages/protocol/src/native-tool-names.js";
 import { createHash } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import { resolve } from "node:path";
@@ -124,10 +125,10 @@ const buildFixtures = (schemaDigest: string): unknown => {
   const toolCatalogWithoutDigest = {
     formatVersion: 1 as const,
     contractSha256: CANONICAL_TOOL_CONTRACT_SHA256,
-    implementationCatalog: CANONICAL_TOOL_NAMES,
-    effectiveTools: CANONICAL_TOOL_NAMES,
+    implementationCatalog: modelToolNames(CANONICAL_TOOL_NAMES),
+    effectiveTools: modelToolNames(CANONICAL_TOOL_NAMES),
     revision: "tools-v1",
-    diagnostics: CANONICAL_TOOL_NAMES.map((tool) => ({ tool, available: true as const })),
+    diagnostics: modelToolNames(CANONICAL_TOOL_NAMES).map((tool) => ({ tool, available: true as const })),
   };
   const sessionBindingResult = {
     state: "ready",

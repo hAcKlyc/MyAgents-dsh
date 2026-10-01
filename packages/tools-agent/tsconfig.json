@@ -5,7 +5,7 @@
     "outDir": "../../dist/packages/tools-agent",
     "tsBuildInfoFile": "../../dist/packages/tools-agent/.tsbuildinfo"
   },
-  "files": ["src/index.ts", "src/skill-runtime.ts", "src/work-lineage.ts", "src/work-runtime.ts"],
+  "files": ["src/index.ts", "src/skill-runtime.ts", "src/context-provenance.ts", "src/historical-work-events.ts"],
   "references": [
     { "path": "../operation-runtime" },
     { "path": "../tool-contracts" },

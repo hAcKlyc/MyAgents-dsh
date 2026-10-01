@@ -72,7 +72,7 @@ is a product choice, not a Runtime schema.
 | Plan policy | `ProductPlanService` | effective Plan mode |
 | user-global project instruction | DSH Agent Instructions plugin | DSH home discovery and Session instruction events |
 | primary project instructions | DSH Agent Instructions plugin | DSH Session events, filesystem touches, resume and compaction |
-| ProductWork persona | ProductWork child scope | fresh continuable child and cold resume |
+| Native child instructions | DSH child descriptor/scope | fresh, forked and continued children |
 
 Global Host registration uses one small prepare/commit/rollback effect group after operation
 quiescence. `prepare()` disposes the previous registration group and installs the candidate
@@ -104,7 +104,7 @@ AGENTS.md
 This three-file choice is mutual exclusion at each project root or nested directory, not one
 repository-wide winner and not an exclusion of the user-global instruction. DSH
 owns baseline discovery, durable replacement/tombstone events, resume and compaction replay. A
-successful canonical `Read`, `Write` or `Edit` carrying `file_path` triggers its existing nested
+successful native `read`, `write` or `edit` carrying `file_path` triggers its existing nested
 reconciliation. A transiently unavailable higher-priority candidate preserves the last-known-good
 winner; confirmed change or removal produces one atomic DSH change batch.
 
@@ -114,11 +114,7 @@ from the primary per-directory winner and has no live watcher in Runtime.
 
 ## 6. Child and utility behavior
 
-Global Runtime and Host contributions, including the initialized Workspace root, are inherited through DSH scope. Root-scoped Host content is
-not. ProductWork continues to create a fresh, continuable child conversation with inherited
-cwd/model, delegated policy, narrowed tools and a scoped persona. External child persona text is
-literal and the interpolation choice is stored in the durable child descriptor so cold resume is
-byte-identical.
+Global Runtime and Host contributions, including the Workspace root, are inherited through DSH scope; root-only Host content is not. DSH creates fresh or forked child Sessions from its native descriptor. Child instructions remain literal through continuation and cold resume, with MyAgents policy and scoped prompt contributions attached at public composition seams.
 
 `utility/run` remains an explicitly isolated model call with its own `systemPrompt`; it is not a
 hidden root Session and does not consume the root snapshot.
@@ -165,7 +161,7 @@ justify a Provider-specific cache seam. A future seam requires new evidence of a
 - root admission/config: `packages/runtime-product/src/primary-session.ts`;
 - official stable sections and instruction plugin: `packages/runtime-product/src/composition.ts`;
 - Skill context: `packages/tools-agent/src/skill-runtime.ts`;
-- child literal persona: `packages/tools-agent/src/work-runtime.ts`;
+- child literal persona: DSH subagent descriptor and `packages/runtime-product/src/composition.ts`;
 - DSH seams: `specs/dsh/patches/0008-*`, `0009-*`.
 
 Product-managed child scopes contribute `product:child-identity` through the public SystemPrompt context registry. Frozen birth facts own model, Provider, role and tree position; current effective execution limits own remaining delegation depth. Literal interpolation prevents model IDs from becoming template variables. See [child work](./child-agents-and-background-work.md) for recovery and completion delivery.

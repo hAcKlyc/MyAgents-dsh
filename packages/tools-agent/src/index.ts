@@ -15,27 +15,5 @@ export type {
   StaticSkillCatalog,
   StaticSkillDescriptor,
 } from "./skill-runtime.js";
-export {
-  PRODUCT_WORK_EVENT_SCHEMAS,
-  PRODUCT_WORK_EVENT_TYPES,
-  ProductWorkService,
-  isProductWorkEventType,
-  ownsProductWorkRootContextMessage,
-  validateProductWorkEventData,
-} from "./work-runtime.js";
-export type {
-  DynamicAgentGenerationIdentity,
-  DynamicAgentRegistration,
-  ProductDynamicAgentController,
-  ProductChildModelBinding,
-  ProductRootMessageDelivery,
-  ProductWorkCreatedEventData,
-  ProductWorkEpochEventData,
-  ProductWorkEventType,
-  ProductWorkMessageEventData,
-  ProductWorkServiceConfig,
-  ProductWorkSettledEventData,
-  ProductWorkSnapshot,
-} from "./work-runtime.js";
-
-export { installProductContextProjection } from "./work-runtime.js";
+export { installProductContextProjection, ownsRootContextMessage } from "./context-provenance.js";
+export { PRODUCT_WORK_EVENT_SCHEMAS, PRODUCT_WORK_EVENT_TYPES, isProductWorkEventType, validateProductWorkEventData } from "./historical-work-events.js";

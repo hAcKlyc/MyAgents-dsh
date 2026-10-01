@@ -69,23 +69,7 @@ New follow-up intents persist `deliveryTiming`; identity retries cannot change t
 
 Method receipts expose `queued`, `admitted`, `delivered` or `cancelled`. The durable Product message event records `queued` or `cancelled`; Inbox insertion/claim and projection derive admitted/delivered observation. The protocol provides independent steer, follow-up, cancel and interrupt methods, not an atomic “force send” transaction or mandatory combination order. A Host that implements “send now” must define its own composition of those methods and reconcile Runtime results/events; it must not invent a second transcript item locally.
 
-The root DSH Inbox is shared by more than the operation envelope. The fold first classifies each
-claimed message by its exact source: `myagents-operation` messages require the matching durable
-operation claim, while a `subagent-report` may be excluded from operation correlation only when
-the configured ProductWork owner proves its exact durable creation, message intent, optional
-delivery receipt and Inbox insertion lineage without relying on a warm registry. Any other
-root-context source remains unowned and fences. Persisted validation, live claim/discard handling
-and retirement use this same ownership predicate, so a child report cannot be accepted live and
-then rejected by the next cold or terminal fold.
-
-A fresh generation validates persisted operations before it publishes the replacement ProductWork
-primary, and teardown may continue folding after that primary enters closing. The shared
-ProductWork proof therefore accepts the exact candidate Session, rejects a subagent Session and
-proves the complete durable creation/intent/Inbox lineage without consulting a warm ProductWork
-registry, live-primary publication or dynamically available Cordis service. Operation validation
-and retirement, ProductWork's child tool/model/recovery folds, and Runtime event projection all bind
-that pure proof to the Session they already hold. Calling the operation fold with its default
-no-owner predicate is correct only for consumers that truly do not own root-context messages.
+The root DSH Inbox is shared infrastructure. `myagents-operation` messages require a matching durable operation claim. Owned native Jobs and child messages are proven by the DSH catalog and exact Inbox insertion through `ownsRootContextMessage`; historical ProductWork messages use a read-only proof over persisted creation/message facts. Unknown root context fences. Cold validation, live observers, retirement and projection use the same predicate with the exact Session and root Cordis context. No live ProductWork registry or replacement lifecycle is needed.
 
 Resume may derive an exact pending terminal after the candidate Agent has passed persisted
 validation but before ProductSession publishes it as the live primary. `reconcileResumed(agent)`
@@ -99,7 +83,6 @@ preserving fail-closed identity checks at every non-lifecycle entry.
 On resume the fold validates Product events against exact DSH Inbox splice/claim, turn, request-context, assistant and usage facts. Incomplete but recoverable work is reconstructed under the exact primary generation. When an accepted DSH message remains pending, the Runtime appends an explicit recovery-wake fact and calls the accepted patched `Agent.wakePending(MessageId)` seam. A mismatched Agent, missing birth authority or contradictory fold/terminal first fences `SdkOperationService`; if encountered while binding/resuming the primary Session it yields `recovery_required` rather than fabricating completion.
 
 DSH approval-policy switches insert a native `user-approval` Inbox notice. The Product operation fold and live Inbox observers recognize that source as DSH-owned, so retiring a completed Agent after a permission-mode switch cannot mistake its discarded notice for unowned Product input. Other unowned Inbox messages still fail the operation ownership check.
-
 
 Transport cancellation before durable admission is retryable. Once admission is durable, a disconnected caller recovers through operation lookup/read and the same idempotency identity; it does not resend a semantically new user tail.
 
@@ -128,8 +111,8 @@ Express new query behavior as an operation transition over public DSH message/tu
 
 ## Root collaboration admission
 
-ProductWork's trusted `deliverContext` composition port joins the active root operation or admits an independent collaboration-origin operation while idle. The operation ledger records only correlation, timing and input fingerprints; the original DSH Inbox message keeps its `agent-message` or `subagent-report` source. Exact already-persisted pending messages are adopted into the derived operation fold without reinsertion. Existing user FIFO position can move a newly arriving report to the next turn. Repeated delivery uses its persisted boundary and identity. A limited, canceled or closing operation cannot be extended.
+The native `agent/pre-step` admission seam joins the active root operation or admits an independent collaboration-origin operation while idle. The operation ledger records only correlation, timing and input fingerprints; the original DSH Inbox message keeps its `agent-message` or `subagent-settled` source. Exact already-persisted pending messages are adopted into the derived operation fold without reinsertion. Existing user FIFO position can move a newly arriving report to the next turn. Repeated delivery uses its persisted boundary and identity. A limited, canceled or closing operation cannot be extended.
 
-Primary Session recovery first validates/reconciles durable facts with native wake deferred. The Session lifecycle owner publishes the exact ready Agent, then awaits its `afterReady` hook before resolving admission. That hook re-admits ProductWork Root context and resumes child pending Inbox work, followed by normal operation wake reconciliation. Failure of the post-ready hook disposes the newly published generation and requires recovery; it cannot return a usable half-ready Session.
+Primary Session recovery first validates/reconciles durable facts with native wake deferred. The Session lifecycle owner publishes the exact ready Agent, then awaits its `afterReady` hook before resolving admission. That hook reconciles operation wake after native ownership has been validated. DSH retains child Inbox and continuation authority. Failure of the post-ready hook disposes the newly published generation and requires recovery; it cannot return a usable half-ready Session.
 
 Identified `turn/followUp` retries compare the immutable input fingerprint and delivery timing before checking whether new input can extend the operation. An exact consumed or cancelled receipt remains readable after terminal settlement and after a limit was reached. Claimed receipts wait for the correlation flush; retries cannot acknowledge volatile claims, reinsert input or reopen the operation. Multiple different input messages can be claimed within one DSH turn; the operation owns that turn once, while each input keeps its own durable claim and cancellation identity.

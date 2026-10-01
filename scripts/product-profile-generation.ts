@@ -35,7 +35,6 @@ const candidatePackagePaths = [
   "packages/artifact-verifier",
   "packages/checkpoint",
   "packages/component-runtime",
-  "packages/components-agents",
   "packages/components-commands",
   "packages/components-host-tools",
   "packages/components-hooks",

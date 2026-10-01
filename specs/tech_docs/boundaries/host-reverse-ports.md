@@ -73,6 +73,14 @@ Credential references may be durable non-secret identifiers; credential values a
 
 Attachment metadata crosses the wire before bytes are trusted. Acquire verifies identity, MIME, size and digest and returns a read-only staging path owned by the generation lease. Host-local source paths are never projected to the model or durable conversation.
 
+Image admission uses the native normalization path. Empty input is `INVALID_IMAGE` with an
+empty-image diagnostic; `IMAGE_TOO_LARGE` applies only when bytes exceed the configured cap.
+Neither case publishes an attachment. Decoder-valid PNGs are losslessly re-encoded before
+publication: native passthrough can preserve incomplete containers that a model Provider rejects.
+Historical PNG request projections are re-encoded too, retaining the durable attachment reference
+and deriving a new upload/cache identity for the normalized bytes. This uses public Sharp and DSH
+attachment APIs in the Host attachment owner; no upstream parser patch or new store is introduced.
+
 The Runtime validates Host Tool/Hook result shapes and size bounds, but a successful or declared
 failed/denied result may contain multiple bounded text/attachment items or an updated result. The
 trusted Host owns content redaction before returning those values; the Runtime does not apply a

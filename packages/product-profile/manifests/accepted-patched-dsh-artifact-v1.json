@@ -1,8 +1,8 @@
 {
   "formatVersion": 1,
   "artifactVersion": "0.2.0-rc.2.myagents.639ed0153972.7ac2652ae40f",
-  "manifestSha256": "6338c5d602edf6ab87c13d5ac33dbcb360ef98d0ee20760e5980689db04d0a02",
-  "sha256SumsSha256": "8ef91881b7ba1195a14db6fc649dd80e3f151b1dcf5797f6196d3cfd09d12c9c",
+  "manifestSha256": "5c9177e61393169014d9698b088c2e7a4355815eceeccbca8660c17b69c717c5",
+  "sha256SumsSha256": "d64911d75e6e7c5bd7e4bef31d15c1efc402fbea1cd5ad7f6a821ede99fed585",
   "consumerLockSha256": "0c1f01a126640619de4949a25b721fff77ad82c23fec91041e8cbbd3186e8315",
   "packageCount": 104,
   "runtimePackages": {

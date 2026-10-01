@@ -1,3 +1,4 @@
+import { modelToolNames } from "@myagents-dsh/protocol";
 import { Context } from "@deepseek-ai/cordis";
 import { Session, SessionId } from "@deepseek-ai/dsh-session";
 import {
@@ -6,7 +7,6 @@ import {
   type PlatformTarget,
 } from "@myagents-dsh/product-profile";
 import type { SdkOperationService } from "@myagents-dsh/operation-runtime";
-import type { ProductWorkSnapshot } from "@myagents-dsh/tools-agent";
 import {
   DSH_ENGINE_VERSION,
   JsonRpcPeer,
@@ -151,10 +151,10 @@ const digest = "a".repeat(64);
 const toolCatalogAuthority = Object.freeze({
   formatVersion: 1 as const,
   contractSha256: CANONICAL_TOOL_CONTRACT_SHA256,
-  implementationCatalog: CANONICAL_TOOL_NAMES,
-  effectiveTools: Object.freeze([...CANONICAL_TOOL_NAMES]),
+  implementationCatalog: modelToolNames(CANONICAL_TOOL_NAMES),
+  effectiveTools: modelToolNames(CANONICAL_TOOL_NAMES),
   revision: "synthetic-tools-v1",
-  diagnostics: Object.freeze(CANONICAL_TOOL_NAMES.map((tool) => Object.freeze({
+  diagnostics: Object.freeze(modelToolNames(CANONICAL_TOOL_NAMES).map((tool) => Object.freeze({
     tool,
     available: true as const,
   }))),
@@ -210,10 +210,7 @@ const createRoot = (
     onCommitted: () => () => undefined,
     snapshot: () => Object.freeze({ revision: digest, sequence: 0, tasks: [] }),
   } as never);
-  root.provide("productWork", {
-    ownsRootContextMessage: () => false,
-    snapshot: () => Object.freeze([]),
-  } as never);
+
   root.provide("productPlan", {
     snapshot: () => Object.freeze({ mode: "normal" as const, revision: "plan-v1" }),
   } as never);
@@ -826,78 +823,6 @@ describe("native RPC Cordis service", () => {
     }
     expect(harness.server.phase).toBe("disposed");
     expect(harness.hostFatalErrors).toEqual([]);
-  });
-
-  it("pages a retained Agent tree within negotiated byte limits and forwards exact control identities", async () => {
-    const harness = await createHarness();
-    const within = async <T>(label: string, operation: Promise<T>): Promise<T> => {
-      let timer: ReturnType<typeof setTimeout> | undefined;
-      try {
-        return await Promise.race([operation, new Promise<never>((_, reject) => {
-          timer = setTimeout(() => reject(new Error(`${label}: phase=${harness.server.phase}; exit=${JSON.stringify(harness.server.exitRequest)}; fatal=${harness.hostFatalErrors.map(error => error.code).join(",")}`)), 1_000);
-        })]);
-      } finally { if (timer !== undefined) clearTimeout(timer); }
-    };
-    const snapshots: ProductWorkSnapshot[] = Array.from({ length: 35 }, (_, index) => ({
-      taskId: `task-${index}`, agentId: `agent-${index}`, parentToolCallId: `call-${index}`, agentType: "general",
-      description: "A retained background task", mode: "continuable", model: "fixture-model", state: "succeeded",
-      modelRoute: { provider: "fixture-provider", profileRevision: "fixture-profile", selection: "inherit" },
-      tree: { rootAgentId: "work-root", parentAgentId: "work-root", depth: 1 },
-      activation: { id: `activation-${index}`, ordinal: 1, state: "completed" },
-      handleState: "open", handleRevision: 1, startedAt: "2026-09-05T00:00:00.000Z", lastActivityAt: "2026-09-05T00:00:01.000Z",
-      result: "有界预览".repeat(1_024), outputPath: "/private-runtime-output/not-a-host-path",
-    }));
-    const readSnapshots = vi.fn((signal: AbortSignal, afterTaskId?: string) => {
-      signal.throwIfAborted();
-      const start = afterTaskId === undefined ? 0 : snapshots.findIndex(item => item.taskId === afterTaskId) + 1;
-      if (afterTaskId !== undefined && start === 0) throw new ProtocolError("work_cursor_invalid", "foreign cursor");
-      return Promise.resolve(snapshots.slice(start, start + 33));
-    });
-    const resumeFromHost = vi.fn(() => Promise.resolve());
-    const stopFromHost = vi.fn(() => Promise.resolve());
-    const messageFromHost = vi.fn(() => Promise.resolve());
-    Object.assign(harness.root.productWork, { readSnapshots, resumeFromHost, stopFromHost, messageFromHost });
-    const outputFrames: number[] = [];
-    let buffer = "";
-    harness.runtimeOutput.on("data", (chunk: Buffer) => {
-      buffer += chunk.toString();
-      while (buffer.includes("\n")) {
-        const newline = buffer.indexOf("\n"); outputFrames.push(Buffer.byteLength(buffer.slice(0, newline)));
-        buffer = buffer.slice(newline + 1);
-      }
-    });
-    try {
-      const initialize = initializeParams(); initialize.limits.maxFrameBytes = 16_384;
-      await within("initialize work page", harness.client.initialize(initialize));
-      await vi.waitFor(() => expect(harness.server.phase).toBe("await_initialized"));
-      await within("initialized work page", harness.client.initialized());
-      await vi.waitFor(() => expect(harness.server.phase).toBe("ready"));
-      await expect(within("unbound work page", harness.client.workList({}))).rejects.toMatchObject({ code: "primary_session_not_ready" });
-      await within("bind work root", harness.client.sessionCreate(sessionParams("work-root", "create-work-root")));
-      const tasks: string[] = [];
-      let afterTaskId: string | undefined;
-      do {
-        const page = await within("read work page", harness.client.workList(afterTaskId === undefined ? {} : { afterTaskId }));
-        expect(page.items.length).toBeGreaterThan(0);
-        expect(page.items.length).toBeLessThan(32);
-        for (const item of page.items) {
-          expect(item.result).toHaveLength(1_024); expect(item.resultTruncated).toBe(true);
-          expect(item).not.toHaveProperty("outputPath"); expect(item).not.toHaveProperty("usage");
-          tasks.push(item.taskId);
-        }
-        afterTaskId = page.nextTaskId;
-      } while (afterTaskId !== undefined);
-      expect(tasks).toEqual(snapshots.map(item => item.taskId));
-      await expect(within("foreign work page", harness.client.workList({ afterTaskId: "foreign-task" }))).rejects.toMatchObject({ code: "work_cursor_invalid" });
-      await within("resume work", harness.client.workAgentResume({ agentId: "agent-3", clientRequestId: "resume-3", expectedHandleRevision: 7 }));
-      await within("stop work", harness.client.workAgentStop({ agentId: "agent-3", expectedHandleRevision: 8 }));
-      await within("message work", harness.client.workAgentMessage({ agentId: "agent-4", clientMessageId: "message-4", message: "continue" }));
-      expect(resumeFromHost).toHaveBeenCalledWith("agent-3", "resume-3", 7, expect.any(AbortSignal));
-      expect(stopFromHost).toHaveBeenCalledWith("agent-3", 8, expect.any(AbortSignal));
-      expect(messageFromHost).toHaveBeenCalledWith("agent-4", "message-4", "continue", expect.any(AbortSignal));
-      expect(outputFrames.every(bytes => bytes <= 16_384)).toBe(true);
-      expect(harness.hostFatalErrors).toEqual([]);
-    } finally { await within("close work", harness.close()); }
   });
 
   it("routes create, resume, and close through the sole ProductSession owner", async () => {

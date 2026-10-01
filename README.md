@@ -46,7 +46,7 @@ MyAgents 客户端       其他 Host         Reference Web Host
 
 ### Agent 工具清单
 
-当前构建使用 `dsh_first`。下表列出基础模型可见工具的**实际名称**；`bash` 与 `pwsh` 按平台二选一，因此每个平台通常可见 26 项。MCP、Host 和组件工具由对应配置动态加入，不在这份固定清单内。
+工具统一使用 DSH 原生优先的实现（原 `dsh_first`）；不再提供策略切换。下表列出基础模型可见工具的**实际名称**；`bash` 与 `pwsh` 按平台二选一，因此每个平台通常可见 26 项。MCP、Host 和组件工具由对应配置动态加入，不在这份固定清单内。
 
 | 工具 | 能力 | 备注 |
 | --- | --- | --- |
@@ -153,7 +153,7 @@ MyAgents client        Other Hosts        Reference Web Host
 
 #### Agent tool catalog
 
-The current build uses `dsh_first`. The table lists the **actual names** in the base model-visible catalog. A platform exposes either `bash` or `pwsh`, so it normally has 26 effective tools. MCP, Host, and component tools are added dynamically by their configuration and are outside this fixed catalog.
+Tools use a single DSH-native-first implementation (formerly `dsh_first`); there is no strategy switch. The table lists the **actual names** in the base model-visible catalog. A platform exposes either `bash` or `pwsh`, so it normally has 26 effective tools. MCP, Host, and component tools are added dynamically by their configuration and are outside this fixed catalog.
 
 | Tool | Capability | Source note |
 | --- | --- | --- |

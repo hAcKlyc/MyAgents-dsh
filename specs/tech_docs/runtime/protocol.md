@@ -239,7 +239,8 @@ The contract exposes 51 request methods: 44 Host-to-Runtime methods and seven Ru
 | Delete transaction | `session/delete/prepare`, `session/delete/commit`, `session/delete/purge`, `session/delete/rollback`, `session/delete/status` |
 | Fork transaction | `session/fork/prepare`, `session/fork/commit`, `session/fork/abort`, `session/fork/status` |
 | Rewind transaction | `session/rewind/prepare`, `session/rewind/commit`, `session/rewind/rollback`, `session/rewind/status` |
-| Retained Agent tree | `work/list`, `work/agent/message`, `work/agent/stop`, `work/agent/resume` |
+| Native Agent controls | `subagent/list`, `subagent/tasks`, `subagent/prompt`, `subagent/interrupt` |
+| Reserved legacy methods (return `method_unavailable`) | `work/list`, `work/agent/message`, `work/agent/stop`, `work/agent/resume` |
 | Turn | `turn/start`, `turn/get`, `turn/steer`, `turn/followUp`, `turn/message/cancel`, `turn/interrupt` |
 | Command/configuration | `command/invoke`, `config/apply`, `plan/apply`, `credential/reconcile` |
 | Permission policy | `permission/rules/list`, `permission/rules/add`, `permission/rules/revoke` |

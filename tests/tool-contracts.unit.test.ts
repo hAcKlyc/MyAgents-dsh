@@ -1,3 +1,4 @@
+import { modelToolNames } from "@myagents-dsh/protocol";
 import { createHash } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import { resolve } from "node:path";
@@ -59,8 +60,8 @@ describe("canonical tool contract authority", () => {
       const contract = CANONICAL_TOOL_CONTRACTS[name];
       expect(contract.name).toBe(name);
       expect(contract.description.length).toBeGreaterThan(40);
-      expect(contract.behaviorFixtureIds).toHaveLength(name === "Write" || name === "Read" ? 6 : 5);
-      expect(new Set(contract.behaviorFixtureIds).size).toBe(name === "Write" || name === "Read" ? 6 : 5);
+      expect(contract.behaviorFixtureIds.length).toBeGreaterThan(0);
+      expect(new Set(contract.behaviorFixtureIds).size).toBe(contract.behaviorFixtureIds.length);
       expect(contract.errorCodes.length).toBeGreaterThan(0);
       expect(contract.lifecycle.cancellation).toBe("abort_signal_exactly_one_terminal");
       expect(contract.lifecycle.durableResult).toBe("dsh_tool_result_before_runtime_visibility");
@@ -78,10 +79,6 @@ describe("canonical tool contract authority", () => {
     expect(CANONICAL_TOOL_CONTRACTS.SendMessage.sideEffect).toBe("delegation");
     expect(CANONICAL_TOOL_CONTRACTS.AskUserQuestion.timeoutMs).toBeUndefined();
     expect(CANONICAL_TOOL_CONTRACTS.Agent.inputSchema.properties).not.toHaveProperty("name");
-    expect(CANONICAL_TOOL_CONTRACTS.Agent.description).toContain("taskId addresses TaskStop");
-    expect(CANONICAL_TOOL_CONTRACTS.Agent.description).toContain("run_in_background defaults to true");
-    expect(CANONICAL_TOOL_CONTRACTS.SendMessage.description).toContain("agentId returned by Agent");
-    expect(CANONICAL_TOOL_CONTRACTS.SendMessage.description).toContain("literal parent");
     expect(CANONICAL_TOOL_NAMES.filter((name) =>
       CANONICAL_TOOL_CONTRACTS[name].planPolicy.mode === "managed-plan-file-only")).toEqual(["Write", "Edit"]);
     expect(CANONICAL_TOOL_NAMES.filter((name) =>
@@ -280,15 +277,11 @@ describe("canonical tool contract authority", () => {
       revision: "revision-1",
       mode: "normal",
     })).toThrow();
-    expect(() => validateCanonicalToolOutput("SendMessage", {
-      ...CANONICAL_TOOL_SCHEMA_FIXTURES.SendMessage.output,
-      sequence: Number.MAX_SAFE_INTEGER + 1,
-    })).toThrow();
     expect(() => validateCanonicalToolOutput("Glob", {
       ...CANONICAL_TOOL_SCHEMA_FIXTURES.Glob.output,
       numFiles: 999,
     })).toThrow(/filename count/u);
-    for (const name of ["WebFetch", "WebSearch", "Agent"] as const) {
+    for (const name of ["WebFetch", "WebSearch"] as const) {
       expect(validateCanonicalToolOutput(name, {
         ...CANONICAL_TOOL_SCHEMA_FIXTURES[name].output,
         usage: {
@@ -336,14 +329,14 @@ describe("canonical tool contract authority", () => {
       resolve(repositoryRoot, "packages/tool-contracts/generated/tool-catalog.schema.json"),
       "utf8",
     )) as TSchema;
-    const diagnostics = CANONICAL_TOOL_NAMES.map((tool) => tool === "Read"
+    const diagnostics = modelToolNames(CANONICAL_TOOL_NAMES).map((tool) => tool === "read"
       ? { tool, available: true }
       : { tool, available: false, reasonCode: "fixture_unavailable" });
     const withoutDigest = {
       formatVersion: 1 as const,
       contractSha256: PROTOCOL_TOOL_CONTRACT_SHA256,
-      implementationCatalog: CANONICAL_TOOL_NAMES,
-      effectiveTools: ["Read"] as const,
+      implementationCatalog: modelToolNames(CANONICAL_TOOL_NAMES),
+      effectiveTools: ["read"] as const,
       revision: "fixture-v1",
       diagnostics,
     };
@@ -369,7 +362,7 @@ describe("canonical tool contract authority", () => {
     })).toThrow(TypeError);
     expect(() => validateEffectiveToolCatalog({
       ...catalog,
-      diagnostics: [{ tool: "Read", available: true }],
+      diagnostics: [{ tool: "read", available: true }],
     })).toThrow();
     expect(() => validateEffectiveToolCatalog({
       ...catalog,
@@ -377,20 +370,21 @@ describe("canonical tool contract authority", () => {
     })).toThrow();
     const sharedCanonicalAliasWithoutDigest = {
       ...withoutDigest,
-      implementationCatalog: CANONICAL_TOOL_NAMES,
-      effectiveTools: CANONICAL_TOOL_NAMES,
-      diagnostics: CANONICAL_TOOL_NAMES.map((tool) => ({ tool, available: true as const })),
+      implementationCatalog: modelToolNames(CANONICAL_TOOL_NAMES),
+      effectiveTools: modelToolNames(CANONICAL_TOOL_NAMES),
+      diagnostics: modelToolNames(CANONICAL_TOOL_NAMES).map((tool) => ({ tool, available: true as const })),
     };
     expect(validateEffectiveToolCatalog({
       ...sharedCanonicalAliasWithoutDigest,
       digest: effectiveToolCatalogDigest(sharedCanonicalAliasWithoutDigest),
-    }).effectiveTools).toEqual(CANONICAL_TOOL_NAMES);
+    }).effectiveTools).toEqual(modelToolNames(CANONICAL_TOOL_NAMES));
     for (const implementationCatalog of [
+      CANONICAL_TOOL_NAMES,
       [],
-      ["Read"],
-      CANONICAL_TOOL_NAMES.slice(0, 19),
-      [...CANONICAL_TOOL_NAMES, "Read"],
-      ["Write", "Read", ...CANONICAL_TOOL_NAMES.slice(2)],
+      ["read"],
+      modelToolNames(CANONICAL_TOOL_NAMES).slice(0, 19),
+      [...modelToolNames(CANONICAL_TOOL_NAMES), "read"],
+      ["write", "read", ...modelToolNames(CANONICAL_TOOL_NAMES).slice(2)],
     ]) {
       expect(Value.Check(schema, { ...catalog, implementationCatalog })).toBe(false);
       expect(() => validateEffectiveToolCatalog({ ...catalog, implementationCatalog })).toThrow();
@@ -402,13 +396,13 @@ describe("canonical tool contract authority", () => {
     })).toThrow(/disagree/u);
     const availableWithReason = {
       ...catalog,
-      diagnostics: diagnostics.map((entry) => entry.tool === "Read"
+      diagnostics: diagnostics.map((entry) => entry.tool === "read"
         ? { ...entry, reasonCode: "must-not-exist" }
         : entry),
     };
     const unavailableWithoutReason = {
       ...catalog,
-      diagnostics: diagnostics.map((entry) => entry.tool === "Write"
+      diagnostics: diagnostics.map((entry) => entry.tool === "write"
         ? { tool: entry.tool, available: false }
         : entry),
     };
@@ -422,7 +416,7 @@ describe("canonical tool contract authority", () => {
       { ...catalog, revision: "invalid\nrevision" },
       {
         ...catalog,
-        diagnostics: diagnostics.map((entry) => entry.tool === "Write"
+        diagnostics: diagnostics.map((entry) => entry.tool === "write"
           ? { ...entry, reasonCode: "invalid\nreason" }
           : entry),
       },
@@ -459,12 +453,13 @@ describe("canonical tool contract authority", () => {
     }
   });
 
-  it("maps every model definition to one product compat-tool over audited public DSH roots", () => {
+  it("maps native definitions and product tools to audited public DSH roots", () => {
     const seams = new Map(publicSeams.map((seam) => [seam.importPath, seam]));
     for (const name of CANONICAL_TOOL_NAMES) {
       const decision = CANONICAL_TOOL_REUSE_MATRIX[name];
-      expect(decision.modelDefinition).toBe(isOfficialShellTool(name) ? "official-tool" : "compat-tool");
-      expect(decision.stockModelDefinition).toBe(isOfficialShellTool(name) ? "enabled" : "excluded");
+      const native = isOfficialShellTool(name) || ["Read", "Write", "Edit", "Glob", "Grep", "WebFetch", "WebSearch", "Agent", "TaskStop", "SendMessage"].includes(name);
+      expect(decision.modelDefinition).toBe(native ? "official-tool" : "compat-tool");
+      expect(decision.stockModelDefinition).toBe(native ? "enabled" : "excluded");
       expect(decision.productOwner).toMatch(/^@myagents-dsh\//u);
       expect(decision.dshPublicReuse.length).toBeGreaterThan(0);
       for (const reuse of decision.dshPublicReuse) {

@@ -72,7 +72,7 @@ export interface CanonicalToolError {
 export interface CanonicalToolLifecycle {
   readonly cancellation: "abort_signal_exactly_one_terminal";
   readonly durableResult: "dsh_tool_result_before_runtime_visibility";
-  readonly timeout: "bounded_executor" | "host_policy" | "work_registry";
+  readonly timeout: "bounded_executor" | "host_policy";
   readonly headless: "allowed" | "policy_required";
 }
 
@@ -311,25 +311,6 @@ const taskChangedField = Type.Union([
   Type.Literal("metadata"),
 ]);
 const taskList = Type.Union([Type.Literal("personal"), Type.Literal("shared")]);
-
-const agentOutput = Type.Union([
-  strictObject({
-    taskId: boundedIdentifier,
-    agentId: boundedIdentifier,
-    state: Type.Literal("background"),
-    outputPath: boundedPath,
-    model: boundedIdentifier,
-  }),
-  strictObject({
-    taskId: boundedIdentifier,
-    agentId: boundedIdentifier,
-    state: Type.Union([Type.Literal("succeeded"), Type.Literal("failed"), Type.Literal("aborted")]),
-    result: Type.String({ maxLength: TOOL_CONTRACT_LIMITS.maxInlineOutputBytes }),
-    resultTruncated: Type.Boolean(),
-    usage: Type.Optional(tokenUsage),
-    model: boundedIdentifier,
-  }),
-]);
 
 export const CANONICAL_TOOL_CONTRACTS = deepFreeze({
   Read: contract({
@@ -682,7 +663,7 @@ export const CANONICAL_TOOL_CONTRACTS = deepFreeze({
   }),
   Skill: contract({
     name: "Skill",
-    description: "Loads one model-invocable SKILL.md from the operation-visible approved DSH Skill catalog, strips frontmatter, expands deterministic arguments, and returns its bounded instructions inline.",
+    description: "Loads one model-invocable SKILL.md from the operation-visible approved DSH Skill catalog, strips frontmatter, expands deterministic arguments, and returns its bounded instructions inline. Pass args as one string: $ARGUMENTS expands the full string, indexed/numbered placeholders expand parsed arguments; without placeholders the arguments are appended in an ARGUMENTS section.",
     inputSchema: strictObject({ skill: boundedIdentifier, args: Type.Optional(Type.String({ maxLength: 65_536 })) }),
     outputSchema: strictObject({
       skill: boundedIdentifier,
@@ -706,85 +687,50 @@ export const CANONICAL_TOOL_CONTRACTS = deepFreeze({
     ),
     lifecycle: lifecycle("bounded_executor", "allowed"),
   }),
+  // These keys are internal policy aliases. Native DSH definitions own model schemas.
   Agent: contract({
     name: "Agent",
-    description: "Starts a supervised local child Agent with a fresh DSH context and the current bounded workspace/component snapshot. Omit subagent_type for the general descriptor; Explore and Plan provide read-only research/planning roles. Custom descriptors may narrow inherited tools. run_in_background defaults to true: omitted/true returns a background handle; false waits for this activation's result. All roles and both modes retain context for SendMessage follow-ups after completion. taskId addresses TaskStop, agentId addresses SendMessage. The first successful foreground result is returned only through this tool; background and follow-up completion reports arrive automatically. An idle retained handle is not still executing. TaskStop closes the handle and model messages cannot restart it.",
+    description: "Policy for native subagent and fork_agent delegation. DSH owns fresh/forked Sessions, continuable conversations, result delivery and lifecycle. MyAgents applies the admitted Host model, workspace, permission and Plan policy.",
     inputSchema: strictObject({
-      description: Type.String({ minLength: 1, maxLength: 80 }),
-      prompt: Type.String({ minLength: 1, maxLength: 1_000_000 }),
-      subagent_type: Type.Optional(boundedIdentifier),
-      run_in_background: Type.Optional(Type.Boolean()),
-      model: Type.Optional(boundedIdentifier),
+      description: Type.String(), prompt: Type.String(),
+      background: Type.Optional(Type.Boolean()),
+      provider: Type.Optional(Type.String()), model: Type.Optional(Type.String()),
+      reasoning_effort: Type.Optional(Type.String()),
     }),
-    outputSchema: agentOutput,
-    concurrency: "parallel",
-    sideEffect: "delegation",
-    timeoutMs: 600_000,
-    outputLimits: outputLimits(262_144, 64, { maxRetainedOutputBytes: 8 * 1_024 * 1_024 }),
-    permissionClass: "agent.spawn",
-    checkpoint: "none",
-    behaviorFixtureIds: ["foreground_child_terminal", "default_background_child_handle", "exact_model_alias", "background_permission_fail_closed", "stop_and_generation_cleanup"],
-    resultSemantics: "Foreground returns this activation's result, usage, and continuable identity; background returns one supervised handle and output path. Execution completion and handle closure are separate.",
-    errorCodes: errors(
-      ["agent_unavailable", false, "No compatible child descriptor or model alias is visible."],
-      ["child_nesting_forbidden", false, "A child attempts to spawn another child."],
-      ["interaction_unavailable", false, "A background child requires unavailable interaction."],
-      ["child_failed", true, "The supervised child reaches a failed terminal."],
-    ),
-    lifecycle: lifecycle("work_registry", "policy_required"),
+    outputSchema: Type.Union([
+      strictObject({ kind: Type.Literal("continuable"), subagentId: Type.String() }),
+      strictObject({ kind: Type.Literal("foreground"), runId: Type.String(), output: Type.Array(Type.Unknown()) }),
+    ]),
+    concurrency: "parallel", sideEffect: "delegation", timeoutMs: 600_000,
+    outputLimits: outputLimits(262_144, 64), permissionClass: "agent.spawn", checkpoint: "none",
+    behaviorFixtureIds: ["native_spawn_and_fork", "native_continuation", "host_child_policy"],
+    resultSemantics: "Use the installed native delegation result; no ProductWork handles or role registry.",
+    errorCodes: errors(["permission_denied", false, "Host policy denies delegation."]),
+    lifecycle: lifecycle("host_policy", "policy_required"),
   }),
   TaskStop: contract({
     name: "TaskStop",
-    description: "Stops an owned child Agent by task ID and waits for terminal state and resource finalization.",
-    inputSchema: strictObject({ task_id: boundedIdentifier }),
-    outputSchema: strictObject({
-      taskId: boundedIdentifier,
-      kind: Type.Literal("agent"),
-      terminal: Type.Union([Type.Literal("succeeded"), Type.Literal("failed"), Type.Literal("aborted")]),
-      alreadyTerminal: Type.Boolean(),
-    }),
-    concurrency: "session_serial",
-    sideEffect: "session_state",
-    timeoutMs: 120_000,
-    outputLimits: outputLimits(16_384, 16),
-    permissionClass: "work.stop",
-    checkpoint: "none",
-    behaviorFixtureIds: ["stop_process_tree", "stop_child", "already_terminal_idempotent", "cross_session_id_rejected", "waits_for_resource_finalizer"],
-    resultSemantics: "Wait for the addressed work item to reach its existing or newly stopped terminal and finalize owned resources.",
-    errorCodes: errors(
-      ["task_not_found", false, "The task is unknown or belongs to another Runtime Session."],
-      ["task_stop_failed", true, "The WorkRegistry cannot establish terminal cleanup."],
-    ),
-    lifecycle: lifecycle("work_registry", "allowed"),
+    description: "Policy for native interrupt_agent. Interrupt the addressed child turn without closing its conversation or descendants; DSH returns acceptance immediately.",
+    inputSchema: strictObject({ agent_id: Type.String() }),
+    outputSchema: strictObject({ accepted: Type.Boolean() }),
+    concurrency: "parallel", sideEffect: "session_state", timeoutMs: 120_000,
+    outputLimits: outputLimits(16_384, 16), permissionClass: "work.stop", checkpoint: "none",
+    behaviorFixtureIds: ["native_turn_interrupt", "native_continuation_after_interrupt"],
+    resultSemantics: "Native interrupt acceptance; no subtree stop or resource-finalization receipt.",
+    errorCodes: errors(["permission_denied", false, "Host policy denies interruption."], ["agent_not_found", false, "The target is absent from the native Agent registry and child catalog."]),
+    lifecycle: lifecycle("host_policy", "allowed"),
   }),
   SendMessage: contract({
     name: "SendMessage",
-    description: "Delivers an ordered plain-text message within the caller's root lineage. Use the agentId returned by Agent for one live child or sibling; a child may use the literal parent for the root. taskId, caller-defined names, broadcasts, team aliases, cross-Session recipients, and stopping or terminal Agents are unsupported. A queued receipt means admission for the recipient's next child-turn boundary, not interruption or completed work; delivered and queued are receipts, not terminal results.",
-    inputSchema: strictObject({
-      to: boundedIdentifier,
-      summary: Type.String({ minLength: 1, maxLength: 200 }),
-      message: boundedText,
-    }),
-    outputSchema: strictObject({
-      messageId: boundedIdentifier,
-      recipient: boundedIdentifier,
-      state: Type.Union([Type.Literal("delivered"), Type.Literal("queued")]),
-      sequence: nonNegativeInteger,
-    }),
-    concurrency: "session_serial",
-    sideEffect: "delegation",
-    timeoutMs: 120_000,
-    outputLimits: outputLimits(16_384, 16),
-    permissionClass: "agent.message",
-    checkpoint: "none",
-    behaviorFixtureIds: ["parent_child_sibling_delivery", "ordered_sequence", "stopped_child_resume", "terminal_recipient_notification", "broadcast_and_cross_session_rejected"],
-    resultSemantics: "Return an ordered delivery receipt after resolving one exact live in-scope collaborator by agentId or the child-only parent alias.",
-    errorCodes: errors(
-      ["recipient_not_found", false, "The local recipient cannot be resolved."],
-      ["recipient_out_of_scope", false, "The target is cross-Session, broadcast, team, or cloud-owned."],
-      ["delivery_failed", true, "The ordered mailbox or resume path cannot accept the message."],
-    ),
-    lifecycle: lifecycle("work_registry", "allowed"),
+    description: "Policy for native send_message and list_agents. Native messaging addresses a direct continuable child or the resident child's direct parent by agent_id. Delivery confirmation is not the recipient's answer. DSH owns the catalog and Inbox.",
+    inputSchema: strictObject({ agent_id: Type.String(), message: Type.String() }),
+    outputSchema: strictObject({ messageId: Type.String() }),
+    concurrency: "parallel", sideEffect: "delegation", timeoutMs: 120_000,
+    outputLimits: outputLimits(16_384, 16), permissionClass: "agent.message", checkpoint: "none",
+    behaviorFixtureIds: ["native_parent_child_delivery", "native_catalog"],
+    resultSemantics: "Native delivery confirmation and catalog; no ProductWork mailbox or sibling messaging.",
+    errorCodes: errors(["permission_denied", false, "Host policy denies messaging."]),
+    lifecycle: lifecycle("host_policy", "allowed"),
   }),
   TaskCreate: contract({
     name: "TaskCreate",
@@ -898,28 +844,28 @@ export const CANONICAL_TOOL_CONTRACTS = deepFreeze({
 } as const satisfies Record<CanonicalToolName, CanonicalToolContract>);
 
 export const CANONICAL_TOOL_REUSE_MATRIX = deepFreeze({
-  Read: { tool: "Read", modelDefinition: "compat-tool", dshPublicReuse: [
+  Read: { tool: "Read", modelDefinition: "official-tool", dshPublicReuse: [
     { id: "file-tool-factories", importPath: "@deepseek-ai/dsh-tool-fs", classification: "helper", symbols: ["createReadTool", "createReadImageTool"] },
     { id: "filesystem", importPath: "@deepseek-ai/dsh-fs", classification: "provider", symbols: ["FileSystem"] },
     { id: "attachments", importPath: "@deepseek-ai/dsh-attachment", classification: "provider", symbols: ["AttachmentStore"] },
-  ], productOwner: "@myagents-dsh/tools-fs", stockModelDefinition: "excluded" },
-  Write: { tool: "Write", modelDefinition: "compat-tool", dshPublicReuse: [
+  ], productOwner: "@myagents-dsh/tools-fs", stockModelDefinition: "enabled" },
+  Write: { tool: "Write", modelDefinition: "official-tool", dshPublicReuse: [
     { id: "file-tool-factories", importPath: "@deepseek-ai/dsh-tool-fs", classification: "helper", symbols: ["createWriteTool"] },
     { id: "filesystem", importPath: "@deepseek-ai/dsh-fs", classification: "provider", symbols: ["FileSystem", "FsWriteIntent"] },
-  ], productOwner: "@myagents-dsh/tools-fs", stockModelDefinition: "excluded" },
-  Edit: { tool: "Edit", modelDefinition: "compat-tool", dshPublicReuse: [
+  ], productOwner: "@myagents-dsh/tools-fs", stockModelDefinition: "enabled" },
+  Edit: { tool: "Edit", modelDefinition: "official-tool", dshPublicReuse: [
     { id: "file-tool-factories", importPath: "@deepseek-ai/dsh-tool-fs", classification: "helper", symbols: ["createEditTool"] },
     { id: "local-file-provider", importPath: "@deepseek-ai/dsh-fs-local", classification: "helper", symbols: ["LocalFileSystem", "prepareTextEdit"] },
     { id: "filesystem", importPath: "@deepseek-ai/dsh-fs", classification: "provider", symbols: ["FileSystem", "FsEditRequest"] },
-  ], productOwner: "@myagents-dsh/tools-fs", stockModelDefinition: "excluded" },
-  Glob: { tool: "Glob", modelDefinition: "compat-tool", dshPublicReuse: [
+  ], productOwner: "@myagents-dsh/tools-fs", stockModelDefinition: "enabled" },
+  Glob: { tool: "Glob", modelDefinition: "official-tool", dshPublicReuse: [
     { id: "fs-search-helpers", importPath: "@deepseek-ai/dsh-tool-fs-search", classification: "helper", symbols: ["buildGlobCommand", "parseGlobArgs"] },
     { id: "subprocess", importPath: "@deepseek-ai/dsh-subprocess", classification: "provider", symbols: ["SubprocessRuntime"] },
-  ], productOwner: "@myagents-dsh/tools-fs", stockModelDefinition: "excluded" },
-  Grep: { tool: "Grep", modelDefinition: "compat-tool", dshPublicReuse: [
+  ], productOwner: "@myagents-dsh/tools-fs", stockModelDefinition: "enabled" },
+  Grep: { tool: "Grep", modelDefinition: "official-tool", dshPublicReuse: [
     { id: "fs-search-helpers", importPath: "@deepseek-ai/dsh-tool-fs-search", classification: "helper", symbols: ["buildGrepCommand", "parseGrepArgs"] },
     { id: "subprocess", importPath: "@deepseek-ai/dsh-subprocess", classification: "provider", symbols: ["SubprocessRuntime"] },
-  ], productOwner: "@myagents-dsh/tools-fs", stockModelDefinition: "excluded" },
+  ], productOwner: "@myagents-dsh/tools-fs", stockModelDefinition: "enabled" },
   bash: officialShellReuse("bash"),
   pwsh: officialShellReuse("pwsh"),
   job_output: officialShellReuse("job_output"),
@@ -928,14 +874,14 @@ export const CANONICAL_TOOL_REUSE_MATRIX = deepFreeze({
   ls: { tool: "ls", modelDefinition: "compat-tool", dshPublicReuse: [
     { id: "filesystem", importPath: "@deepseek-ai/dsh-fs", classification: "provider", symbols: ["FileSystem"] },
   ], productOwner: "@myagents-dsh/tools-fs", stockModelDefinition: "excluded" },
-  WebFetch: { tool: "WebFetch", modelDefinition: "compat-tool", dshPublicReuse: [
+  WebFetch: { tool: "WebFetch", modelDefinition: "official-tool", dshPublicReuse: [
     { id: "web", importPath: "@deepseek-ai/dsh-web", classification: "provider", symbols: ["WebRuntime"] },
     { id: "web-helpers", importPath: "@deepseek-ai/dsh-tool-web", classification: "helper", symbols: ["formatFetchOutput", "parseFetchArgs"] },
-  ], productOwner: "@myagents-dsh/tools-web", stockModelDefinition: "excluded" },
-  WebSearch: { tool: "WebSearch", modelDefinition: "compat-tool", dshPublicReuse: [
+  ], productOwner: "@myagents-dsh/tools-web", stockModelDefinition: "enabled" },
+  WebSearch: { tool: "WebSearch", modelDefinition: "official-tool", dshPublicReuse: [
     { id: "web", importPath: "@deepseek-ai/dsh-web", classification: "provider", symbols: ["WebRuntime"] },
     { id: "web-helpers", importPath: "@deepseek-ai/dsh-tool-web", classification: "helper", symbols: ["formatSearchOutput", "searchMetaFromValue"] },
-  ], productOwner: "@myagents-dsh/tools-web", stockModelDefinition: "excluded" },
+  ], productOwner: "@myagents-dsh/tools-web", stockModelDefinition: "enabled" },
   AskUserQuestion: { tool: "AskUserQuestion", modelDefinition: "compat-tool", dshPublicReuse: [
     { id: "questions", importPath: "@deepseek-ai/dsh-user-questions", classification: "provider", symbols: ["UserQuestionService"] },
   ], productOwner: "@myagents-dsh/tools-interaction", stockModelDefinition: "excluded" },
@@ -949,16 +895,16 @@ export const CANONICAL_TOOL_REUSE_MATRIX = deepFreeze({
   Skill: { tool: "Skill", modelDefinition: "compat-tool", dshPublicReuse: [
     { id: "skills", importPath: "@deepseek-ai/dsh-skill", classification: "provider", symbols: ["SkillRegistry"] },
   ], productOwner: "@myagents-dsh/tools-agent", stockModelDefinition: "excluded" },
-  Agent: { tool: "Agent", modelDefinition: "compat-tool", dshPublicReuse: [
+  Agent: { tool: "Agent", modelDefinition: "official-tool", dshPublicReuse: [
     { id: "subagents", importPath: "@deepseek-ai/dsh-subagent", classification: "direct", symbols: ["SubagentRuntime"] },
     { id: "jobs", importPath: "@deepseek-ai/dsh-jobs", classification: "provider", symbols: ["JobRegistry"] },
-  ], productOwner: "@myagents-dsh/tools-agent", stockModelDefinition: "excluded" },
-  TaskStop: { tool: "TaskStop", modelDefinition: "compat-tool", dshPublicReuse: [
+  ], productOwner: "@myagents-dsh/runtime-product", stockModelDefinition: "enabled" },
+  TaskStop: { tool: "TaskStop", modelDefinition: "official-tool", dshPublicReuse: [
     { id: "subagents", importPath: "@deepseek-ai/dsh-subagent", classification: "direct", symbols: ["SubagentRuntime"] },
-  ], productOwner: "@myagents-dsh/tools-agent", stockModelDefinition: "excluded" },
-  SendMessage: { tool: "SendMessage", modelDefinition: "compat-tool", dshPublicReuse: [
+  ], productOwner: "@myagents-dsh/runtime-product", stockModelDefinition: "enabled" },
+  SendMessage: { tool: "SendMessage", modelDefinition: "official-tool", dshPublicReuse: [
     { id: "subagents", importPath: "@deepseek-ai/dsh-subagent", classification: "direct", symbols: ["SubagentRuntime"] },
-  ], productOwner: "@myagents-dsh/tools-agent", stockModelDefinition: "excluded" },
+  ], productOwner: "@myagents-dsh/runtime-product", stockModelDefinition: "enabled" },
   TaskCreate: { tool: "TaskCreate", modelDefinition: "compat-tool", dshPublicReuse: [
     { id: "session", importPath: "@deepseek-ai/dsh-session", classification: "product-plugin", symbols: ["Session"] },
   ], productOwner: "@myagents-dsh/task-graph", stockModelDefinition: "excluded" },
@@ -1010,9 +956,9 @@ export const CANONICAL_TOOL_SCHEMA_FIXTURES = deepFreeze({
   EnterPlanMode: { input: {}, output: { mode: "plan", planPath: "/fixture/plan.md", revision: "plan-1" } },
   ExitPlanMode: { input: {}, output: { disposition: "approved", plan: "fixture plan", revision: "plan-1", mode: "normal" } },
   Skill: { input: { skill: "fixture" }, output: { skill: "fixture", content: "instructions", source: "skills/fixture/SKILL.md", sourceSha256: "c".repeat(64), argumentsExpanded: false } },
-  Agent: { input: { description: "Review fixture changes", prompt: "Review the fixture" }, output: { taskId: "work-1", agentId: "agent-1", state: "succeeded", result: "done", resultTruncated: false, usage: fixtureUsage, model: "fixture-model" } },
-  TaskStop: { input: { task_id: "work-1" }, output: { taskId: "work-1", kind: "agent", terminal: "aborted", alreadyTerminal: false } },
-  SendMessage: { input: { to: "agent-1", summary: "Fixture update", message: "done" }, output: { messageId: "message-1", recipient: "agent-1", state: "delivered", sequence: 1 } },
+  Agent: { input: { description: "Review fixture changes", prompt: "Review the fixture" }, output: { kind: "continuable", subagentId: "agent-1" } },
+  TaskStop: { input: { agent_id: "agent-1" }, output: { accepted: true } },
+  SendMessage: { input: { agent_id: "agent-1", message: "done" }, output: { messageId: "message-1" } },
   TaskCreate: { input: { subject: "Fixture task", description: "A deterministic fixture" }, output: { list: "personal", task: fixtureTask, revision: "task-graph-1" } },
   TaskGet: { input: { taskId: "task-1" }, output: { list: "personal", task: fixtureTask, revision: "task-graph-1" } },
   TaskList: { input: {}, output: { list: "personal", tasks: [fixtureTask], revision: "task-graph-1", truncated: false } },

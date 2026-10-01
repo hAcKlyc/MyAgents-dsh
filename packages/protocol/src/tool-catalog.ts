@@ -7,18 +7,17 @@ import {
   CANONICAL_TOOL_NAMES,
   type CanonicalToolName,
 } from "../generated/canonical-tools.generated.js";
-import { modelToolNamesForStrategy, type DshFirstToolName } from "./tool-strategy.js";
+import { modelToolNames, type NativeToolName } from "./native-tool-names.js";
 import { buildToolCatalogSchema } from "./tool-catalog-schema.js";
 
 export { buildToolCatalogSchema } from "./tool-catalog-schema.js";
 
 export const ToolCatalogSchema = buildToolCatalogSchema(
-  CANONICAL_TOOL_NAMES,
+  modelToolNames(CANONICAL_TOOL_NAMES),
   CANONICAL_TOOL_CONTRACT_SHA256,
-  modelToolNamesForStrategy(CANONICAL_TOOL_NAMES, "dsh_first"),
 );
 
-export type ModelToolName = CanonicalToolName | DshFirstToolName;
+export type ModelToolName = CanonicalToolName | NativeToolName;
 
 export interface EffectiveToolCatalogSnapshot {
   readonly formatVersion: 1;
@@ -73,12 +72,10 @@ export const validateNormalizedEffectiveToolCatalog = (
     return fail(first?.message ?? "does not satisfy ToolCatalogSchema");
   }
   const normalized = value as EffectiveToolCatalogSnapshot;
-  const dshFirstNames = modelToolNamesForStrategy(CANONICAL_TOOL_NAMES, "dsh_first");
-  const catalogNames = JSON.stringify(normalized.implementationCatalog) === JSON.stringify(CANONICAL_TOOL_NAMES)
-    ? CANONICAL_TOOL_NAMES
-    : JSON.stringify(normalized.implementationCatalog) === JSON.stringify(dshFirstNames)
-      ? dshFirstNames
-      : fail("implementationCatalog does not match a build-owned strategy");
+  const nativeNames = modelToolNames(CANONICAL_TOOL_NAMES);
+  const catalogNames = JSON.stringify(normalized.implementationCatalog) === JSON.stringify(nativeNames)
+    ? nativeNames
+    : fail("implementationCatalog does not match the native tool catalog");
   const canonicalIndex = new Map<ModelToolName, number>(catalogNames.map((name, index) => [name, index]));
   let previousIndex = -1;
   for (const tool of normalized.effectiveTools) {

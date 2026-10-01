@@ -962,7 +962,7 @@ const foldProductOperationsValue = (
           const message = messageFor(owner, pending.id, "context Inbox insertion");
           if (message.contextMessage !== true) return pending;
           if (pending.operationCorrelation !== undefined || !ownsRootContextMessage(pending.source, pending.id)) {
-            return fail("operation context message lacks its independent ProductWork source authority");
+            return fail("operation context message lacks its independent native message source authority");
           }
           // Correlation is a derived index. Preserve the original message source
           // and content in the sole DSH Inbox/transcript without relabeling either.

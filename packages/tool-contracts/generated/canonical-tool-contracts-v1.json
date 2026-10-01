@@ -3100,7 +3100,7 @@
       ],
       "checkpoint": "none",
       "concurrency": "session_serial",
-      "description": "Loads one model-invocable SKILL.md from the operation-visible approved DSH Skill catalog, strips frontmatter, expands deterministic arguments, and returns its bounded instructions inline.",
+      "description": "Loads one model-invocable SKILL.md from the operation-visible approved DSH Skill catalog, strips frontmatter, expands deterministic arguments, and returns its bounded instructions inline. Pass args as one string: $ARGUMENTS expands the full string, indexed/numbered placeholders expand parsed arguments; without placeholders the arguments are appended in an ARGUMENTS section.",
       "errorCodes": [
         {
           "code": "skill_not_found",
@@ -3218,63 +3218,39 @@
     },
     {
       "behaviorFixtureIds": [
-        "foreground_child_terminal",
-        "default_background_child_handle",
-        "exact_model_alias",
-        "background_permission_fail_closed",
-        "stop_and_generation_cleanup"
+        "native_spawn_and_fork",
+        "native_continuation",
+        "host_child_policy"
       ],
       "checkpoint": "none",
       "concurrency": "parallel",
-      "description": "Starts a supervised local child Agent with a fresh DSH context and the current bounded workspace/component snapshot. Omit subagent_type for the general descriptor; Explore and Plan provide read-only research/planning roles. Custom descriptors may narrow inherited tools. run_in_background defaults to true: omitted/true returns a background handle; false waits for this activation's result. All roles and both modes retain context for SendMessage follow-ups after completion. taskId addresses TaskStop, agentId addresses SendMessage. The first successful foreground result is returned only through this tool; background and follow-up completion reports arrive automatically. An idle retained handle is not still executing. TaskStop closes the handle and model messages cannot restart it.",
+      "description": "Policy for native subagent and fork_agent delegation. DSH owns fresh/forked Sessions, continuable conversations, result delivery and lifecycle. MyAgents applies the admitted Host model, workspace, permission and Plan policy.",
       "errorCodes": [
         {
-          "code": "agent_unavailable",
+          "code": "permission_denied",
           "retryable": false,
-          "when": "No compatible child descriptor or model alias is visible."
-        },
-        {
-          "code": "child_nesting_forbidden",
-          "retryable": false,
-          "when": "A child attempts to spawn another child."
-        },
-        {
-          "code": "interaction_unavailable",
-          "retryable": false,
-          "when": "A background child requires unavailable interaction."
-        },
-        {
-          "code": "child_failed",
-          "retryable": true,
-          "when": "The supervised child reaches a failed terminal."
+          "when": "Host policy denies delegation."
         }
       ],
       "executionInputSchema": {
         "additionalProperties": false,
         "properties": {
+          "background": {
+            "type": "boolean"
+          },
           "description": {
-            "maxLength": 80,
-            "minLength": 1,
             "type": "string"
           },
           "model": {
-            "maxLength": 256,
-            "minLength": 1,
-            "pattern": "^[^\\u0000-\\u001F\\u007F]+$",
             "type": "string"
           },
           "prompt": {
-            "maxLength": 1000000,
-            "minLength": 1,
             "type": "string"
           },
-          "run_in_background": {
-            "type": "boolean"
+          "provider": {
+            "type": "string"
           },
-          "subagent_type": {
-            "maxLength": 256,
-            "minLength": 1,
-            "pattern": "^[^\\u0000-\\u001F\\u007F]+$",
+          "reasoning_effort": {
             "type": "string"
           }
         },
@@ -3287,29 +3263,22 @@
       "inputSchema": {
         "additionalProperties": false,
         "properties": {
+          "background": {
+            "type": "boolean"
+          },
           "description": {
-            "maxLength": 80,
-            "minLength": 1,
             "type": "string"
           },
           "model": {
-            "maxLength": 256,
-            "minLength": 1,
-            "pattern": "^[^\\u0000-\\u001F\\u007F]+$",
             "type": "string"
           },
           "prompt": {
-            "maxLength": 1000000,
-            "minLength": 1,
             "type": "string"
           },
-          "run_in_background": {
-            "type": "boolean"
+          "provider": {
+            "type": "string"
           },
-          "subagent_type": {
-            "maxLength": 256,
-            "minLength": 1,
-            "pattern": "^[^\\u0000-\\u001F\\u007F]+$",
+          "reasoning_effort": {
             "type": "string"
           }
         },
@@ -3323,7 +3292,7 @@
         "cancellation": "abort_signal_exactly_one_terminal",
         "durableResult": "dsh_tool_result_before_runtime_visibility",
         "headless": "policy_required",
-        "timeout": "work_registry"
+        "timeout": "host_policy"
       },
       "name": "Agent",
       "originPolicy": {
@@ -3332,7 +3301,6 @@
       },
       "outputLimits": {
         "maxInlineBytes": 262144,
-        "maxRetainedOutputBytes": 8388608,
         "maxStructuredItems": 64
       },
       "outputSchema": {
@@ -3340,134 +3308,39 @@
           {
             "additionalProperties": false,
             "properties": {
-              "agentId": {
-                "maxLength": 256,
-                "minLength": 1,
-                "pattern": "^[^\\u0000-\\u001F\\u007F]+$",
+              "kind": {
+                "const": "continuable",
                 "type": "string"
               },
-              "model": {
-                "maxLength": 256,
-                "minLength": 1,
-                "pattern": "^[^\\u0000-\\u001F\\u007F]+$",
-                "type": "string"
-              },
-              "outputPath": {
-                "maxLength": 8192,
-                "minLength": 1,
-                "pattern": "^[^\\u0000-\\u001F\\u007F]+$",
-                "type": "string"
-              },
-              "state": {
-                "const": "background",
-                "type": "string"
-              },
-              "taskId": {
-                "maxLength": 256,
-                "minLength": 1,
-                "pattern": "^[^\\u0000-\\u001F\\u007F]+$",
+              "subagentId": {
                 "type": "string"
               }
             },
             "required": [
-              "taskId",
-              "agentId",
-              "state",
-              "outputPath",
-              "model"
+              "kind",
+              "subagentId"
             ],
             "type": "object"
           },
           {
             "additionalProperties": false,
             "properties": {
-              "agentId": {
-                "maxLength": 256,
-                "minLength": 1,
-                "pattern": "^[^\\u0000-\\u001F\\u007F]+$",
+              "kind": {
+                "const": "foreground",
                 "type": "string"
               },
-              "model": {
-                "maxLength": 256,
-                "minLength": 1,
-                "pattern": "^[^\\u0000-\\u001F\\u007F]+$",
+              "output": {
+                "items": {},
+                "type": "array"
+              },
+              "runId": {
                 "type": "string"
-              },
-              "result": {
-                "maxLength": 262144,
-                "type": "string"
-              },
-              "resultTruncated": {
-                "type": "boolean"
-              },
-              "state": {
-                "anyOf": [
-                  {
-                    "const": "succeeded",
-                    "type": "string"
-                  },
-                  {
-                    "const": "failed",
-                    "type": "string"
-                  },
-                  {
-                    "const": "aborted",
-                    "type": "string"
-                  }
-                ]
-              },
-              "taskId": {
-                "maxLength": 256,
-                "minLength": 1,
-                "pattern": "^[^\\u0000-\\u001F\\u007F]+$",
-                "type": "string"
-              },
-              "usage": {
-                "additionalProperties": false,
-                "properties": {
-                  "cacheReadTokens": {
-                    "maximum": 9007199254740991,
-                    "minimum": 0,
-                    "type": "integer"
-                  },
-                  "cacheWriteTokens": {
-                    "maximum": 9007199254740991,
-                    "minimum": 0,
-                    "type": "integer"
-                  },
-                  "inputTokens": {
-                    "maximum": 9007199254740991,
-                    "minimum": 0,
-                    "type": "integer"
-                  },
-                  "outputTokens": {
-                    "maximum": 9007199254740991,
-                    "minimum": 0,
-                    "type": "integer"
-                  },
-                  "totalTokens": {
-                    "maximum": 9007199254740991,
-                    "minimum": 0,
-                    "type": "integer"
-                  }
-                },
-                "required": [
-                  "inputTokens",
-                  "outputTokens",
-                  "cacheReadTokens",
-                  "cacheWriteTokens",
-                  "totalTokens"
-                ],
-                "type": "object"
               }
             },
             "required": [
-              "taskId",
-              "agentId",
-              "state",
-              "result",
-              "resultTruncated",
-              "model"
+              "kind",
+              "runId",
+              "output"
             ],
             "type": "object"
           }
@@ -3479,60 +3352,51 @@
         "mode": "plan-safe-child-only",
         "revision": "operation-birth-and-durable-session"
       },
-      "resultSemantics": "Foreground returns this activation's result, usage, and continuable identity; background returns one supervised handle and output path. Execution completion and handle closure are separate.",
+      "resultSemantics": "Use the installed native delegation result; no ProductWork handles or role registry.",
       "sideEffect": "delegation",
       "timeoutMs": 600000
     },
     {
       "behaviorFixtureIds": [
-        "stop_process_tree",
-        "stop_child",
-        "already_terminal_idempotent",
-        "cross_session_id_rejected",
-        "waits_for_resource_finalizer"
+        "native_turn_interrupt",
+        "native_continuation_after_interrupt"
       ],
       "checkpoint": "none",
-      "concurrency": "session_serial",
-      "description": "Stops an owned child Agent by task ID and waits for terminal state and resource finalization.",
+      "concurrency": "parallel",
+      "description": "Policy for native interrupt_agent. Interrupt the addressed child turn without closing its conversation or descendants; DSH returns acceptance immediately.",
       "errorCodes": [
         {
-          "code": "task_not_found",
+          "code": "permission_denied",
           "retryable": false,
-          "when": "The task is unknown or belongs to another Runtime Session."
+          "when": "Host policy denies interruption."
         },
         {
-          "code": "task_stop_failed",
-          "retryable": true,
-          "when": "The WorkRegistry cannot establish terminal cleanup."
+          "code": "agent_not_found",
+          "retryable": false,
+          "when": "The target is absent from the native Agent registry and child catalog."
         }
       ],
       "executionInputSchema": {
         "additionalProperties": false,
         "properties": {
-          "task_id": {
-            "maxLength": 256,
-            "minLength": 1,
-            "pattern": "^[^\\u0000-\\u001F\\u007F]+$",
+          "agent_id": {
             "type": "string"
           }
         },
         "required": [
-          "task_id"
+          "agent_id"
         ],
         "type": "object"
       },
       "inputSchema": {
         "additionalProperties": false,
         "properties": {
-          "task_id": {
-            "maxLength": 256,
-            "minLength": 1,
-            "pattern": "^[^\\u0000-\\u001F\\u007F]+$",
+          "agent_id": {
             "type": "string"
           }
         },
         "required": [
-          "task_id"
+          "agent_id"
         ],
         "type": "object"
       },
@@ -3540,7 +3404,7 @@
         "cancellation": "abort_signal_exactly_one_terminal",
         "durableResult": "dsh_tool_result_before_runtime_visibility",
         "headless": "allowed",
-        "timeout": "work_registry"
+        "timeout": "host_policy"
       },
       "name": "TaskStop",
       "originPolicy": {
@@ -3554,41 +3418,12 @@
       "outputSchema": {
         "additionalProperties": false,
         "properties": {
-          "alreadyTerminal": {
+          "accepted": {
             "type": "boolean"
-          },
-          "kind": {
-            "const": "agent",
-            "type": "string"
-          },
-          "taskId": {
-            "maxLength": 256,
-            "minLength": 1,
-            "pattern": "^[^\\u0000-\\u001F\\u007F]+$",
-            "type": "string"
-          },
-          "terminal": {
-            "anyOf": [
-              {
-                "const": "succeeded",
-                "type": "string"
-              },
-              {
-                "const": "failed",
-                "type": "string"
-              },
-              {
-                "const": "aborted",
-                "type": "string"
-              }
-            ]
           }
         },
         "required": [
-          "taskId",
-          "kind",
-          "terminal",
-          "alreadyTerminal"
+          "accepted"
         ],
         "type": "object"
       },
@@ -3598,60 +3433,37 @@
         "mode": "denied",
         "revision": "operation-birth-and-durable-session"
       },
-      "resultSemantics": "Wait for the addressed work item to reach its existing or newly stopped terminal and finalize owned resources.",
+      "resultSemantics": "Native interrupt acceptance; no subtree stop or resource-finalization receipt.",
       "sideEffect": "session_state",
       "timeoutMs": 120000
     },
     {
       "behaviorFixtureIds": [
-        "parent_child_sibling_delivery",
-        "ordered_sequence",
-        "stopped_child_resume",
-        "terminal_recipient_notification",
-        "broadcast_and_cross_session_rejected"
+        "native_parent_child_delivery",
+        "native_catalog"
       ],
       "checkpoint": "none",
-      "concurrency": "session_serial",
-      "description": "Delivers an ordered plain-text message within the caller's root lineage. Use the agentId returned by Agent for one live child or sibling; a child may use the literal parent for the root. taskId, caller-defined names, broadcasts, team aliases, cross-Session recipients, and stopping or terminal Agents are unsupported. A queued receipt means admission for the recipient's next child-turn boundary, not interruption or completed work; delivered and queued are receipts, not terminal results.",
+      "concurrency": "parallel",
+      "description": "Policy for native send_message and list_agents. Native messaging addresses a direct continuable child or the resident child's direct parent by agent_id. Delivery confirmation is not the recipient's answer. DSH owns the catalog and Inbox.",
       "errorCodes": [
         {
-          "code": "recipient_not_found",
+          "code": "permission_denied",
           "retryable": false,
-          "when": "The local recipient cannot be resolved."
-        },
-        {
-          "code": "recipient_out_of_scope",
-          "retryable": false,
-          "when": "The target is cross-Session, broadcast, team, or cloud-owned."
-        },
-        {
-          "code": "delivery_failed",
-          "retryable": true,
-          "when": "The ordered mailbox or resume path cannot accept the message."
+          "when": "Host policy denies messaging."
         }
       ],
       "executionInputSchema": {
         "additionalProperties": false,
         "properties": {
+          "agent_id": {
+            "type": "string"
+          },
           "message": {
-            "maxLength": 1000000,
-            "type": "string"
-          },
-          "summary": {
-            "maxLength": 200,
-            "minLength": 1,
-            "type": "string"
-          },
-          "to": {
-            "maxLength": 256,
-            "minLength": 1,
-            "pattern": "^[^\\u0000-\\u001F\\u007F]+$",
             "type": "string"
           }
         },
         "required": [
-          "to",
-          "summary",
+          "agent_id",
           "message"
         ],
         "type": "object"
@@ -3659,25 +3471,15 @@
       "inputSchema": {
         "additionalProperties": false,
         "properties": {
+          "agent_id": {
+            "type": "string"
+          },
           "message": {
-            "maxLength": 1000000,
-            "type": "string"
-          },
-          "summary": {
-            "maxLength": 200,
-            "minLength": 1,
-            "type": "string"
-          },
-          "to": {
-            "maxLength": 256,
-            "minLength": 1,
-            "pattern": "^[^\\u0000-\\u001F\\u007F]+$",
             "type": "string"
           }
         },
         "required": [
-          "to",
-          "summary",
+          "agent_id",
           "message"
         ],
         "type": "object"
@@ -3686,7 +3488,7 @@
         "cancellation": "abort_signal_exactly_one_terminal",
         "durableResult": "dsh_tool_result_before_runtime_visibility",
         "headless": "allowed",
-        "timeout": "work_registry"
+        "timeout": "host_policy"
       },
       "name": "SendMessage",
       "originPolicy": {
@@ -3701,40 +3503,11 @@
         "additionalProperties": false,
         "properties": {
           "messageId": {
-            "maxLength": 256,
-            "minLength": 1,
-            "pattern": "^[^\\u0000-\\u001F\\u007F]+$",
             "type": "string"
-          },
-          "recipient": {
-            "maxLength": 256,
-            "minLength": 1,
-            "pattern": "^[^\\u0000-\\u001F\\u007F]+$",
-            "type": "string"
-          },
-          "sequence": {
-            "maximum": 9007199254740991,
-            "minimum": 0,
-            "type": "integer"
-          },
-          "state": {
-            "anyOf": [
-              {
-                "const": "delivered",
-                "type": "string"
-              },
-              {
-                "const": "queued",
-                "type": "string"
-              }
-            ]
           }
         },
         "required": [
-          "messageId",
-          "recipient",
-          "state",
-          "sequence"
+          "messageId"
         ],
         "type": "object"
       },
@@ -3744,7 +3517,7 @@
         "mode": "denied",
         "revision": "operation-birth-and-durable-session"
       },
-      "resultSemantics": "Return an ordered delivery receipt after resolving one exact live in-scope collaborator by agentId or the child-only parent alias.",
+      "resultSemantics": "Native delivery confirmation and catalog; no ProductWork mailbox or sibling messaging.",
       "sideEffect": "delegation",
       "timeoutMs": 120000
     },

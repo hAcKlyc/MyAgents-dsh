@@ -1,7 +1,7 @@
 ---
 type: architecture
 status: current
-updated: 2026-09-25
+updated: 2026-10-01
 project: MyAgents-dsh
 ---
 
@@ -21,9 +21,9 @@ This table records the current source boundaries. Exact artifact evidence and th
 
 | Surface | State | Exact current boundary |
 | --- | --- | --- |
-| DSH source distribution | Fixed official source plus required isolated patches | The [source baseline](./dsh/dsh-baseline-v1.json) pins DSH `0.1.7-rc.2` at `477b4f420553e8a52c2fbccc464d7561b239c443`; the [seam registry](./dsh/seam-decisions-v1.json) lists ten ordered core patches. pi-ai is separately pinned and patched. |
+| DSH source distribution | Fixed official source plus required isolated patches | The [source baseline](./dsh/dsh-baseline-v1.json) pins DSH `0.2.0-rc.2` at `639ed015397290b3745d163aafe02ffee4aa3f84`; the [seam registry](./dsh/seam-decisions-v1.json) lists ten ordered core patches. pi-ai is separately pinned and patched. |
 | Standalone Runtime and native RPC | Accepted protocol `6.0.0` | Native V4 durable Session events, explicit live assistant-stream boundaries and declared per-model system-prompt/tool-update capabilities. Exact vocabulary and shapes come from the generated contract. |
-| Batch 3 integration handoff | Ingested by the MyAgents Host | The MyAgents Host lock at `src/shared/integrated-runtimes/dsh-lock.json` selects the accepted Runtime, contracts and platform evidence; its digest and claims are the installed-byte authority. [Release delivery](./tech_docs/assurance/verification-artifacts-and-handoff.md) packages accepted target handoffs under fixed asset names; publication remains gated. |
+| Batch 3 integration handoff | Ingested by the MyAgents Host | The MyAgents `dsh-release.json` selects the Release version; generated `src/shared/integrated-runtimes/dsh-lock.json` records the installed Runtime, contracts and platform evidence; its digest and claims are the installed-byte authority. [Release delivery](./tech_docs/assurance/verification-artifacts-and-handoff.md) packages accepted target handoffs under fixed asset names; publication remains gated. |
 | Reference Web Host | A1–A4 implementation complete; A5/reviews/distribution/user acceptance open | Its older frozen web artifact does not prove the current Runtime source. |
 | Standalone Agent SDK | Not started | Batch 2 target; no Agent SDK package exists in this repository yet. |
 | Platforms | Four source targets; native claims are artifact-specific | macOS arm64 and x64, Windows x64 and Linux x64 share official DSH subprocess semantics. Intel macOS has source support but still needs its own x64 Runtime and native campaign. New bytes require new native evidence; Windows/Linux remain pending until their native campaigns pass. |
@@ -102,6 +102,8 @@ The detailed current implementation is divided by authority and lifecycle domain
 | Host and platform boundaries | [Host reverse ports](./tech_docs/boundaries/host-reverse-ports.md), [Declarative components](./tech_docs/boundaries/declarative-components.md), [Platform/local execution](./tech_docs/boundaries/platform-and-local-execution.md), [Web/network](./tech_docs/boundaries/web-and-network.md) |
 | Assurance | [Compatibility/capability truth](./tech_docs/assurance/compatibility-and-capability-truth.md), [Security/trust boundaries](./tech_docs/assurance/security-and-trust-boundaries.md), [Verification/artifacts/handoff](./tech_docs/assurance/verification-artifacts-and-handoff.md) |
 | Host implementations | [Reference Web Host](./tech_docs/hosts/reference-web-host.md) |
+
+The existing tool guide also owns native search spill retrieval and native Agent identity/interrupt semantics; the reverse-port guide owns PNG admission/request normalization.
 
 These guides own module-level current explanation. The sections below retain the cross-module boundaries and authority model.
 
@@ -206,6 +208,10 @@ The current build also creates the Reference Web artifact and the immutable Batc
 
 Build-time verification is not a runtime plugin. Node/npm toolchain and immutable rebuild ownership are documented in [verification and handoff](./tech_docs/assurance/verification-artifacts-and-handoff.md#node-2420-toolchain-refresh); the current exact pair is Node `24.20.0` / npm `11.19.0`.
 
+The same Runtime builder owns delivery-resource pruning before sealing the manifest: development
+assets and other-target node-pty binaries are excluded, while target native modules and runtime
+data remain. MyAgents consumes that sealed projection without post-download dependency pruning.
+
 Dynamic acceptance has four deliberately separate Agent roles. The Development Main Agent, currently Codex, owns implementation and final finding adjudication. External independent Tester Agents operate test-only scenarios through the Standard Test Host and generated client. The packed Runtime's DSH Root Agent is the system under test. DSH child/subagents are nested Runtime capabilities under test. Tester Agents never enter the Runtime protocol, Session, WorkRegistry, artifact, or product distribution, and Runtime Agents never receive hidden test rubrics or prior reports.
 
 ### 4.7 Platform adaptation
@@ -242,7 +248,7 @@ Shared conformance suites run against every platform adapter. A target that has 
 | Permission policy | MyAgents permission plugin | DSH guards/approval plus durable policy events |
 | User questions and approval UI | Host provider behind DSH seams | Pending requests cancelled on turn/session teardown |
 | Plan and TaskGraph | MyAgents plan/task plugins | Durable DSH session events |
-| Child/background execution | DSH agents/subagents/jobs | Native child catalog and Session lineage; legacy ProductWork only in `ma_first` |
+| Child/background execution | DSH agents/subagents/jobs | Native child catalog and Session lineage |
 | Managed file checkpoints | MyAgents checkpoint plugin | Runtime-home journal and content-addressed preimages |
 | Attachment bytes | Host | Runtime owns only leases and verified read-only paths |
 | Runtime event sequence | RPC event projector | Generation-local FIFO; Host deduplicates durable effects |
@@ -272,7 +278,7 @@ At startup, the invariant plugin fails closed unless:
 - the runtime and generated client share an accepted protocol schema digest;
 - every installed plugin belongs to the content-addressed locked composition manifest.
 
-The official compatibility profile enables the selected stock DSH Shell and Jobs tools. Its build-time tool strategy is fixed in `apps/runtime-server/src/tool-strategy.build.ts`: `ma_first` retains the legacy Product tool vocabulary; `dsh_first` exposes DSH file, search, Web and subagent definitions while Product filesystem, process, permission, checkpoint and network services still govern Host execution. DSH Agent Presets as a Host extension mechanism and the DSH SDK JSON-RPC server remain excluded. The chosen catalog and digest are frozen in the Runtime artifact and Host handoff.
+The official profile has a single tool composition: native DSH Shell, Jobs, file, search, Web and subagent definitions. MyAgents filesystem, process, permission, checkpoint and network services govern Host execution; its custom tools supply Task lists, Skill invocation, questions, Plan transitions and directory listing. DSH Agent Presets as a Host extension mechanism and the DSH SDK JSON-RPC server remain excluded. The tool catalog and digest are frozen in the Runtime artifact and Host handoff; there is no strategy selector.
 
 Ordinary SDK or Host input may configure declared component instances, but may not change the installed plugin package set.
 
@@ -319,12 +325,7 @@ client operation accepted
 
 `SdkOperationService` correlates the SDK `clientOperationId`, its set of DSH `MessageId` values, one or more durable DSH turn numbers/boundaries, one optional first-limit fact, and one terminal. `turn/followUp` remains inside the owning product operation and may cause another DSH turn before quiescence. Exact retries return the known admission or terminal; the same ID with different immutable input is a conflict. Turn-count and priced-budget limits are adjudicated at DSH request/turn boundaries; duration is scheduled from the durable acceptance timestamp and reconstructed from that timestamp after recovery. Limit truth is appended into the same Session log, not held in a second scheduler ledger.
 
-The root DSH Inbox is shared infrastructure, not operation-owned storage. Operation-source messages
-require an exact operation claim; ProductWork child reports are excluded only after durable work
-creation, message intent, optional delivery and Inbox insertion prove their separate ownership;
-unknown root messages fence. The shared proof consumes only the exact root Session history, so the
-same classification is used by live listeners, persisted validation, event projection and teardown
-without depending on live-primary or Cordis service availability.
+The root DSH Inbox is shared infrastructure. Operation-source messages require an exact operation claim. Native Jobs and child reports require owned native catalog/Inbox provenance; historical ProductWork reports use a read-only proof over their existing ledger. Live listeners, persisted validation, event projection and teardown share this classification. Unknown root messages remain unowned.
 
 Success requires a finalized assistant completion anchor owned by DSH. Idle, enqueue acknowledgement, EOF, or the last observed assistant message is insufficient. Aborted, failed, context-exhausted, output-limited, turn-limited, budget-limited, and transport-uncertain outcomes remain distinct.
 
@@ -374,7 +375,7 @@ streaming, literal editing and native atomic publication. Product code retains c
 durable permission/read receipts, checkpoint journals and attachment request scopes. The small public
 extensions and their removal criteria are recorded in [ADR 0012](./adr/0012-official-file-tool-composition.md).
 
-All model-visible tools use DSH `ctx.tools`. In the current `dsh_first` build, DSH's official subagent tools create fresh or forked children and own their lifecycle, message delivery and turn interruption. MyAgents applies Host model, permission, sandbox, workspace and operation policy at DSH's publication and tool seams. Child tool authority follows the DSH parent catalog and active child turn, with continuation messages carrying their dispatching operation identity in the child Session; no ProductWork ledger owns native children. Task tools use personal and shared Session lists independently of child lifecycle. The historical ProductWork path remains for optional `ma_first` artifacts. See [Child agents and background work](./tech_docs/execution/child-agents-and-background-work.md).
+All model-visible tools use DSH `ctx.tools`. In the official composition, DSH's official subagent tools create fresh or forked children and own their lifecycle, message delivery and turn interruption. MyAgents applies Host model, permission, sandbox, workspace and operation policy at DSH's publication and tool seams. Child tool authority follows the DSH parent catalog and active child turn, with continuation messages carrying their dispatching operation identity in the child Session; no ProductWork ledger owns native children. Task tools use personal and shared Session lists independently of child lifecycle. Historical ProductWork records have read-only decoding; the old execution path is removed. See [Child agents and background work](./tech_docs/execution/child-agents-and-background-work.md).
 
 For each target tool:
 
@@ -544,7 +545,7 @@ The early seam review identified authoritative PreToolUse input rewriting, exact
 - Future Agent SDK compatibility is versioned by manifest, not inferred from package version alone.
 - Protocol 1.1 from the Pi runtime is a migration source, not the DSH wire identity. The engine-neutral DSH protocol begins at candidate major version 2.
 
-The current native Host collaboration controls call DSH's catalog, prompt and interrupt APIs for an exact continuable child. ProductWork `work/*` ports are legacy `ma_first` compatibility only. The [primary Session owner](./tech_docs/state/sessions-persistence-and-recovery.md) publishes readiness before recovery. [SDK operation admission](./tech_docs/runtime/operations-messages-and-turns.md) retains Root operation identity while DSH owns child provenance and conversation authority.
+The current native Host collaboration controls call DSH's catalog, prompt and interrupt APIs for an exact continuable child. Reserved `work/*` ports return `method_unavailable`; no legacy lifecycle is installed. The [primary Session owner](./tech_docs/state/sessions-persistence-and-recovery.md) publishes readiness before recovery. [SDK operation admission](./tech_docs/runtime/operations-messages-and-turns.md) retains Root operation identity while DSH owns child provenance and conversation authority.
 
 The [operation module](./tech_docs/runtime/operations-messages-and-turns.md) versions new native-attempt token accounting while preserving unmarked historical terminal derivation. Unknown billing data is independent of successful answer completion; [compaction](./tech_docs/execution/compaction.md) owns summary/repair receipts and the [child module](./tech_docs/execution/child-agents-and-background-work.md) excludes inherited usage.
 
@@ -558,7 +559,7 @@ Inline permission progression is validated by the permission service against the
 
 Action defaults and Session-tree grants remain owned by [Permissions and interactions](./tech_docs/execution/permissions-interactions-and-plan.md). Basic built-in work avoids permission cards; Shell and external tools retain approval, questions and plan review retain their actual interaction. [Child publication](./tech_docs/execution/child-agents-and-background-work.md) configures official DSH ask policy and matching scoped context before execution, including cold materialization. Plan prompt/errors identify the Write-before-submit workflow; Shell context states local-user execution with no OS sandbox.
 
-The current `dsh_first` child identity and result delivery belong to DSH's subagent and Session services; MyAgents attaches scoped SystemPrompt and Host policy. The older ProductWork epoch owner applies only to `ma_first`; see [child work](./tech_docs/execution/child-agents-and-background-work.md) and [system context](./tech_docs/execution/system-context-and-instructions.md).
+Native child identity and result delivery belong to DSH's subagent and Session services; MyAgents attaches scoped SystemPrompt and Host policy. The ProductWork epoch owner has been removed; see [child work](./tech_docs/execution/child-agents-and-background-work.md) and [system context](./tech_docs/execution/system-context-and-instructions.md).
 
 The installed Runtime and Host compatibility use the same separately pinned pi-ai version. The Runtime builder reads its fixed pi-ai source authority; [verification and handoff](./tech_docs/assurance/verification-artifacts-and-handoff.md) maintains that boundary. Concurrent Provider/generation transport shutdown is defined in [Web/network](./tech_docs/boundaries/web-and-network.md).
 

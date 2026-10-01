@@ -108,10 +108,9 @@ The current root composition also mounts official `SessionStats`, `SessionTurnOu
 | 39 | `@myagents-dsh/components-commands:ProductCommandService` | Bind declarative Commands to Host operations and RPC invocation | MyAgents | Extend CommandRuntime | No |
 | 40 | official `LocalBashExecutor` or `PwshLocalExecutor`, `tool-bash` or `tool-pwsh`, `shell-env`, `tool-jobs` | Own selected Shell execution, tool definitions, output and Jobs | DSH official | Enable directly | No |
 | 41 | `@myagents-dsh/tools-process:ProductProcessRuntime` | Authorize official Shell/Jobs calls and derived Host/spill-read presentation | MyAgents | Extend public tool/subprocess seams | No |
-| 42 | `@myagents-dsh/tools-agent:ProductWorkService` | Implement Agent, TaskStop, SendMessage, background work and recovery | MyAgents | Extend official Subagent and Jobs services | Indirect: 0005/0008 |
-| 43 | `@myagents-dsh/tools-fs:CanonicalFileTools` | Register Read, Write, Edit, Glob, Grep and `ls` | MyAgents | Replace stock file-tool definitions | No |
+| 43 | `@myagents-dsh/tools-fs:CanonicalFileTools` | Govern native read/read_image/write/edit/glob/grep and register `ls` | MyAgents | Wrap public native executors with Host policy | No |
 | 44 | `@deepseek-ai/dsh-web:WebRuntime` | Own WebSearch/WebFetch Provider routing | DSH official | Retain | No |
-| 45 | `@myagents-dsh/tools-web:CanonicalWebTools` | Register governed WebSearch/WebFetch and dispatch native or Host-backed providers | MyAgents | Replace stock model-visible web-tool definitions | No |
+| 45 | `@myagents-dsh/tools-web:CanonicalWebTools` | Install native web_fetch/web_search and govern HTTP/Host search providers | MyAgents | Retain native definitions with Host providers | No |
 
 Windows mounts official PowerShell instead of Bash. The same policy Provider delegates to official subprocess execution on every platform; the custom Job Object Provider and `.ps1` supervisor no longer exist. See [Platform and local execution](../boundaries/platform-and-local-execution.md).
 
@@ -126,13 +125,12 @@ The composition also installs the official `SqliteSessionQueryEngine` as the ses
 
 ## 7. Declarative components are not Runtime plugins
 
-The official composition installs six MyAgents component compilers into `ProductComponentService`:
+The official composition installs five MyAgents component compilers into `ProductComponentService`:
 
 | Component kind | Compiler owner | Runtime effect |
 | --- | --- | --- |
 | MCP | `@myagents-dsh/components-mcp` | Own an admitted MCP connection and register discovered tools into `ctx.tools` at generation commit |
 | Skill | `@myagents-dsh/components-skills` | Add a governed Skill catalog entry and optional workspace-bound resource base |
-| Agent | `@myagents-dsh/components-agents` | Add a declarative role, prompt and bounded tool policy |
 | Command | `@myagents-dsh/components-commands` | Add a declarative command descriptor |
 | Hook | `@myagents-dsh/components-hooks` | Add Host-backed PreToolUse, PostToolUse or Permission Hook behavior |
 | Host Tool | `@myagents-dsh/components-host-tools` | Add a namespaced model-visible tool whose execution crosses `host/tool/execute` |
@@ -143,7 +141,7 @@ The stock DSH MCP plugin is intentionally not mounted. MyAgents uses the MCP SDK
 
 ## 8. The profile allowlist is not the complete graph
 
-`BATCH1_INSTALLED_PLUGIN_ALLOWLIST` currently contains 27 identities. It includes selected root, model, RPC, persistence and checkpoint identities, but omits most installed canonical tool-plane plugins. The tables above map maintained capability owners; the query engine and composition-selected providers are also part of the executable graph. Table row numbers are not a verified live-instance count.
+`BATCH1_INSTALLED_PLUGIN_ALLOWLIST` contains a partial release identity set. It includes selected root, model, RPC, persistence and checkpoint identities, but omits most installed canonical tool-plane plugins. The tables above map maintained capability owners; the query engine and composition-selected providers are also part of the executable graph. Table row numbers are not a verified live-instance count.
 
 Therefore:
 
@@ -160,12 +158,12 @@ The current ten-patch series is:
 
 | Patch | Protected semantic | Installed plugin surfaces |
 | --- | --- | --- |
-| 0001 | Wake an existing pending Inbox identity without reinsertion | `AgentLoop`, Agent public API; consumed by `SdkOperationService` and by `SubagentRuntime` through patch 0005, transitively `ProductWorkService` |
+| 0001 | Wake an existing pending Inbox identity without reinsertion | `AgentLoop`, Agent public API; consumed by `SdkOperationService` and by `SubagentRuntime` through patch 0005, with native child authority |
 | 0002 | Transform authoritative tool input before assistant/tool commit | `AgentLoop`, Agent/scope events; consumed by `ProductHookRuntime` |
 | 0004 | Guard Session and Agent publication before visibility | `SessionStore`, `AgentRegistry`; consumed by `ProductSessionService` |
-| 0005 | Product-owned continuable child lifecycle | `SubagentRuntime`; consumed by `ProductWorkService` |
+| 0005 | Public continuable child lifecycle seams | `SubagentRuntime`; consumed by native child composition |
 | 0007 | Capacity-safe request estimation and compaction | `TokenMeter`, `BasicCompactionEngine` and compaction contracts |
-| 0008 | Preserve literal child persona through continuation and cold resume | Subagent runtime/driver; consumed by `ProductWorkService` |
+| 0008 | Preserve literal child persona through continuation and cold resume | Subagent runtime/driver; consumed by native child composition |
 | 0009 | Select mutually exclusive project instruction candidates | `AgentInstructions` |
 | 0010 | Preserve generic Provider-owned content and exact same-route replay | `dsh-llm-pi-ai`; consumed by the native Runtime event projector through native live chunks and durable assistant messages |
 | 0011 | Compose official file executors behind Product policy | `tool-fs` and `tool-fs-search`; consumed by `CanonicalFileTools` |
@@ -182,7 +180,7 @@ Trusted root composition accepts the rc.2 SystemPrompt fields `personaPrefix` an
 The existing runtime-configurable surface is narrower:
 
 - Host-owned model profiles and request-scoped credentials configure the installed model plugins;
-- declarative MCP, Skill, Agent, Command, Hook and Host Tool components may be reconciled per generation;
+- declarative MCP, Skill, Command, Hook and Host Tool components may be reconciled per generation;
 - permissions, Plan state, tool visibility and execution environment are configuration/state inputs to their fixed owners;
 - no third-party marketplace Cordis plugin is installed by the official profile.
 

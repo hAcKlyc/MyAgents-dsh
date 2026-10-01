@@ -1,3 +1,4 @@
+import type {} from "@deepseek-ai/dsh-subagent";
 import {
   assertAcceptedDshRuntimeGraph,
   composeDshRootServices,
