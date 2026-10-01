@@ -1,7 +1,6 @@
 import type { Context } from "@deepseek-ai/cordis";
 import type { ContentBlock } from "@deepseek-ai/dsh-llm";
 import {
-  assertObjectJsonSchema,
   type ToolDefinition,
   type ToolRunContext,
 } from "@deepseek-ai/dsh-tools";
@@ -20,7 +19,7 @@ import type {
 import { deepFreeze, normalizeCanonicalJson } from "@myagents-dsh/tool-contracts";
 import type { ProductToolContext } from "@myagents-dsh/tool-runtime-product";
 import { Buffer } from "node:buffer";
-import { isPromise, isProxy } from "node:util/types";
+import { isProxy } from "node:util/types";
 
 export const HOST_TOOL_COMPONENT_LIMITS = Object.freeze({
   callTimeoutMs: 120_000,
@@ -71,14 +70,6 @@ type HostToolComponent = Extract<ExtensionComponent, { kind: "host_tool" }>;
 type JsonObject = Record<string, unknown>;
 
 const HOST_TOOL_NAME = /^[A-Za-z0-9_-]{1,64}$/u;
-
-const exactPromise = (value: unknown, description: string): Promise<unknown> => {
-  if (isProxy(value) || !isPromise(value) || Object.getPrototypeOf(value) !== Promise.prototype
-    || Reflect.ownKeys(value).length !== 0) {
-    throw new TypeError(`${description} must return one exact native Promise`);
-  }
-  return value;
-};
 
 const callable = (value: unknown, description: string): ((...args: never[]) => unknown) => {
   if (typeof value !== "function" || isProxy(value)) {
@@ -145,8 +136,11 @@ const cloneSchema = (value: unknown): ToolDefinition["parameters"] => {
   if (Buffer.byteLength(encoded, "utf8") > HOST_TOOL_COMPONENT_LIMITS.schemaBytes) {
     throw new TypeError("Host tool input schema exceeds the declarative byte bound");
   }
-  assertObjectJsonSchema(normalized);
-  return deepFreeze(normalized) as unknown as ToolDefinition["parameters"];
+  const schema = exactObject(normalized, "Host tool input schema");
+  if (schema.type !== "object") {
+    throw new TypeError("Host tool input schema must be object-rooted");
+  }
+  return deepFreeze(schema);
 };
 
 type NormalizedHostToolResult = Readonly<{
@@ -476,10 +470,7 @@ export const createHostToolComponentCompiler = (
             })],
           );
           const request: HostToolExecuteRequest = Object.freeze({ tool: contract.name, input });
-          const pending = exactPromise(
-            config.context.hostPorts.executeHostTool(requestAuthority, request),
-            "Host tool reverse request",
-          );
+          const pending = Promise.resolve(config.context.hostPorts.executeHostTool(requestAuthority, request));
           calls.add(pending);
           try {
             const result = normalizeResult(await pending);
@@ -494,22 +485,15 @@ export const createHostToolComponentCompiler = (
                 continue;
               }
               if (!part.reference.mimeType.startsWith("image/")) continue;
-              const resolved = await exactPromise(
-                Reflect.apply(config.resolveImage, config.resolveImageReceiver, [Object.freeze({
+              const resolved = await Promise.resolve(Reflect.apply(config.resolveImage, config.resolveImageReceiver, [Object.freeze({
                   assertCurrent,
                   context,
                   reference: part.reference,
                   signal: callSignal,
-                })]),
-                "Host tool image resolver",
-              );
+                })]));
               callSignal.throwIfAborted();
               assertCurrent();
-              if (resolved === null || typeof resolved !== "object" || isProxy(resolved)
-                || (resolved as ContentBlock).type !== "image") {
-                throw new TypeError("Host tool image resolver returned an invalid content block");
-              }
-              const image = resolved as Extract<ContentBlock, { type: "image" }>;
+              const image = resolved;
               const attachment = image.attachment;
               if (!/^sha256:[a-f0-9]{64}$/u.test(String(attachment.attachmentId))
                 || !Number.isSafeInteger(attachment.bytes) || attachment.bytes < 0

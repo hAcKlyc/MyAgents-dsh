@@ -18,6 +18,7 @@ import {
   canonicalOutputSchemaForDsh,
   deepFreeze,
   normalizeCanonicalJson,
+  parseCanonicalToolInput,
   strictObject,
   validateCanonicalToolInput,
   validateCanonicalToolOutput,
@@ -861,17 +862,6 @@ export const foldProductTaskGraph = (
   });
 };
 
-const exactNativePromise = <T>(value: unknown, description: string): Promise<T> => {
-  if (value !== null && typeof value === "object" && utilTypes.isProxy(value)) {
-    throw new TypeError(`${description} must not return a Proxy thenable`);
-  }
-  if (!utilTypes.isPromise(value) || Object.getPrototypeOf(value) !== Promise.prototype
-    || Reflect.ownKeys(value).length !== 0) {
-    throw new TypeError(`${description} must return an exact native Promise`);
-  }
-  return value as Promise<T>;
-};
-
 const validateConfig = (value: unknown): ProductTaskGraphServiceConfig => {
   const config = exactDataObject(value, ["durability", "requireAgent"], ["isKnownCollaborator", "notifySharedTask"], "ProductTaskGraphService config");
   const durability = exactDataObject(config.durability, ["flush"], [], "TaskGraph durability authority");
@@ -1053,7 +1043,7 @@ export class ProductTaskGraphService extends Service {
     return Object.freeze({
       description: contract.description,
       execute: async (value: unknown, exec: ToolRunContext) => {
-        const input = validateCanonicalToolInput(name, value);
+        const input = parseCanonicalToolInput(name, value);
         const args = exactDataObject(input, Object.keys(input as JsonObject), [], `${name} input`);
         return validateCanonicalToolOutput(name, await execute(args, exec));
       },
@@ -1426,10 +1416,7 @@ export class ProductTaskGraphService extends Service {
         this.permit = undefined;
         throw error;
       }
-      const flush = exactNativePromise<unknown>(
-        this.configValue.durability.flush(target.session),
-        "TaskGraph durability flush",
-      );
+      const flush = Promise.resolve<unknown>(this.configValue.durability.flush(target.session));
       const result = await this.track(flush);
       if (result !== true) throw new Error("no Session durability Provider participated in the TaskGraph flush");
       const after = this.snapshot(target, list);

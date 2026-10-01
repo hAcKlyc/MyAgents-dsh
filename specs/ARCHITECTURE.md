@@ -1,7 +1,7 @@
 ---
 type: architecture
 status: current
-updated: 2026-10-01
+updated: 2026-10-02
 project: MyAgents-dsh
 ---
 
@@ -363,6 +363,8 @@ The current public DSH persistence seam is append-only and has no delete, replac
 
 ## 10. Tool and policy architecture
 
+Custom tools parse model arguments through the canonical tool-contract entry, ignoring undeclared top-level decorations while validating business parameters. Durable-history consumers retain strict validation. This boundary is maintained in [Tool runtime and policy](./tech_docs/execution/tool-runtime-and-policy.md#2-single-execution-pipeline).
+
 [Filesystem execution and streamed search](./tech_docs/execution/tool-runtime-and-policy.md#4-state-and-concurrency)
 normalizes caller aliases through the existing Provider and revalidates the original input after
 approval. Concurrent literal Edits use current locked preimages and the same checkpoint/CAS owner.
@@ -399,9 +401,9 @@ The execution order is owned by the DSH pipeline plus monotonic product policy:
 
 ```text
 resolve visible definition and immutable operation scope
-  -> validate original input
-  -> governed PreToolUse transformation
-  -> validate transformed input again
+  -> snapshot original input and apply governed PreToolUse transformation
+  -> normalize declared argument decorations
+  -> selected executor validates business arguments
   -> workspace/plan/origin hard guards
   -> permission and Host interaction
   -> bounded dispatch through DSH ToolRuntime
@@ -532,7 +534,7 @@ The early seam review identified authoritative PreToolUse input rewriting, exact
 
 ## 17. Failure and recovery principles
 
-- Fail closed on schema, identity, revision, path, capability, or persistence conflicts.
+- Fail closed on execution-authority, identity, revision, path, capability or persistence conflicts. Model argument decorations and optional presentation metadata are normalized or omitted; a foreign input schema is owned by its executor. Display guidance and trusted JavaScript callback shape are not authority boundaries.
 - Preserve valid durable DSH events; repair by appending explicit terminal facts rather than silently truncating side effects.
 - One owner performs each cleanup action; disposal converges and awaits owned asynchronous work.
 - Retries are owner-local and explicitly budgeted. There is no generic retry layer across tools, model requests, persistence, and RPC.

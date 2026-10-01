@@ -1,7 +1,6 @@
 import type { Context } from "@deepseek-ai/cordis";
 import type { ContentBlock } from "@deepseek-ai/dsh-llm";
 import {
-  assertObjectJsonSchema,
   type ToolDefinition,
   type ToolRunContext,
 } from "@deepseek-ai/dsh-tools";
@@ -22,7 +21,7 @@ import type {
 import { deepFreeze, normalizeCanonicalJson } from "@myagents-dsh/tool-contracts";
 import { Buffer } from "node:buffer";
 import { isDeepStrictEqual } from "node:util";
-import { isPromise, isProxy } from "node:util/types";
+import { isProxy } from "node:util/types";
 
 export const MCP_COMPONENT_LIMITS = Object.freeze({
   callTimeoutMs: 120_000,
@@ -80,14 +79,6 @@ export interface McpComponentCompilerConfig {
 type JsonObject = Record<string, unknown>;
 
 const MCP_NAME = /^[A-Za-z0-9_-]{1,64}$/u;
-
-const exactPromise = <T>(value: unknown, description: string): Promise<T> => {
-  if (isProxy(value) || !isPromise(value) || Object.getPrototypeOf(value) !== Promise.prototype
-    || Reflect.ownKeys(value).length !== 0) {
-    throw new TypeError(`${description} must return one exact native Promise`);
-  }
-  return value as Promise<T>;
-};
 
 const exactObject = (value: unknown, description: string): JsonObject => {
   if (value === null || typeof value !== "object" || Array.isArray(value) || isProxy(value)
@@ -244,16 +235,11 @@ const normalizeResult = async (
   toolName: string,
   assertCurrent: () => void,
 ): Promise<NormalizedMcpResult> => {
-  const normalized = exactKeys(
-    value,
-    ["content"],
-    ["isError"],
-    "MCP tool result",
-  );
+  const normalized = exactObject(value, "MCP tool result");
   if (Object.hasOwn(normalized, "isError") && typeof normalized.isError !== "boolean") {
     throw new TypeError("MCP tool result isError must be boolean when present");
   }
-  const contentValue = normalized.content;
+  const contentValue = normalized.content ?? [];
   if (!Array.isArray(contentValue) || contentValue.length > 1_024 || isProxy(contentValue)
     || Reflect.ownKeys(contentValue).some((key) => key !== "length"
       && (typeof key !== "string" || !/^(?:0|[1-9][0-9]*)$/u.test(key)))) {
@@ -262,54 +248,84 @@ const normalizeResult = async (
   const content: string[] = [];
   const attachments: NormalizedMcpAttachment[] = [];
   const rendered: ContentBlock[] = [];
-  let remaining = MCP_COMPONENT_LIMITS.resultTextBytes;
+  let remaining: number = MCP_COMPONENT_LIMITS.resultTextBytes;
   let truncated = false;
+  let processed = 0;
+  const appendText = (text: string): void => {
+    const projected = boundedText(redact(text, redactions), remaining);
+    content.push(projected.text);
+    rendered.push(Object.freeze({ type: "text" as const, text: projected.text }));
+    remaining -= Buffer.byteLength(projected.text, "utf8");
+    truncated ||= projected.truncated;
+  };
   for (const entry of contentValue) {
+    if (remaining === 0) break;
+    processed += 1;
     const part = exactObject(entry, "MCP tool result content");
     if (part.type === "text") {
-      const textPart = exactKeys(part, ["text", "type"], [], "MCP text result content");
-      if (typeof textPart.text !== "string") throw new TypeError("MCP text result content is invalid");
-      const projected = boundedText(redact(textPart.text, redactions), remaining);
-      content.push(projected.text);
-      rendered.push(Object.freeze({ type: "text" as const, text: projected.text }));
-      remaining -= Buffer.byteLength(projected.text, "utf8");
-      truncated ||= projected.truncated;
-      if (remaining === 0) break;
+      if (typeof part.text !== "string") throw new TypeError("MCP text result content is invalid");
+      appendText(part.text);
       continue;
     }
-    const imagePart = exactKeys(part, ["data", "mimeType", "type"], [], "MCP image result content");
+    if (part.type === "resource_link" && typeof part.uri === "string") {
+      appendText(`${typeof part.name === "string" ? part.name : "Resource"}: ${part.uri}`);
+      continue;
+    }
+    if (part.type === "resource") {
+      const resource = exactObject(part.resource, "MCP embedded resource");
+      if (typeof resource.text === "string") {
+        appendText(resource.text);
+        continue;
+      }
+    }
+    if (part.type !== "image") {
+      appendText("MCP content omitted: this Runtime cannot render this content type.");
+      truncated = true;
+      continue;
+    }
+    const imagePart = part;
     if (imagePart.type !== "image" || typeof imagePart.data !== "string"
       || (imagePart.mimeType !== "image/png" && imagePart.mimeType !== "image/jpeg"
         && imagePart.mimeType !== "image/webp" && imagePart.mimeType !== "image/gif")
       || imagePart.data.length > Math.ceil((5 * 1_024 * 1_024) / 3) * 4
       || !/^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/u.test(imagePart.data)) {
-      throw new TypeError("MCP image result content is invalid");
+      appendText("MCP image omitted: unsupported or invalid image content.");
+      truncated = true;
+      continue;
     }
     if (normalized.isError === true) {
-      const omitted = "MCP image content omitted from failed result.";
-      content.push(omitted);
-      rendered.push(Object.freeze({ type: "text" as const, text: omitted }));
+      appendText("MCP image content omitted from failed result.");
       continue;
     }
     if (publishImage === undefined) {
-      throw new TypeError("MCP image result publication authority is unavailable");
+      appendText("MCP image omitted: image publication is unavailable.");
+      truncated = true;
+      continue;
     }
     const bytes = Uint8Array.from(Buffer.from(imagePart.data, "base64"));
     if (Buffer.from(bytes).toString("base64") !== imagePart.data || bytes.byteLength > 5 * 1_024 * 1_024) {
-      throw new TypeError("MCP image result content is invalid");
+      appendText("MCP image omitted: invalid image encoding.");
+      truncated = true;
+      continue;
     }
     const name = `${toolName}-image-${attachments.length + 1}`;
-    const blockValue: unknown = await exactPromise(
-      Reflect.apply(publishImage, publishImageReceiver, [Object.freeze({
+    let blockValue: unknown;
+    try {
+      blockValue = await Promise.resolve(Reflect.apply(publishImage, publishImageReceiver, [Object.freeze({
         assertCurrent,
         bytes,
         execution,
         mediaType: imagePart.mimeType,
         name,
         toolName,
-      })]),
-      "MCP image publisher",
-    );
+      })]));
+    } catch {
+      execution.signal.throwIfAborted();
+      assertCurrent();
+      appendText("MCP image omitted: image publication failed.");
+      truncated = true;
+      continue;
+    }
     execution.signal.throwIfAborted();
     assertCurrent();
     if (blockValue === null || typeof blockValue !== "object" || isProxy(blockValue)
@@ -338,10 +354,14 @@ const normalizeResult = async (
     });
     attachments.push(projected);
     const placeholder = `[MCP image attachment ${projected.attachmentId}]`;
-    content.push(placeholder);
-    rendered.push(Object.freeze({ type: "text" as const, text: placeholder }), block);
+    appendText(placeholder);
+    rendered.push(block);
   }
-  truncated ||= content.length < contentValue.length;
+  truncated ||= processed < contentValue.length;
+  if (normalized.structuredContent !== undefined) {
+    appendText(JSON.stringify(normalizeCanonicalJson(normalized.structuredContent, "MCP structured content"),
+      (_key, item: unknown) => typeof item === "string" ? redact(item, redactions) : item));
+  }
   if (content.length === 0) {
     content.push(normalized.isError === true
       ? "MCP tool failed without text content."
@@ -463,10 +483,13 @@ const validateListedTools = (value: unknown): readonly McpListedTool[] => {
     if (Buffer.byteLength(JSON.stringify(tool.inputSchema), "utf8") > MCP_COMPONENT_LIMITS.schemaBytes) {
       throw new TypeError("MCP tool schema exceeds the bounded schema size");
     }
-    assertObjectJsonSchema(tool.inputSchema);
+    // MCP owns its input schema and argument validation. The native model-tool
+    // registry accepts full JSON Schema; its structured-output subset is unrelated.
+    const inputSchema = exactObject(tool.inputSchema, "MCP tool input schema");
+    if (inputSchema.type !== "object") throw new TypeError("MCP tool input schema must be object-rooted");
     return Object.freeze({
       ...(description === undefined ? {} : { description }),
-      inputSchema: deepFreeze(tool.inputSchema) as unknown as Readonly<Record<string, unknown>>,
+      inputSchema: deepFreeze(inputSchema),
       name: tool.name,
     });
   });
@@ -517,19 +540,13 @@ export const createMcpComponentCompiler = (config: McpComponentCompilerConfig): 
           if (credentials === undefined) {
             throw new TypeError("credential-bearing MCP components require HostCredentialProvider");
           }
-          binding = await exactPromise<HostMcpCredentialBinding>(
-            credentials.preflightMcp(identity, credentialAuthority(authority, deadline.signal)),
-            "MCP credential preflight",
-          );
+          binding = await Promise.resolve<HostMcpCredentialBinding>(credentials.preflightMcp(identity, credentialAuthority(authority, deadline.signal)));
           authority.assertCurrent();
-          material = normalizeMaterial(await exactPromise<Readonly<Record<string, string>>>(
-            credentials.resolveMcpConnection(
+          material = normalizeMaterial(await Promise.resolve<Readonly<Record<string, string>>>(credentials.resolveMcpConnection(
               binding,
               `${authority.componentGenerationId}:${component.id}:prepare`,
               credentialAuthority(authority, deadline.signal),
-            ),
-            "MCP connection credential resolution",
-          ));
+            )));
           authority.assertCurrent();
         }
         const redactions = materialRedactions(material);
@@ -543,23 +560,20 @@ export const createMcpComponentCompiler = (config: McpComponentCompilerConfig): 
           throw new TypeError("MCP stdio launch profile is missing or ambiguous");
         }
         const launchProfile = launchProfiles[0];
-        const connection = normalizeConnection(await exactPromise<McpConnection>(connectMcp(Object.freeze({
+        const connection = normalizeConnection(await Promise.resolve<McpConnection>(connectMcp(Object.freeze({
           descriptor: component.descriptor,
           ...(launchProfile === undefined ? {} : { launchProfile }),
           material,
           serverId: component.id,
           signal: deadline.signal,
-        })), "MCP connection factory"));
+        }))));
       const calls = new Set<Promise<unknown>>();
       const lifetime = new AbortController();
       let closed = false;
       try {
         signal.throwIfAborted();
         authority.assertCurrent();
-        const listed = validateListedTools(await exactPromise(
-          connection.listTools(deadline.signal),
-          "MCP tool discovery",
-        ));
+        const listed = validateListedTools(await Promise.resolve(connection.listTools(deadline.signal)));
         authority.assertCurrent();
         const contributions: PreparedContribution[] = listed.map((tool) => {
           const name = publicToolName(component.id, tool.name);
@@ -575,12 +589,10 @@ export const createMcpComponentCompiler = (config: McpComponentCompilerConfig): 
               const callSignal = AbortSignal.any([bounded.signal, lifetime.signal]);
               const boundedExecution = Object.freeze({ ...execution, signal: callSignal });
               const assertCurrent = () => authority.assertToolExecution(name, execution);
-              const pending = exactPromise(
-                connection.callTool(tool.name, Object.freeze(input), callSignal),
-                "MCP tool call",
-              );
-              calls.add(pending);
+              let pending: Promise<unknown> | undefined;
               try {
+                pending = Promise.resolve(connection.callTool(tool.name, Object.freeze(input), callSignal));
+                calls.add(pending);
                 const result = await pending;
                 callSignal.throwIfAborted();
                 authority.assertToolExecution(name, execution);
@@ -606,7 +618,7 @@ export const createMcpComponentCompiler = (config: McpComponentCompilerConfig): 
                 throw error;
               } finally {
                 bounded.close();
-                calls.delete(pending);
+                if (pending !== undefined) calls.delete(pending);
               }
             },
             isConcurrencySafe: () => true,
@@ -637,7 +649,7 @@ export const createMcpComponentCompiler = (config: McpComponentCompilerConfig): 
             const retirementReason = new Error("MCP component generation was retired");
             lifetime.abort(retirementReason);
             await Promise.allSettled([...calls]);
-            const close = await Promise.allSettled([exactPromise(connection.close(), "MCP connection close")]);
+            const close = await Promise.allSettled([Promise.resolve(connection.close())]);
             const errors = close.flatMap((result) => result.status === "rejected"
               ? [result.reason as unknown]
               : []);
@@ -649,7 +661,7 @@ export const createMcpComponentCompiler = (config: McpComponentCompilerConfig): 
       } catch (error) {
         closed = true;
         try {
-          await exactPromise(connection.close(), "MCP failed-prepare connection close");
+          await Promise.resolve(connection.close());
         } catch (closeError) {
           throw new AggregateError(
             [error, closeError],

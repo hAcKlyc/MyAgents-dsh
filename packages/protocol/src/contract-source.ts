@@ -585,46 +585,11 @@ const componentMetadata = strictObject({
   description: Type.Optional(Type.String({ maxLength: 8_192 })),
   tags: Type.Optional(Type.Array(declarativeReference, { maxItems: 32, uniqueItems: true })),
 });
-const declarativeSchemaScalar = Type.Union([
-  Type.String({ maxLength: 65_536 }),
-  Type.Number(),
-  Type.Boolean(),
-  Type.Null(),
-]);
-const declarativeSchemaNodeFields = {
-  type: Type.Union([
-    Type.Literal("object"), Type.Literal("array"), Type.Literal("string"),
-    Type.Literal("number"), Type.Literal("integer"), Type.Literal("boolean"), Type.Literal("null"),
-  ]),
-  title: Type.Optional(Type.String({ maxLength: 512 })),
-  description: Type.Optional(Type.String({ maxLength: 8_192 })),
-  properties: Type.Optional(Type.Record(
-    Type.String({ pattern: "^[A-Za-z_][A-Za-z0-9_.-]{0,127}$" }),
-    Type.Ref("Node"),
-  )),
-  required: Type.Optional(Type.Array(
-    Type.String({ pattern: "^[A-Za-z_][A-Za-z0-9_.-]{0,127}$" }),
-    { maxItems: 256, uniqueItems: true },
-  )),
-  additionalProperties: Type.Optional(Type.Literal(false)),
-  items: Type.Optional(Type.Ref("Node")),
-  enum: Type.Optional(Type.Array(declarativeSchemaScalar, { minItems: 1, maxItems: 256, uniqueItems: true })),
-  format: Type.Optional(Type.Union([
-    Type.Literal("date-time"), Type.Literal("email"), Type.Literal("hostname"),
-    Type.Literal("ipv4"), Type.Literal("ipv6"), Type.Literal("uri"), Type.Literal("uuid"),
-  ])),
-  minimum: Type.Optional(Type.Number()),
-  maximum: Type.Optional(Type.Number()),
-  minLength: Type.Optional(nonNegativeInteger),
-  maxLength: Type.Optional(nonNegativeInteger),
-  minItems: Type.Optional(nonNegativeInteger),
-  maxItems: Type.Optional(nonNegativeInteger),
-  uniqueItems: Type.Optional(Type.Boolean()),
-} as const;
-const declarativeObjectSchema = Type.Cyclic({
-  Node: strictObject(declarativeSchemaNodeFields),
-  Root: strictObject({ ...declarativeSchemaNodeFields, type: Type.Literal("object") }),
-}, "Root");
+// Host tool schemas are foreign declarations, not our structured-output dialect.
+// The protocol JSON snapshot and compiler byte bound govern data transport;
+// the selected Host executor owns the schema's argument semantics.
+const declarativeObjectSchema = Type.Object({ type: Type.Literal("object") }, { additionalProperties: true });
+
 const componentBase = {
   id: identifier,
   enabled: Type.Boolean(),

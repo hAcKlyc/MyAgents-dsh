@@ -1,3 +1,4 @@
+import { CallToolResultSchema } from "@modelcontextprotocol/sdk/types.js";
 import { modelToolNames } from "@myagents-dsh/protocol";
 import { Context } from "@deepseek-ai/cordis";
 import { ToolCallId } from "@deepseek-ai/dsh-llm";
@@ -20,6 +21,7 @@ import {
   type McpConnection,
   type McpConnectionFactory,
   type McpConnectionFactoryInput,
+  type McpListedTool,
 } from "@myagents-dsh/components-mcp";
 import { createSdkMcpConnectionFactory } from "@myagents-dsh/components-mcp/sdk";
 import {
@@ -709,4 +711,73 @@ describe("generation-owned MCP component compiler", () => {
     expect(traps).toBe(0);
     expect(closeHits).toBe(1);
   });
+
+  const resultFixture = async (result: unknown, listed: readonly McpListedTool[] = [{ name: "echo", inputSchema: { type: "object" } }], publishImage?: Parameters<typeof createMcpComponentCompiler>[0]["publishImage"]) => {
+    const root = new Context();
+    contexts.push(root);
+    await root.plugin(SystemPrompt);
+    await root.plugin(ToolRuntime, { mode: "native" });
+    let controller: ProductComponentServiceController | undefined;
+    await root.plugin(ProductComponentService, {
+      authorizeToolExecution: () => Promise.resolve(), assertToolExecution: () => undefined,
+      registerController: (value) => { controller = value; },
+      runAtCommitBoundary: (_signal, commit) => { commit(); return Promise.resolve(true); },
+      whenGenerationUnused: () => Promise.resolve(),
+    });
+    if (controller === undefined) throw new Error("missing component controller");
+    const connection: McpConnection = {
+      callTool: () => Promise.resolve(result), listTools: () => Promise.resolve(listed), close: () => Promise.resolve(),
+    };
+    await controller.configure({
+      catalog: catalog(), initialSnapshot: snapshot("compatible-mcp-v1"),
+      compilers: [createMcpComponentCompiler({ context: root, connectionFactory: { connect: () => Promise.resolve(connection) }, ...(publishImage === undefined ? {} : { publishImage }) })],
+    });
+    return root;
+  };
+
+  it.each([
+    { content: [{ type: "text", text: "usable result" }], structuredContent: { ok: true } },
+    { content: [{ type: "text", text: "usable result" }], _meta: { trace: "fixture" } },
+    { content: [{ type: "text", text: "usable result", annotations: { priority: 0.5 }, _meta: { trace: "fixture" } }] },
+    { content: [{ type: "text", text: "usable result" }, { type: "resource_link", uri: "https://example.invalid/report", name: "Report" }] },
+    { content: [{ type: "text", text: "usable result" }, { type: "resource", resource: { uri: "file:///synthetic/report", text: "embedded text" } }] },
+    { content: [{ type: "text", text: "usable result" }, { type: "audio", data: "AA==", mimeType: "audio/wav" }] },
+    { content: [{ type: "text", text: "usable result" }, { type: "image", data: "AA==", mimeType: "image/svg+xml" }] },
+    { content: [{ type: "text", text: "usable result" }, { type: "image", data: "iVBORw0KGgo=", mimeType: "image/png", _meta: { trace: "fixture" } }] },
+  ])("preserves usable text in SDK-valid decorated or mixed results %#", async (result) => {
+    expect(CallToolResultSchema.safeParse(result).success).toBe(true);
+    const root = await resultFixture(result);
+    const outcome = await root.tools.execute({ arguments: {}, name: "mcp__fixture__echo", callId: ToolCallId("compatible-call"), signal: new AbortController().signal });
+    expect(outcome.isError).toBe(false);
+    expect(outcome.content.some((part) => part.type === "text" && part.text.includes("usable result"))).toBe(true);
+    if ("structuredContent" in result) expect(outcome.content.some((part) => part.type === "text" && part.text.includes('{"ok":true}'))).toBe(true);
+  });
+
+  it("renders structured-only results and retains explicit remote failures", async () => {
+    const structured = await resultFixture({ content: [], structuredContent: { answer: 42 } });
+    const call = { arguments: {}, name: "mcp__fixture__echo", callId: ToolCallId("structured-call"), signal: new AbortController().signal };
+    expect(await structured.tools.execute(call)).toMatchObject({ isError: false, value: { content: ['{"answer":42}'] } });
+    const failed = await resultFixture({ content: [{ type: "text", text: "remote failed", annotations: { priority: 1 } }], isError: true });
+    expect(await failed.tools.execute(call)).toMatchObject({ isError: true });
+  });
+
+  it.each([
+    { type: "object", properties: { query: { type: "string", minLength: 1 } } },
+    { type: "object", $schema: "https://json-schema.org/draft/2020-12/schema" },
+    { type: "object", properties: { value: { anyOf: [{ type: "string" }, { type: "null" }] } } },
+  ])("keeps full MCP input schemas and other tools available %#", async (inputSchema) => {
+    const root = await resultFixture({ content: [] }, [{ name: "simple", inputSchema: { type: "object" } }, { name: "full", inputSchema }]);
+    expect(root.tools.get("mcp__fixture__simple")).toBeDefined();
+    expect(root.tools.get("mcp__fixture__full")?.parameters).toEqual(inputSchema);
+  });
+
+  it("keeps useful text when optional image publication fails", async () => {
+    const root = await resultFixture({ content: [
+      { type: "text", text: "command completed" },
+      { type: "image", data: "iVBORw0KGgo=", mimeType: "image/png" },
+    ] }, undefined, () => Promise.reject(new Error("synthetic image decoder failure")));
+    const outcome = await root.tools.execute({ arguments: {}, name: "mcp__fixture__echo", callId: ToolCallId("image-failure-call"), signal: new AbortController().signal });
+    expect(outcome).toMatchObject({ isError: false, value: { content: ["command completed", "MCP image omitted: image publication failed."], truncated: true } });
+  });
+
 });

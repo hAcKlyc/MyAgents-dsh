@@ -99,14 +99,24 @@ describe("Host Provider profile translation", () => {
     ))).toThrow("not valid for openai-responses");
   });
 
-  it("keeps the native DeepSeek route out of pi-ai and requires text-first modalities", () => {
+  it("keeps the native DeepSeek route out of pi-ai and requires declared text support", () => {
     expect(() => validateHostProviderProfile({
       ...profile("openai-completions"),
       providerRouteId: HOST_DEEPSEEK_PROVIDER_ROUTE,
     })).toThrow("supports only the approved DeepSeek");
     expect(() => validateHostProviderProfile({
       ...profile("openai-completions"),
-      inputModalities: ["image", "text"],
-    })).toThrow("text-first");
+      inputModalities: ["image"],
+    })).toThrow("must support text");
   });
+  it("defaults omitted modalities to text and accepts either order of declared modalities", () => {
+    const withoutModalities = profile("openai-completions");
+    delete withoutModalities.inputModalities;
+    const routes = translateHostPiAiProfile(withoutModalities).providers;
+    expect(routes[withoutModalities.providerRouteId]?.models[0]?.input).toEqual(["text"]);
+    const imageFirst: ProviderProfile = { ...profile("openai-completions"), inputModalities: ["image", "text"] };
+    expect(validateHostProviderProfile(imageFirst)).toEqual(imageFirst);
+    expect(translateHostPiAiProfile(imageFirst).providers[imageFirst.providerRouteId]?.models[0]?.input).toEqual(["image", "text"]);
+  });
+
 });

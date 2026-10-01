@@ -6,7 +6,7 @@ import { createReadTool, createReadImageTool, createWriteTool, createEditTool } 
 import { AsyncLocalStorage } from "node:async_hooks";
 import type { ContentBlock } from "@deepseek-ai/dsh-llm";
 import type { ToolDefinition, ToolRunContext } from "@deepseek-ai/dsh-tools";
-import { CANONICAL_TOOL_CONTRACTS, canonicalInputSchemaForDsh, canonicalOutputSchemaForDsh, validateCanonicalToolInput, validateCanonicalToolOutput } from "@myagents-dsh/tool-contracts";
+import { CANONICAL_TOOL_CONTRACTS, canonicalInputSchemaForDsh, canonicalOutputSchemaForDsh, parseCanonicalToolInput, validateCanonicalToolOutput } from "@myagents-dsh/tool-contracts";
 import {
   ProductToolError,
   runWithProductToolExecutionDeadline,
@@ -182,7 +182,7 @@ export class CanonicalFileTools extends Service {
     return Object.freeze({
       description: contract.description,
       execute: async (value: unknown, exec: ToolRunContext) => {
-        const args = asObject(validateCanonicalToolInput(name, value), `${name} input`);
+        const args = asObject(parseCanonicalToolInput(name, value), `${name} input`);
         return validateCanonicalToolOutput(name, await execute(args, exec));
       },
       isConcurrencySafe: () => true,

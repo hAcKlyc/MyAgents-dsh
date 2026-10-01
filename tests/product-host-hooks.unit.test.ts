@@ -138,7 +138,12 @@ const mount = async (
   }
   root.tools.register({
     description: "Hook test tool",
-    execute: (args) => Promise.resolve(args),
+    execute: (args) => {
+      if (args === null || typeof args !== "object" || typeof (args as { value?: unknown }).value !== "string") {
+        throw new TypeError("Fixture input value must be a string");
+      }
+      return Promise.resolve(args);
+    },
     isConcurrencySafe: () => true,
     name: "Fixture",
     output: Object.freeze({
@@ -173,6 +178,36 @@ const mount = async (
 };
 
 describe("generation-owned Host Hook components", () => {
+  it("keeps passthrough hooks compatible with extra model arguments", async () => {
+    const state = await mount([component("pre", "PreToolUse")], (_invocation, request) => {
+      expect(request.input).toEqual({ value: "before", reason: "provider decoration" });
+      return Promise.resolve({ state: "continue" });
+    });
+    const rawArguments = JSON.stringify({ value: "before", reason: "provider decoration" });
+    const inherited = Object.freeze({
+      message: freezeMessage({
+        id: MessageId("assistant-decorated-hook"),
+        role: "assistant",
+        source: { kind: "model", provider: "fixture", model: "fixture" },
+        content: [{
+          type: "tool-call", id: ToolCallId("decorated-hook-call"), name: "Fixture", arguments: rawArguments,
+        }],
+      }),
+      toolCalls: Object.freeze([Object.freeze({
+        callId: ToolCallId("decorated-hook-call"), name: "Fixture",
+        parsedArguments: Object.freeze({ value: "before", reason: "provider decoration" }), rawArguments,
+      })]),
+    });
+    const transformed = await state.root.waterfall("agent/pre-assistant-commit", Object.freeze({
+      agent: state.agent, commit: inherited, turn: 1, step: 1, signal: new AbortController().signal,
+    }), () => Promise.resolve(inherited));
+    expect(transformed.toolCalls[0]).toMatchObject({
+      parsedArguments: { value: "before" }, rawArguments: JSON.stringify({ value: "before" }),
+    });
+    expect(transformed.message.content[0]).toMatchObject({ arguments: JSON.stringify({ value: "before" }) });
+    expect(inherited.toolCalls[0]?.rawArguments).toBe(rawArguments);
+  });
+
   it("transforms every pre-tool call in deterministic order and commits one representation", async () => {
     const calls: string[] = [];
     const hooks = [component("later", "PreToolUse", 10), component("earlier", "PreToolUse", -10)];
@@ -388,7 +423,7 @@ describe("generation-owned Host Hook components", () => {
     expect(calls).toBe(0);
   });
 
-  it("fails closed on invalid transforms, stale authority, and retired generations", async () => {
+  it("leaves invalid inputs to the tool executor and rejects stale authority", async () => {
     let response: HookResult = { state: "continue", updatedInput: { forged: true } };
     const state = await mount([component("pre", "PreToolUse")], () => Promise.resolve(response));
     const inherited = Object.freeze({
@@ -417,7 +452,13 @@ describe("generation-owned Host Hook components", () => {
       step: 1,
       signal: new AbortController().signal,
     }), () => Promise.resolve(inherited));
-    await expect(invoke()).rejects.toThrow("transformed input failed");
+    const transformed = await invoke();
+    const invalidCall = transformed.toolCalls[0];
+    expect(invalidCall?.parsedArguments).toEqual({});
+    expect(await state.root.tools.execute({
+      agent: state.agent, arguments: invalidCall?.parsedArguments,
+      callId: ToolCallId("invalid-hook-call"), name: "Fixture", signal: new AbortController().signal,
+    })).toMatchObject({ isError: true });
     response = { state: "continue", updatedInput: { value: "safe" } };
     state.setCurrent(false);
     await expect(invoke()).rejects.toThrow("synthetic Hook authority drift");

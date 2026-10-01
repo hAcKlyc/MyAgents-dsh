@@ -590,13 +590,13 @@ export const CANONICAL_TOOL_CONTRACTS = deepFreeze({
     inputSchema: strictObject({
       questions: Type.Array(strictObject({
         question: Type.String({ minLength: 1, maxLength: 2_048 }),
-        header: Type.String({ minLength: 1, maxLength: 12 }),
+        header: Type.String({ minLength: 1, maxLength: 256, description: "Short display heading; prefer twelve characters or fewer." }),
         options: Type.Array(strictObject({
-          label: Type.String({ minLength: 1, maxLength: 80, pattern: "^(?:\\S+)(?:\\s+\\S+){0,4}$" }),
+          label: Type.String({ minLength: 1, maxLength: 80 }),
           description: Type.String({ minLength: 1, maxLength: 512 }),
           preview: Type.Optional(Type.String({ maxLength: 4_096 })),
         }), { minItems: 2, maxItems: 4 }),
-        multiSelect: Type.Boolean(),
+        multiSelect: Type.Optional(Type.Boolean()),
       }), { minItems: 1, maxItems: 4 }),
     }),
     outputSchema: strictObject({
