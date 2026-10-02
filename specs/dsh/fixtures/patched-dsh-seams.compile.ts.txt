@@ -75,3 +75,12 @@ export const compilePatchedDshSeams = (
   });
   return persistence;
 };
+
+import { default as JsonlSessionPersistence } from "@deepseek-ai/dsh-session-persistence-jsonl";
+import type { SessionHeader, SessionEvent } from "@deepseek-ai/dsh-session";
+import type { SessionLocation } from "@deepseek-ai/dsh-session-persistence";
+export class TrustedJsonl extends JsonlSessionPersistence {
+  protected override validateStoredEvents(meta: SessionHeader, events: SessionEvent[], location?: SessionLocation): SessionEvent[] {
+    return super.validateStoredEvents(meta, events, location);
+  }
+}

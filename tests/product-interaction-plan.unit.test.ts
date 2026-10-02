@@ -381,6 +381,19 @@ describe("canonical interaction and DSH-backed plan mode", () => {
     expect(state.output(await state.execute("ExitPlanMode", {}))).toMatchObject({ mode: "normal", disposition: "approved" });
   });
 
+  it("validates a native fork without adopting its parent's plan ownership", async () => {
+    const state = await mounted();
+    await state.planController.apply(state.agent, {
+      clientOperationId: "parent-plan-entry", expectedRevision: state.planController.snapshot(state.agent).revision,
+      mode: "plan", signal: new AbortController().signal,
+    });
+    state.session.append("turn/end", { turn: 1, reason: { kind: "completed" } });
+    const fork = state.context.sessions.fork(state.session, undefined, SessionId("plan-fork"));
+    const forkAgent = { ...state.agent, id: fork.id, session: fork } as Agent;
+    expect(state.context.productPlan.validatePersisted(forkAgent)).toMatchObject({ mode: "normal" });
+    expect(state.planController.snapshot(state.agent)).toMatchObject({ mode: "plan" });
+  });
+
   it("lets the Host enter and leave durable plan mode at an explicit revision", async () => {
     const state = await mounted();
     const initial = state.planController.snapshot(state.agent);

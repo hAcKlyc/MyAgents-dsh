@@ -194,6 +194,7 @@ describe("Reference Web React store", () => {
         sequence += 1;
         const result = command.kind === "history.read" ? {
           runtimeSessionId: "runtime-session-1",
+          inheritedEventCount: 0,
           historyFormat: "dsh-session-events-v2" as const,
           durableHead: { sequence: 1, stableBoundaryId: "boundary-1" },
           mutationBoundaries: [{
@@ -277,6 +278,7 @@ describe("Reference Web React store", () => {
             state: "succeeded",
             result: command.kind === "history.read" ? {
               runtimeSessionId: "runtime-session-1",
+              inheritedEventCount: 0,
               historyFormat: "dsh-session-events-v2",
               durableHead: { sequence: 0 },
               records: [],
@@ -426,6 +428,7 @@ describe("Reference Web React store", () => {
             ...(command.kind === "session.create" ? { result: { webSessionId: "web-session-1" } }
               : command.kind === "history.read" ? { result: {
                 runtimeSessionId: "runtime-session-1",
+                inheritedEventCount: 0,
                 historyFormat: "dsh-session-events-v2" as const,
                 durableHead: { sequence: 0 },
                 records: [],

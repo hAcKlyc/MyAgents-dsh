@@ -819,6 +819,7 @@ export class ReferenceWebStore {
     this.#update({ history: Object.freeze({
       webSessionId,
       runtimeSessionId,
+      inheritedEventCount: 0,
       durableSequence: 0,
       events: [],
       mutationBoundaries: [],

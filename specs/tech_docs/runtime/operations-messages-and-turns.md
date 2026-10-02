@@ -2,7 +2,7 @@
 type: technical-architecture
 status: implemented
 module: operations-messages-and-turns
-updated: 2026-09-12
+updated: 2026-10-02
 ---
 
 # Operations, messages and turns
@@ -79,6 +79,14 @@ requires equality with the published primary. This avoids a circular publication
 preserving fail-closed identity checks at every non-lifecycle entry.
 
 ## 6. Resume and recovery
+
+Runtime operation folds use the official `Session.isOwnSeq` authority: inherited conversation
+facts provide model context and product history, but never own the target's operation idempotency,
+Inbox or terminal state. This remains true after rewinding or forking inside an inherited prefix,
+where a parent's later fork receipt can legitimately be outside the selected history. Owned events
+still require exact admission, claim and terminal validation. Pure full-history validation without
+a native ownership scope validates fork receipt lineage and derives inherited terminals under their
+original Session identity; it does not decide live target authority.
 
 On resume the fold validates Product events against exact DSH Inbox splice/claim, turn, request-context, assistant and usage facts. Incomplete but recoverable work is reconstructed under the exact primary generation. When an accepted DSH message remains pending, the Runtime appends an explicit recovery-wake fact and calls the accepted patched `Agent.wakePending(MessageId)` seam. A mismatched Agent, missing birth authority or contradictory fold/terminal first fences `SdkOperationService`; if encountered while binding/resuming the primary Session it yields `recovery_required` rather than fabricating completion.
 

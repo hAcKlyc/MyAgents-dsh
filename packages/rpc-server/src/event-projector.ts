@@ -77,6 +77,7 @@ const operationForTurn = (
   session.snapshotEvents().slice(0, throughSequence + 1),
   session.id,
   ownsRootContextMessage,
+  (sequence) => session.isOwnSeq(sequence),
 ).operations.find(
   ({ dshTurns }) => dshTurns.includes(turn),
 );
@@ -639,6 +640,7 @@ export const projectSessionEvent = (
           receiptBoundaryEvents(events, source),
           session.id,
           ownsRootContextMessage,
+          (sequence) => session.isOwnSeq(sequence),
         ),
         source.data.clientOperationId,
       );
@@ -660,6 +662,7 @@ export const projectSessionEvent = (
           receiptBoundaryEvents(events, source),
           session.id,
           ownsRootContextMessage,
+          (sequence) => session.isOwnSeq(sequence),
         ),
         source.data.clientOperationId,
       );
@@ -772,6 +775,7 @@ export const projectSessionEvent = (
           events.slice(0, source.seq + 1),
           session.id,
           ownsRootContextMessage,
+          (sequence) => session.isOwnSeq(sequence),
         ),
         source.data.clientOperationId,
       );
@@ -815,6 +819,7 @@ export const projectSessionEvent = (
           events.slice(0, source.seq + 1),
           session.id,
           ownsRootContextMessage,
+          (sequence) => session.isOwnSeq(sequence),
         ),
         source.data.clientOperationId,
       );

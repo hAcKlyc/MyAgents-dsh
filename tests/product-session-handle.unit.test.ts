@@ -1,5 +1,5 @@
 import { Context } from "@deepseek-ai/cordis";
-import { Session, SessionId, SessionLogOffset, SessionStore, type SessionEvent } from "@deepseek-ai/dsh-session";
+import { Session, SessionId, SessionLogOffset, SessionSeq, SessionStore, buildForkSeed, type SessionEvent } from "@deepseek-ai/dsh-session";
 import {
   SessionAlreadyExistsError,
   SessionAlreadyOwnedError,
@@ -17,13 +17,12 @@ import { join } from "node:path";
 import { createHash } from "node:crypto";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { ProductSqliteSessionPersistence, PRODUCT_REQUIRED_SESSION_EVENT_TYPES, productSessionDatabasePath } from "@myagents-dsh/persistence-product";
+import { ProductJsonlSessionPersistence, PRODUCT_REQUIRED_SESSION_EVENT_TYPES, productCoordinationDatabasePath } from "@myagents-dsh/persistence-product";
 import { selectPlatformAdapter, resolveRuntimePlatformTarget } from "@myagents-dsh/product-profile";
-import { ProductSqliteStore } from "../packages/persistence-product/src/sqlite-store.js";
+import { default as JsonlSessionPersistence } from "@deepseek-ai/dsh-session-persistence-jsonl";
 
 const contexts: Context[] = [];
 const roots: string[] = [];
-const batchDelayMs = 20;
 
 const mount = async (existingHome?: string): Promise<{ ctx: Context; home: string; persistence: SessionPersistence }> => {
   const home = existingHome ?? await realpath(await mkdtemp(join(tmpdir(), "myagents-session-handle-")));
@@ -32,10 +31,9 @@ const mount = async (existingHome?: string): Promise<{ ctx: Context; home: strin
   contexts.push(ctx);
   await ctx.plugin(SessionStore);
   const platform = selectPlatformAdapter(resolveRuntimePlatformTarget(process.platform, process.arch));
-  await ctx.plugin(ProductSqliteSessionPersistence, {
+  await ctx.plugin(ProductJsonlSessionPersistence, {
     platform, runtimeHome: home,
-    durability: platform.sqliteDurabilityPlan(productSessionDatabasePath(platform, home)),
-    writeBatchMaxDelayMs: batchDelayMs,
+    durability: platform.sqliteDurabilityPlan(productCoordinationDatabasePath(platform, home)),
   });
   return { ctx, home, persistence: ctx.sessionPersistence };
 };
@@ -54,7 +52,7 @@ afterEach(async () => {
   for (const result of closed) if (result.status === "rejected") throw result.reason;
 });
 
-describe("Product SQLite native SessionHandle contract", () => {
+describe("Official JSONL with product locator coordination", () => {
   it("publishes a pending create locally and materializes an explicitly flushed empty session", async () => {
     const { home, persistence } = await mount();
     const session = nativeSession();
@@ -170,14 +168,13 @@ describe("Product SQLite native SessionHandle contract", () => {
     const { ctx, persistence } = await mount();
     const session = ctx.sessions.create(SessionId("retry"));
     const writer = await persistence.create(session.header);
-    const failure = new Error("synthetic SQLite failure");
-    const persist = vi.spyOn(ProductSqliteStore.prototype, "appendBatch").mockRejectedValue(failure);
-    const warned = vi.spyOn(ctx.logger, "warn").mockImplementation(() => undefined);
+    const failure = new Error("synthetic JSONL failure");
+    const persist = vi.spyOn(JsonlSessionPersistence.prototype, "persistBatch").mockRejectedValue(failure);
     session.append("turn/start", { turn: 1 });
-    await vi.waitFor(() => { expect(warned).toHaveBeenCalled(); });
+    await vi.waitFor(() => { expect(persist).toHaveBeenCalled(); });
     session.append("turn/end", { turn: 1, reason: { kind: "completed" } });
     expect(persist).toHaveBeenCalledTimes(1);
-    await expect(writer.flush()).rejects.toBe(failure);
+    await expect(writer.flush()).rejects.toMatchObject({ errors: [failure] });
     persist.mockRestore();
     await writer.flush();
     expect((await readAll(persistence, session.id)).map((event) => event.seq)).toEqual([0, 1]);
@@ -190,14 +187,14 @@ describe("Product SQLite native SessionHandle contract", () => {
     const bad = ctx.sessions.create(SessionId("bad"));
     const writers = await Promise.all([persistence.create(good.header), persistence.create(bad.header)]);
     // eslint-disable-next-line @typescript-eslint/unbound-method -- The mock invokes it with the actual Store receiver via call.
-    const original = ProductSqliteStore.prototype.appendBatch;
+    const original = JsonlSessionPersistence.prototype.persistBatch;
     const failure = new Error("one Session fails");
-    const persist = vi.spyOn(ProductSqliteStore.prototype, "appendBatch").mockImplementation(function (this: ProductSqliteStore, metadata, events, materialized) {
-      return metadata.meta.id === bad.id ? Promise.reject(failure) : original.call(this, metadata, events, materialized);
+    const persist = vi.spyOn(JsonlSessionPersistence.prototype, "persistBatch").mockImplementation(function (this: JsonlSessionPersistence, metadata, events, materialized, inheritedEventCount) {
+      return metadata.id === bad.id ? Promise.reject(failure) : original.call(this, metadata, events, materialized, inheritedEventCount);
     });
     good.append("turn/start", { turn: 1 });
     bad.append("turn/start", { turn: 1 });
-    await expect(persistence.flush()).rejects.toMatchObject({ errors: [failure] });
+    await expect(persistence.flush()).rejects.toMatchObject({ errors: [{ errors: [failure] }] });
     expect(await readAll(persistence, good.id)).toHaveLength(1);
     persist.mockRestore();
     await persistence.flush();
@@ -210,7 +207,7 @@ describe("Product SQLite native SessionHandle contract", () => {
     const session = ctx.sessions.create(SessionId("close-failure"));
     const writer = await persistence.create(session.header);
     const failure = new Error("final drain refused");
-    const persist = vi.spyOn(ProductSqliteStore.prototype, "appendBatch").mockRejectedValue(failure);
+    const persist = vi.spyOn(JsonlSessionPersistence.prototype, "persistBatch").mockRejectedValue(failure);
     session.append("turn/start", { turn: 1 });
     await expect(writer.close()).rejects.toBe(failure);
     persist.mockRestore();
@@ -241,18 +238,21 @@ describe("Product SQLite native SessionHandle contract", () => {
   it("keeps inherited metadata separate and verifies the seed before durable materialization", async () => {
     const { persistence } = await mount();
     const parent = nativeSession("parent");
-    parent.append("turn/start", { turn: 1 });
-    parent.append("turn/end", { turn: 1, reason: { kind: "completed" } });
+    const prefix = [
+      parent.append("session/end-seed", {}),
+      parent.append("turn/start", { turn: 1 }),
+      parent.append("turn/end", { turn: 1, reason: { kind: "completed" } }),
+    ];
     const header = { ...parent.header, id: SessionId("seeded"), parentSession: parent.id, isSeeded: true };
     await expect(persistence.create(header)).rejects.toThrow(/inherited/);
-    const writer = await persistence.create(header, { inheritedEventCount: SessionLogOffset(2) });
+    const writer = await persistence.create(header, { inheritedEventCount: SessionLogOffset(3) });
     await expect(writer.flush()).rejects.toThrow(/inherited/);
-    await writer.append(parent.snapshotEvents());
+    await writer.append(buildForkSeed(prefix, SessionSeq(2)));
     await writer.flush();
     await writer.close();
     const reader = await persistence.open(header.id, "read");
-    expect(reader.inheritedEventCount).toBe(2);
-    expect((await reader.read()).events).toHaveLength(2);
+    expect(reader.inheritedEventCount).toBe(3);
+    expect((await reader.read()).events).toHaveLength(4);
     await reader.close();
   });
 
@@ -265,7 +265,7 @@ describe("Product SQLite native SessionHandle contract", () => {
     await expect(writer.append([unknown])).rejects.toBeInstanceOf(SessionFormatUnsupportedError);
     await writer.append([{ ...unknown, ignorable: true }]);
     expect(await readAll(persistence, session.id)).toHaveLength(1);
-    if (!(persistence instanceof ProductSqliteSessionPersistence)) throw new Error("wrong Provider");
+    if (!(persistence instanceof ProductJsonlSessionPersistence)) throw new Error("wrong Provider");
     expect(await persistence.inspectRecovery(session.id)).toMatchObject({ state: "resume_candidate" });
     await writer.close();
   });
@@ -295,7 +295,7 @@ describe("Product SQLite native SessionHandle contract", () => {
     session.append("turn/end", { turn: 1, reason: { kind: "completed" } });
     await writer.append(session.snapshotEvents());
     const other = await mount(home);
-    if (!(other.persistence instanceof ProductSqliteSessionPersistence)) throw new Error("wrong Provider");
+    if (!(other.persistence instanceof ProductJsonlSessionPersistence)) throw new Error("wrong Provider");
     const deletion = await other.persistence.prepareDelete({ clientMutationId: "delete-owner-test", runtimeSessionId: session.id });
     await expect(other.persistence.commitDelete(deletion.token, deletion.clientMutationId)).rejects.toBeInstanceOf(SessionAlreadyOwnedError);
     expect(await readAll(persistence, session.id)).toHaveLength(2);

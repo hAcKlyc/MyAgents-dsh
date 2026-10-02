@@ -3,7 +3,7 @@ import { installNativeRootContext } from "@myagents-dsh/runtime-product";
 import { installProductContextProjection, ownsRootContextMessage } from "@myagents-dsh/tools-agent";
 import { SessionProjectionRegistry } from "@deepseek-ai/dsh-session-projection";
 import { FixtureInbox as Inbox } from "./fixtures/inbox-events.js";
-import { SessionSeq } from "@deepseek-ai/dsh-session";
+import { Session, SessionLogOffset, SessionSeq } from "@deepseek-ai/dsh-session";
 import { Context } from "@deepseek-ai/cordis";
 import { type Agent } from "@deepseek-ai/dsh-agent";
 import { ToolCallId, freezeMessage, MessageId, type MessageSource } from "@deepseek-ai/dsh-llm";
@@ -409,6 +409,67 @@ describe("durable product-operation fold", () => {
       { ...receipt, seq: SessionSeq(unsettledPrefix.length) },
     ], fixture.agent.id))
       .toThrow("fork receipt follows an unsettled source operation boundary");
+  });
+
+  it("validates inherited successful terminals under each exact source Session across nested forks", async () => {
+    const fixture = await mountService();
+    await fixture.service.start(params());
+    fixture.agent.session.append("turn/start", { turn: 1 });
+    fixture.inbox.claim("next-turn", 1);
+    fixture.agent.session.append("step/start", { turn: 1, step: 1 });
+    fixture.agent.session.append("request/context", { provider: "fixture", model: "fixture-model", contextWindow: 8_192 });
+    fixture.agent.session.append("assistant/message", { stream: [],
+      turn: 1, step: 1,
+      message: freezeMessage({
+        id: MessageId("fork-source-answer"), role: "assistant", source: { kind: "model", provider: "fixture", model: "fixture-model" },
+        content: [{ type: "text", text: "Source conversation remains inherited." }],
+      }),
+      usage: { inputTokens: 7, outputTokens: 2 },
+    }, { surfaceOp: "append" });
+    fixture.agent.session.append("step/end", { turn: 1, step: 1 });
+    fixture.agent.session.append("turn/end", { turn: 1, reason: { kind: "completed" } });
+    await vi.waitFor(() => expect(fixture.service.lookup("operation-1")?.terminal?.kind).toBe("succeeded"));
+    const inherited = [...fixture.events];
+    const fork = (events: readonly SessionEvent[], source: string, target: string): readonly SessionEvent[] =>
+      appendEvent(appendEvent(events, "session/end-seed", { inherited: true }), "myagents/session/fork", {
+        clientMutationId: `fork-${target}`,
+        sourceGenerationId: `generation-${source}`,
+        sourceRuntimeSessionId: source,
+        sourceStableBoundaryId: `boundary-${source}`,
+        targetGenerationId: `generation-${target}`,
+        targetPersistenceRef: `persistence-${target}`,
+        targetRuntimeSessionId: target,
+        targetWorkspaceIdentity: "fork-workspace",
+        token: `token-${target}`,
+      });
+    const first = fork(inherited, fixture.agent.id, "first-fork");
+    expect(foldProductOperations(first, "first-fork").operations).toEqual([]);
+    const nested = fork(first, "first-fork", "nested-fork");
+    expect(foldProductOperations(nested, "nested-fork").operations).toEqual([]);
+    expect(() => foldProductOperations(nested, "unrelated-session"))
+      .toThrow("fork receipt differs from the folded Session identity");
+    // Rewinding or forking before a parent's receipt retains its conversation,
+    // but no parent Product operation belongs to the resulting native scope.
+    const early = fork(inherited, "first-fork", "early-fork");
+    const nativeEarly = Session.create(SessionId("early-fork"), early, { ...fixture.agent.session.header, id: SessionId("early-fork"), parentSession: SessionId("first-fork"), isSeeded: true }, SessionLogOffset(inherited.length));
+    expect(foldProductOperations(early, nativeEarly.id, undefined, seq => nativeEarly.isOwnSeq(seq)).operations).toEqual([]);
+    const rewound = Session.create(SessionId("first-fork"), inherited, { ...fixture.agent.session.header, id: SessionId("first-fork"), parentSession: fixture.agent.id, isSeeded: true }, SessionLogOffset(inherited.length));
+    expect(foldProductOperations(inherited, rewound.id, undefined, seq => rewound.isOwnSeq(seq)).operations).toEqual([]);
+    const accepted = inherited.find(event => event.type === "myagents/operation/accepted");
+    if (accepted?.type !== "myagents/operation/accepted") throw new Error("inherited acceptance is unavailable");
+    const admission = nativeEarly.append("myagents/operation/accepted", accepted.data);
+    const owned = [...early, admission];
+    expect(foldProductOperations(owned, nativeEarly.id, undefined, seq => nativeEarly.isOwnSeq(seq)).operations[0]?.state)
+      .toBe("accepted_undelivered");
+    const terminal = inherited.find(event => event.type === "myagents/operation/terminal");
+    if (terminal?.type !== "myagents/operation/terminal") throw new Error("inherited terminal is unavailable");
+    const invalid = nativeEarly.append("myagents/operation/terminal", terminal.data);
+    expect(() => foldProductOperations([...owned, invalid], nativeEarly.id, undefined, seq => nativeEarly.isOwnSeq(seq)))
+      .toThrow("operation terminal precedes queued-message settlement");
+    const forged = first.map(event => event.type === "myagents/session/fork"
+      ? { ...event, data: { ...event.data, sourceRuntimeSessionId: "forged-source" } } : event);
+    expect(() => foldProductOperations(forged, "first-fork"))
+      .toThrow("operation terminal differs from its exact durable DSH derivation");
   });
 
   it("fails closed across impossible turn claims and the durable Inbox-delete crash gap", async () => {

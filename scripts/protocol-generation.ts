@@ -341,6 +341,7 @@ const buildFixtures = (schemaDigest: string): unknown => {
         result: {
           runtimeSessionId: "runtime-session-1",
           historyFormat: SESSION_FORMAT,
+          inheritedEventCount: 0,
           durableHead: { sequence: 2, stableBoundaryId: "boundary-1" },
           records: [
             {
@@ -403,6 +404,7 @@ const buildFixtures = (schemaDigest: string): unknown => {
       value: {
         runtimeSessionId: "runtime-session-1",
         historyFormat: SESSION_FORMAT,
+          inheritedEventCount: 0,
         durableHead: { sequence: 1 },
         records: [{
           kind: "event_chunk",
@@ -422,6 +424,7 @@ const buildFixtures = (schemaDigest: string): unknown => {
       value: {
         runtimeSessionId: "runtime-session-1",
         historyFormat: SESSION_FORMAT,
+          inheritedEventCount: 0,
         durableHead: { sequence: 1 },
         records: [{
           kind: "event_chunk",

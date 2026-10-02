@@ -1,31 +1,31 @@
-# ADR 0003 — Frozen predicate for required product Session events
+# ADR 0003 — Required product events through the official JSONL validation seam
 
-Current DSH `0.2.0-rc.2` disposition: retired; native V4 required-event validation and Product payload checks replace the patch. The [seam registry](../dsh/seam-decisions-v1.json) owns exact current patch identity; dated evidence below is historical.
-
-Status: accepted on 2026-08-16 for the fixed DSH source baseline
-
-Historical disposition (2026-08-29): retained and rebased as `DSH-SEAM-003` / patch 0003 for official DSH `0.1.1-rc.2`. The current seam registry and upstream refresh records supersede the original rc.5 patch identity below.
+Status: accepted; updated 2026-10-02 for DSH `0.2.0-rc.2`.
 
 ## Context
 
-MyAgents operation, TaskGraph, work, permission, checkpoint, and mutation facts are required DSH Session events. Stock `PersistenceCoordinator` accepts only its monorepo-generated event set when it loads, inspects, prepares, resumes, or adopts a live prefix. Marking product facts ignorable would permit a reader to reconstruct an incorrect operation or mutation state.
-
-## Evidence
-
-The patched-source suite appends a declaration-merged required product event, then exercises live append, inspect, cached prepare, cold load, coordinator replacement/adoption, default-option refusal, and an unregistered-required-event refusal through the real `PersistenceCoordinator`. The root fixture independently checks the exact frozen product union. `npm run check:dsh-seams-source` compiles and runs this matrix at the exact fixed source.
-
-Patch `specs/dsh/patches/0003-persistence-known-event-predicate.patch` is the third pinned patch over `deepseek-harness@47f943859bef60e4160492346772ded9b24f765a`.
+Operation, permission, work, checkpoint and mutation facts are required DSH Session events.
+Official JSONL owns storage and native restoration, but its default vocabulary excludes these
+build-time product declarations. The public native validator cannot register them, and marking
+recovery facts ignorable would permit incorrect restoration. Replacing the JSONL backend or
+mutating the native known-event set would duplicate an upstream owner.
 
 ## Decision
 
-Add optional `PersistenceCoordinatorOptions.isKnownEventType`. Omission delegates exactly to `KNOWN_SESSION_EVENT_TYPES.has(type)`. The official product Provider passes one frozen generated predicate containing stock and exact required product event names. Unknown non-ignorable events continue to fail closed through every existing coordinator read path.
+Reduce seam 003 to one protected `JsonlSessionPersistence.validateStoredEvents` hook. Its default
+calls the unchanged native validator. The trusted product subclass composes that validator with
+the exact frozen product registry and each owner's payload validator. Native codec, physical
+layout, leases, buffering, append, flush, close and recovery remain upstream implementations.
+No historical PersistenceCoordinator, predicate option or SQLite Session backend remains.
 
-## Rejected alternatives
+The [seam registry](../dsh/seam-decisions-v1.json) owns exact source/blob/patch identities. Public
+compile evidence checks the protected override. The official current-event-admission and lease
+source suites retain stock refusal semantics. Product handle, persistence and checkpoint tests
+exercise cold native JSONL restore, malformed known payloads, unknown required/ignorable events,
+immutable inputs, live barriers and native final-drain failures.
 
-- Set `ignorable: true` on recovery-critical facts.
-- Mutate or import the private generated known-event set.
-- Reimplement coordinator orchestration before a narrower seam is tried.
+## Removal condition
 
-## Consequences and removal
-
-The option changes recognition policy, not storage format or Session authority. Event registration cannot change at HMR time. Remove the patch after an installed DSH release supplies equivalent build-level registration and all load/inspect/prepare/resume/adoption refusal fixtures pass.
+Remove the hook patch when an installed official JSONL release supplies equivalent trusted
+extension validation and those regressions pass. Required facts must remain required; there is
+no product codec or second event log to preserve.

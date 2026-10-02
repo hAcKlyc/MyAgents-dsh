@@ -191,7 +191,7 @@ const positiveTurn = (value: unknown, description: string): number => {
   return value as number;
 };
 
-const validateForkReceipt = (value: unknown, runtimeSessionId: string): void => {
+const validateForkReceipt = (value: unknown, runtimeSessionId: string): string => {
   const event = exactOwnDataObject(value, [
     "clientMutationId",
     "sourceGenerationId",
@@ -210,6 +210,7 @@ const validateForkReceipt = (value: unknown, runtimeSessionId: string): void => 
     || event.sourceRuntimeSessionId === runtimeSessionId) {
     return fail("fork receipt differs from the folded Session identity");
   }
+  return event.sourceRuntimeSessionId as string;
 };
 
 const validateOperationPricing = (value: unknown): OperationPricing => {
@@ -617,8 +618,21 @@ const foldProductOperationsValue = (
   liveClaim: LiveOperationClaimCandidate | undefined,
   liveDiscard: LiveOperationDiscardCandidate | undefined,
   ownsRootContextMessage: RootContextMessageOwnership,
+  ownsSequence: (sequence: SessionEvent["seq"]) => boolean,
 ): ProductOperationFold => {
   boundedIdentifier(runtimeSessionId, "operation fold runtime Session identity");
+  // Inherited terminals were derived under their source Session identity.
+  // Walk the exact fork lineage backwards before validating each segment.
+  const forkTargets = new Map<number, string>();
+  let operationSessionId = runtimeSessionId;
+  for (let index = events.length - 1; index >= 0; index -= 1) {
+    const event = events[index];
+    if (event === undefined) return fail("operation fold encountered a sparse event sequence");
+    const eventType: string = event.type;
+    if (eventType !== "myagents/session/fork" || !ownsSequence(event.seq)) continue;
+    forkTargets.set(index, operationSessionId);
+    operationSessionId = validateForkReceipt((event as unknown as { data: unknown }).data, operationSessionId);
+  }
   const operations = new Map<string, MutableOperation>();
   const messageOwners = new Map<string, string>();
   const dshTurnOwners = new Map<number, string>();
@@ -663,9 +677,12 @@ const foldProductOperationsValue = (
     const event = events[index];
     if (event === undefined) return fail("operation fold encountered a sparse event sequence");
     if (event.seq !== index) return fail("operation fold requires contiguous Session sequence numbers");
+    if (!ownsSequence(event.seq)) continue;
     const runtimeType: string = event.type;
     if (runtimeType === "myagents/session/fork") {
-      validateForkReceipt((event as unknown as { data: unknown }).data, runtimeSessionId);
+      const target = forkTargets.get(index);
+      if (target === undefined) return fail("fork receipt has no validated Session lineage");
+      validateForkReceipt((event as unknown as { data: unknown }).data, target);
       if (openTurn !== undefined || inbox["next-step"].length !== 0
         || inbox["next-turn"].length !== 0
         || removedClaimCandidates.size !== 0 || removedDiscardCandidates.size !== 0
@@ -675,6 +692,7 @@ const foldProductOperationsValue = (
       operations.clear();
       messageOwners.clear();
       dshTurnOwners.clear();
+      operationSessionId = target;
       continue;
     }
 
@@ -882,7 +900,7 @@ const foldProductOperationsValue = (
         let derived;
         try {
           derived = deriveOperationTerminal(
-            runtimeSessionId,
+            operationSessionId,
             events.slice(0, index),
             immutableOperation(operation),
           );
@@ -1115,12 +1133,14 @@ export const foldProductOperations = (
   events: readonly SessionEvent[],
   runtimeSessionId: string,
   ownsRootContextMessage: RootContextMessageOwnership = ownsNoRootContextMessage,
+  ownsSequence: (sequence: SessionEvent["seq"]) => boolean = () => true,
 ): ProductOperationFold => foldProductOperationsValue(
   events,
   runtimeSessionId,
   undefined,
   undefined,
   ownsRootContextMessage,
+  ownsSequence,
 );
 
 export const foldProductOperationsForLiveClaim = (
@@ -1128,19 +1148,21 @@ export const foldProductOperationsForLiveClaim = (
   candidate: LiveOperationClaimCandidate,
   runtimeSessionId: string,
   ownsRootContextMessage: RootContextMessageOwnership = ownsNoRootContextMessage,
+  ownsSequence: (sequence: SessionEvent["seq"]) => boolean = () => true,
 ): ProductOperationFold => foldProductOperationsValue(events, runtimeSessionId, Object.freeze({
   messageId: boundedIdentifier(candidate.messageId, "live claim message identity"),
   dshTurn: positiveTurn(candidate.dshTurn, "live claim DSH turn"),
-}), undefined, ownsRootContextMessage);
+}), undefined, ownsRootContextMessage, ownsSequence);
 
 export const foldProductOperationsForLiveDiscard = (
   events: readonly SessionEvent[],
   candidate: LiveOperationDiscardCandidate,
   runtimeSessionId: string,
   ownsRootContextMessage: RootContextMessageOwnership = ownsNoRootContextMessage,
+  ownsSequence: (sequence: SessionEvent["seq"]) => boolean = () => true,
 ): ProductOperationFold => foldProductOperationsValue(events, runtimeSessionId, undefined, Object.freeze({
   messageId: boundedIdentifier(candidate.messageId, "live discard message identity"),
-}), ownsRootContextMessage);
+}), ownsRootContextMessage, ownsSequence);
 
 export const findProductOperation = (
   fold: ProductOperationFold,

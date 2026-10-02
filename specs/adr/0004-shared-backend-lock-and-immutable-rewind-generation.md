@@ -1,32 +1,40 @@
-# ADR 0004 — Shared backend lock and immutable rewind generation
+# ADR 0004 — Native JSONL generations and product mutation coordination
 
-Current DSH `0.2.0-rc.2` disposition: implemented through public persistence composition; no DSH core patch. The [seam registry](../dsh/seam-decisions-v1.json) owns exact current patch identity; dated evidence below is historical.
-
-Status: accepted on 2026-08-16 as the Batch 1 persistence composition
-
-Historical disposition (2026-08-29): implemented through the public DSH PersistenceBackend plus the product-owned SQLite mutation companion as `DSH-SEAM-004`; no DSH core patch is carried for this decision.
+Status: accepted; supersedes the unreleased SQLite Session backend on 2026-10-02.
 
 ## Context
 
-The public DSH persistence seam supports append, load, inspect, prepare, and revision observation, but product delete/fork/rewind needs explicit transaction preconditions. Rewind cannot hide later events only at the surface: those events would remain authoritative for operation, work, permission, and checkpoint folds.
-
-## Evidence
-
-The permanent fixture implements the public DSH `PersistenceBackend` contract and serializes ordinary backend append and companion mutation commit through one per-Session lock. Retirement drains an already-admitted append; a mutation waiting behind it observes a changed revision and fails. Cached preparation is invalidated, abort while waiting commits nothing, and a fresh exact revision publishes a new storage generation. Cold inspection of that generation preserves the exact stable prefix, product-event fold, and `deriveMessages()`, retains the source generation unchanged, and adds no placeholder surface node. Its delete companion requires a retired writer, stable `turn/end` boundary, and unchanged revision; it publishes a recoverable tombstone, refuses conflicting identities, and returns `already_deleted` with the same tombstone revision after response loss.
+DSH `0.2.0-rc.2` provides native JSONL Session handles and physical leases, but no product
+rewind/fork/delete transaction or governed-file restoration API. These product operations must
+remain available without storing a second transcript or copying native persistence logic.
 
 ## Decision
 
-Batch 1 will implement one MyAgents SQLite `PersistenceBackend` and a mutation companion over the same storage owner and abortable per-Session lock. Prepare is non-publishing. A locator-changing commit requires closed admission, settled/cancelled owned work, disposed Agent/Session, drained persistence retirement, a cold inspect, and an unchanged source-qualified revision.
+`ProductJsonlSessionPersistence` delegates log operations to official JSONL handles. Each product
+generation selects a native root; DSH owns every file inside it. Product coordination stores
+active locators, revision/hash preconditions, stable boundaries, mutation journals and checkpoint
+preimages in `persistence/coordination.sqlite`, current schema 1. There is no event table.
 
-Rewind creates a new immutable storage generation from the exact stable prefix and atomically switches the active locator. Fork uses the same prefix publication under a new Session identity. Delete uses a recoverable tombstone before later purge. DSH Session events remain the only model-conversation and product-event log.
+A product locator lease covers the writer lifetime and generation-changing operations. DSH
+separately owns its physical write lease. Mutations require retirement/quiescence and exact source
+preconditions. Rewind durably seeds a candidate through public native create/append/flush before
+atomically switching the product locator; retry validates the same deterministic candidate.
+Rollback selects the retained source. Fork uses public `buildForkSeed` to produce the inherited
+marker and native closers, then adds the product receipt. Delete tombstones before idempotent
+purge; its durable receipt records generation ids for cleanup after process or response loss.
 
-## Rejected alternatives
+The product metadata store cannot overwrite native history. Native append growth reconciles the
+product index; any changed previously durable prefix refuses. No cross-filesystem or cross-store
+atomicity is claimed. No old development schema or Session log is migrated.
 
-- Surface replacement or placeholder messages as rewind.
-- Direct SQLite access from RPC handlers.
-- Private DSH storage imports.
-- Simultaneous JSONL and SQLite production authorities in Batch 1.
+## Evidence and removal
 
-## Consequences and supersession
+Product tests cover immutable prefix preservation, repeated settlement, stale source refusal,
+writer contention, file/directory phase gaps, native resume, corrupted/unknown histories and
+recovery-only classification. Packed Runtime and native ownership evidence are identity-bound.
+[Sessions](../tech_docs/state/sessions-persistence-and-recovery.md) and
+[Mutations](../tech_docs/state/mutations-and-checkpoints.md) define current owners and limits.
 
-This ADR accepts a public Provider composition; it does not implement the production backend during Pre-Batch. Workstream 4 still owes SQLite DDL, crash journals, fsync behavior, native evidence, and fault tests. Supersession requires equivalent generation, revision, lock, and crash semantics with no second transcript.
+Seam 004 remains public composition without a core patch. Replace product coordination only
+when official public mutation APIs satisfy the complete locator, checkpoint, journal and recovery
+contract. Do not rebuild DSH's codec, batching, locking or torn-tail recovery in the product.

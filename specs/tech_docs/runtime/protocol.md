@@ -357,7 +357,11 @@ type SessionBindingResult =
 
 ### 9.2 `session/read`
 
-Reads the single durable DSH Session event log through a bounded cursor.
+Reads the single durable DSH Session event log through a bounded cursor. Every page includes the
+required official `inheritedEventCount`, bounded by the durable head and fixed across pagination.
+Hosts retain inherited Product history but reconcile and query execution only for operations outside
+that native prefix. The cut comes from native persistence metadata; Hosts must not infer it from
+markers or receipts that can legitimately be outside a rewound prefix.
 
 ```ts
 type SessionReadRecord =

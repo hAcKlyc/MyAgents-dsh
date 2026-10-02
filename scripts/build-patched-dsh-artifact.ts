@@ -801,6 +801,7 @@ const verifyArtifactCompile = (
       moduleResolution: "NodeNext",
       noEmit: true,
       skipLibCheck: false,
+      exactOptionalPropertyTypes: true,
       strict: true,
       target: "ES2024",
       types: ["node"],

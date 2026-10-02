@@ -97,7 +97,7 @@ describe("patched DSH artifact authority", () => {
     expect(first).toEqual(second);
     expect(first.artifactVersion).toBe(`${DSH_SEAM_SOURCE.declaredRelease}.myagents.${first.sourceCommit.slice(0, 12)}.${first.patchSeriesSha256.slice(0, 12)}`);
     expect(first.patchSeriesSha256).toMatch(/^[a-f0-9]{64}$/u);
-    expect(first.patches).toHaveLength(10);
+    expect(first.patches).toHaveLength(11);
     expect(first.toolchain).toEqual({
       node: "24.20.0",
       npm: "11.19.0",

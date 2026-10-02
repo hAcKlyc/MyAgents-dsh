@@ -98,7 +98,7 @@ export const BATCH1_INSTALLED_PLUGIN_ALLOWLIST = Object.freeze([
   "@myagents-dsh/operation-runtime:SdkOperationService",
   "@myagents-dsh/component-runtime:ProductComponentService",
   "@myagents-dsh/rpc-server:NativeRpcServer",
-  "@myagents-dsh/persistence-product:ProductSqliteSessionPersistence",
+  "@myagents-dsh/persistence-product:ProductJsonlSessionPersistence",
   "@myagents-dsh/checkpoint:ProductCheckpointService",
 ] as const);
 

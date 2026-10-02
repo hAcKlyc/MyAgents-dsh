@@ -117,10 +117,10 @@ const runtimeCompositionSourcePaths = [
   "packages/persistence-product/src/rewind.ts",
   "packages/persistence-product/src/schema.ts",
   "packages/persistence-product/src/session-lock.ts",
-  "packages/persistence-product/src/session-handle.ts",
+  "packages/persistence-product/src/native-jsonl.ts",
   "packages/persistence-product/src/session-ownership.ts",
   "packages/persistence-product/src/storage-contract.ts",
-  "packages/persistence-product/src/sqlite-store.ts",
+  "packages/persistence-product/src/mutation-store.ts",
   "packages/product-profile/src/candidate-runtime-profile-authority.ts",
   "packages/product-profile/src/candidate-runtime-profile.ts",
   "packages/product-profile/src/index.ts",
@@ -1530,7 +1530,7 @@ const main = (): void => {
       || (deletePurgeEvidence.collectedCheckpointBlobs as number) < 0
       || deletePurgeEvidence.sessionRowsAfterPurge !== 0
       || deletePurgeEvidence.generationRowsAfterPurge !== 0
-      || deletePurgeEvidence.eventRowsAfterPurge !== 0) {
+      || deletePurgeEvidence.nativeLogsAfterPurge !== 0) {
       throw new Error("irreversible Session purge evidence differs from the exact W4-A10 contract");
     }
     const forkEvidence = exactObject(
@@ -1543,18 +1543,18 @@ const main = (): void => {
       || !forkEvidence.sourceBoundaryId.startsWith("b_")
       || !Number.isSafeInteger(forkEvidence.sourceEventCount)
       || (forkEvidence.sourceEventCount as number) < 1
-      || forkEvidence.targetEventCount !== (forkEvidence.sourceEventCount as number) + 1
+      || forkEvidence.targetEventCount !== (forkEvidence.sourceEventCount as number) + 2
       || forkEvidence.targetRuntimeSessionId !== "artifact-forked-session") {
       throw new Error("Session fork evidence differs from the exact W4-A6 contract");
     }
     const persistenceEvidence = exactObject(
       evidence.productPersistenceEvidence,
-      "product SQLite persistence evidence",
+      "native JSONL and product coordination evidence",
     );
     if (typeof persistenceEvidence.eventCount !== "number"
       || !Number.isSafeInteger(persistenceEvidence.eventCount)
       || persistenceEvidence.eventCount < 1
-      || persistenceEvidence.format !== "myagents-sqlite-session-v1"
+      || persistenceEvidence.format !== "myagents-jsonl-coordination-v1"
       || persistenceEvidence.generationCount !== 2
       || persistenceEvidence.productEventReloaded !== true
       || typeof persistenceEvidence.resumedAddedEventCount !== "number"
@@ -1584,7 +1584,7 @@ const main = (): void => {
       || persistenceEvidence.revision < 1
       || persistenceEvidence.schemaVersion !== PRODUCT_PERSISTENCE_SCHEMA_VERSION) {
       throw new Error(
-        `product SQLite persistence/read evidence differs from the exact W4-A3 contract: ${JSON.stringify(persistenceEvidence)}`,
+        `native JSONL persistence/read evidence differs from the exact W4-A3 contract: ${JSON.stringify(persistenceEvidence)}`,
       );
     }
     const hostAttachmentEvidence = exactObject(

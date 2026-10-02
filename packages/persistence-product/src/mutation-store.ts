@@ -1,3 +1,4 @@
+import { NativeJsonlGenerations } from "./native-jsonl.js";
 import { createHash, createHmac, randomUUID } from "node:crypto";
 import {
   closeSync,
@@ -18,14 +19,14 @@ import { dirname, isAbsolute, relative, resolve, sep } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import { isProxy } from "node:util/types";
 
-import { SessionLogOffset, type SessionEvent, type SessionHeader, type SessionId } from "@deepseek-ai/dsh-session";
+import { buildForkSeed, SessionLogOffset, SessionSeq, type SessionEvent, type SessionHeader, type SessionId } from "@deepseek-ai/dsh-session";
 import { snapshotJsonValue, type JsonValue } from "@deepseek-ai/dsh-util-values";
 import {
   SessionPersistenceRevision,
+  SessionOwnershipLostError,
   type SessionPersistenceRevision as PersistenceRevision,
   type SessionPersistenceSnapshot,
-  type SessionStorageMetadata,
-  type SessionInspection,
+    type SessionInspection,
 } from "@deepseek-ai/dsh-session-persistence";
 import type { PlatformAdapterContract, SqliteDurabilityPlan } from "@myagents-dsh/product-profile";
 import { canonicalSessionReadData } from "@myagents-dsh/protocol";
@@ -71,7 +72,7 @@ import {
   PRODUCT_PERSISTENCE_SCHEMA_VERSION,
   PRODUCT_PERSISTENCE_TABLES,
 } from "./schema.js";
-import { materializeProductSessionHeader, validateProductStoredEvents } from "./storage-contract.js";
+import { materializeProductSessionHeader } from "./storage-contract.js";
 import type { ProductSessionOwnership, ProductSessionOwnershipProvider } from "./session-ownership.js";
 import { ProductSessionLockTable } from "./session-lock.js";
 
@@ -80,7 +81,7 @@ export interface ProductStoredSession extends SessionInspection {
   readonly generationId: string;
 }
 
-interface ProductSqliteStoreOptions {
+interface ProductMutationStoreOptions {
   readonly ownership: ProductSessionOwnershipProvider;
   readonly platform: PlatformAdapterContract;
   readonly durability: SqliteDurabilityPlan;
@@ -115,14 +116,15 @@ interface ActiveSessionRow {
   readonly sessionRevision: number;
 }
 
-export interface ProductSqliteReadSnapshot {
+export interface ProductNativeReadSnapshot {
+  readonly inheritedEventCount: number;
   readonly durableSequence: number;
   readonly header: SessionHeader;
   readonly revision: PersistenceRevision;
   readonly stableBoundaryId?: string;
 }
 
-export interface ProductSqliteMutationBoundaryAuthority {
+export interface ProductMutationBoundaryAuthority {
   readonly genesisBoundary?: Readonly<{
     stableBoundaryId: string;
     sequence: number;
@@ -161,13 +163,6 @@ export type ProductPersistedRecoveryInspection = Readonly<
   }
 >;
 
-interface EventRow {
-  readonly chainHash: string;
-  readonly envelopeJson: string;
-  readonly seq: number;
-  readonly time: number;
-  readonly type: string;
-}
 
 interface StableBoundaryRow {
   readonly boundaryId: string;
@@ -374,15 +369,6 @@ const EXPECTED_COLUMNS = Object.freeze({
     "policy_version",
     "created_at",
   ],
-  session_events: [
-    "session_id",
-    "generation_id",
-    "seq",
-    "type",
-    "time",
-    "envelope_json",
-    "chain_hash",
-  ],
 } as const);
 
 const EXPECTED_SCHEMA_ROWS = Object.freeze(PRODUCT_PERSISTENCE_SCHEMA_SQL
@@ -478,23 +464,26 @@ const aggregateFailure = (primary: unknown, cleanup: unknown, description: strin
   throw new AggregateError([primary, cleanup], description);
 };
 
-/** Product SQLite storage and mutation authority behind the public SessionHandle Provider. */
-export class ProductSqliteStore implements ProductCheckpointStore,
+/** Product transaction journals, generation locators and file preimages; no stored conversation. */
+export class ProductMutationStore implements ProductCheckpointStore,
   ProductDeleteStore, ProductForkStore, ProductRewindStore {
-  readonly name = "product-session-persistence-sqlite";
+  readonly name = "product-session-coordination";
 
   readonly #locks = new ProductSessionLockTable();
-  readonly #options: ProductSqliteStoreOptions;
+  readonly #options: ProductMutationStoreOptions;
   #closePromise: Promise<void> | undefined;
   #database: DatabaseSync | undefined;
   #databaseIdentity: FileIdentity | undefined;
   #persistenceDirectoryIdentity: FileIdentity | undefined;
   #runtimeHomeIdentity: FileIdentity | undefined;
-  readonly #forkTargetStores = new Map<string, ProductSqliteStore>();
+  readonly #forkTargetStores = new Map<string, ProductMutationStore>();
   #initializePromise: Promise<void> | undefined;
   #storeId: string | undefined;
 
-  constructor(options: ProductSqliteStoreOptions) {
+  readonly #nativeObservations = new Map<string, { revision: string; locatorRevision: number }>();
+  readonly nativeLogs: NativeJsonlGenerations;
+  constructor(options: ProductMutationStoreOptions) {
+    this.nativeLogs = new NativeJsonlGenerations(options.runtimeHome);
     this.#options = options;
   }
 
@@ -540,10 +529,10 @@ export class ProductSqliteStore implements ProductCheckpointStore,
   }
 
   loadStored(id: SessionId, signal?: AbortSignal): Promise<ProductStoredSession | undefined> {
-    return this.#locks.run(id, signal, () => {
-      const row = this.#readActiveSession(id);
+    return this.#locks.run(id, signal, async () => {
+      const row = await this.#readActiveSession(id);
       if (row === undefined) return undefined;
-      const events = this.#readAndValidateEvents(row);
+      const events = await this.#readAndValidateEvents(row);
       return {
         meta: this.#decodeHeader(row),
         inheritedEventCount: SessionLogOffset(row.inheritedEventCount),
@@ -561,14 +550,14 @@ export class ProductSqliteStore implements ProductCheckpointStore,
   ): Promise<SessionInspection | undefined> {
     if (!Number.isSafeInteger(fromSeq) || fromSeq < 0) {
       return Promise.reject(new TypeError(
-        `product SQLite suffix fromSeq must be a non-negative safe integer, got ${String(fromSeq)}`,
+        `native JSONL suffix fromSeq must be a non-negative safe integer, got ${String(fromSeq)}`,
       ));
     }
-    return this.#locks.run(id, signal, () => {
+    return this.#locks.run(id, signal, async () => {
       signal?.throwIfAborted();
-      const row = this.#readActiveSession(id);
+      const row = await this.#readActiveSession(id);
       if (row === undefined) return undefined;
-      const events = this.#readAndValidateEventsFrom(row, fromSeq);
+      const events = await this.#readAndValidateEventsFrom(row, fromSeq);
       signal?.throwIfAborted();
       return {
         meta: this.#decodeHeader(row),
@@ -579,8 +568,8 @@ export class ProductSqliteStore implements ProductCheckpointStore,
   }
 
   readStoredRevision(id: SessionId, signal?: AbortSignal): Promise<PersistenceRevision | undefined> {
-    return this.#locks.run(id, signal, () => {
-      const row = this.#readActiveSession(id);
+    return this.#locks.run(id, signal, async () => {
+      const row = await this.#readActiveSession(id);
       return row === undefined ? undefined : this.#revision(row);
     });
   }
@@ -588,13 +577,14 @@ export class ProductSqliteStore implements ProductCheckpointStore,
   readProductSnapshot(
     id: SessionId,
     signal?: AbortSignal,
-  ): Promise<ProductSqliteReadSnapshot | undefined> {
-    return this.#locks.run(id, signal, () => {
-      const row = this.#readActiveSession(id);
+  ): Promise<ProductNativeReadSnapshot | undefined> {
+    return this.#locks.run(id, signal, async () => {
+      const row = await this.#readActiveSession(id);
       if (row === undefined) return undefined;
-      const stableBoundaryId = this.#latestStableBoundaryId(row);
+      const stableBoundaryId = await this.#latestStableBoundaryId(row);
       return Object.freeze({
         durableSequence: row.eventCount,
+        inheritedEventCount: row.inheritedEventCount,
         header: this.#decodeHeader(row),
         revision: this.#revision(row),
         ...(stableBoundaryId === undefined ? {} : { stableBoundaryId }),
@@ -605,12 +595,12 @@ export class ProductSqliteStore implements ProductCheckpointStore,
   readMutationBoundaries(
     id: SessionId,
     signal?: AbortSignal,
-  ): Promise<ProductSqliteMutationBoundaryAuthority> {
-    return this.#locks.run(id, signal, () => {
+  ): Promise<ProductMutationBoundaryAuthority> {
+    return this.#locks.run(id, signal, async () => {
       signal?.throwIfAborted();
-      const row = this.#readActiveSession(id);
+      const row = await this.#readActiveSession(id);
       if (row === undefined) throw new Error("Session mutation boundary source is unavailable");
-      const events = this.#readAndValidateEvents(row);
+      const events = await this.#readAndValidateEvents(row);
       const boundaryValues = this.#requireDatabase().prepare(`
         SELECT boundary_id, seq_exclusive, turn
           FROM stable_boundaries
@@ -646,7 +636,7 @@ export class ProductSqliteStore implements ProductCheckpointStore,
       const transcript = createHash("sha256");
       transcript.update("myagents-transcript-postcondition-v1\0", "utf8");
       const projected: Array<(typeof boundaries)[number] & { transcriptPostcondition: string }> = [];
-      let genesisBoundary: ProductSqliteMutationBoundaryAuthority["genesisBoundary"];
+      let genesisBoundary: ProductMutationBoundaryAuthority["genesisBoundary"];
       for (const event of events) {
         const data = canonicalSessionReadData(event.data, "session_recovery_required");
         transcript.update(String(event.seq), "utf8");
@@ -687,9 +677,11 @@ export class ProductSqliteStore implements ProductCheckpointStore,
     id: SessionId,
     signal?: AbortSignal,
   ): Promise<ProductPersistedRecoveryInspection> {
-    return this.#locks.run(id, signal, () => {
+    return this.#locks.run(id, signal, async () => {
       signal?.throwIfAborted();
       this.#assertSchema();
+      try { await this.#readActiveSession(id); }
+      catch { return Object.freeze({ state: "recovery_required" as const, reason: "persisted_history_invalid" as const, retryable: false, unsettledMutations: Object.freeze([]) }); }
       const value = this.#requireDatabase().prepare(`
         SELECT s.id AS session_id,
                s.active_generation_id,
@@ -726,7 +718,7 @@ export class ProductSqliteStore implements ProductCheckpointStore,
         storageState = sessionState;
         row = this.#decodeActiveSessionRow(raw);
         this.#decodeHeader(row);
-        this.#readAndValidateEvents(row);
+        await this.#readAndValidateEvents(row);
       } catch {
         return Object.freeze({
           state: "recovery_required" as const,
@@ -806,11 +798,11 @@ export class ProductSqliteStore implements ProductCheckpointStore,
     input: ProductCheckpointPrepareInput,
     signal?: AbortSignal,
   ): Promise<ProductCheckpointRecord> {
-    return this.#locks.run(input.sessionId as SessionId, signal, () => {
+    return this.#locks.run(input.sessionId as SessionId, signal, async () => {
       signal?.throwIfAborted();
       this.#assertSchema();
       const database = this.#requireDatabase();
-      const active = this.#readActiveSession(input.sessionId as SessionId, false);
+      const active = await this.#readActiveSession(input.sessionId as SessionId, false);
       if (active === undefined) throw new Error("checkpoint Session has no active storage generation");
       const existing = this.#readCheckpoint(input.checkpointId);
       if (existing !== undefined) {
@@ -1021,15 +1013,13 @@ export class ProductSqliteStore implements ProductCheckpointStore,
     return this.#locks.run(known.runtimeSessionId as SessionId, signal, () => {
       signal?.throwIfAborted();
       this.#assertSchema();
-      const rows = this.#requireDatabase().prepare(`
-        SELECT c.* FROM checkpoint_records AS c
-          JOIN mutation_journals AS m ON m.session_id = c.session_id AND m.source_generation_id = c.generation_id
-          JOIN stable_boundaries AS b ON b.boundary_id = m.boundary_id
-         WHERE m.token = ? AND c.dsh_turn > CASE WHEN b.policy_version = 'genesis-boundary-v1' THEN 0 ELSE b.turn END
-           AND c.state = 'settled' AND c.directory_plan_json IS NOT NULL
-         ORDER BY length(c.path), c.path, c.prepared_at, c.checkpoint_id
-      `).all(token) as unknown[];
-      return Object.freeze(rows.map((row) => this.#decodeCheckpoint(row)));
+      const boundary = this.#readStableBoundary(known.boundaryId);
+      if (boundary === undefined) throw new Error("rewind directory boundary is unavailable");
+      const turn = boundary.policyVersion === "genesis-boundary-v1" ? 0 : boundary.turn;
+      return Object.freeze(this.#retainedSettledCheckpoints(known.runtimeSessionId, known.sourceGenerationId)
+        .filter((record) => record.dshTurn > turn && record.directoryPlan !== undefined)
+        .sort((left, right) => left.path.length - right.path.length || compareCodePoints(left.path, right.path)
+          || left.preparedAt - right.preparedAt || compareCodePoints(left.checkpointId, right.checkpointId)));
     });
   }
 
@@ -1144,10 +1134,10 @@ export class ProductSqliteStore implements ProductCheckpointStore,
     signal?: AbortSignal,
   ): Promise<ProductDeleteRecord> {
     this.#validateDeleteIdentity(input.runtimeSessionId, input.clientMutationId);
-    return this.#locks.run(input.runtimeSessionId as SessionId, signal, () => {
+    return this.#locks.run(input.runtimeSessionId as SessionId, signal, async () => {
       signal?.throwIfAborted();
       this.#assertSchema();
-      const active = this.#readActiveSession(input.runtimeSessionId as SessionId, false);
+      const active = await this.#readActiveSession(input.runtimeSessionId as SessionId, false);
       if (active === undefined) throw new Error("delete source Session is unavailable");
       const fingerprint = createHash("sha256")
         .update("myagents-delete-request-v1\0", "utf8")
@@ -1183,14 +1173,14 @@ export class ProductSqliteStore implements ProductCheckpointStore,
     this.#validateDeleteIdentity(token, clientMutationId);
     const known = this.#readDelete(token);
     if (known === undefined) return Promise.reject(new Error("delete token is unavailable"));
-    return this.#mutationLock(known.runtimeSessionId as SessionId, [known.runtimeSessionId as SessionId], signal, () => {
+    return this.#mutationLock(known.runtimeSessionId as SessionId, [known.runtimeSessionId as SessionId], signal, async () => {
       signal?.throwIfAborted();
       const record = this.#requireDeleteIdentity(token, clientMutationId);
       if (record.phase === "committed") return record;
       if (record.phase !== "prepared" && record.phase !== "committing") {
         throw new Error(`delete cannot commit from ${record.phase}`);
       }
-      const active = this.#readActiveSession(record.runtimeSessionId as SessionId, false);
+      const active = await this.#readActiveSession(record.runtimeSessionId as SessionId, false);
       if (active?.activeGenerationId !== record.sourceGenerationId
         || String(this.#revision(active)) !== record.sourceRevision) {
         throw new Error("delete source locator or revision changed before commit");
@@ -1240,10 +1230,10 @@ export class ProductSqliteStore implements ProductCheckpointStore,
     this.#validateDeleteIdentity(token, clientMutationId);
     const known = this.#readDelete(token);
     if (known === undefined) return Promise.reject(new Error("delete token is unavailable"));
-    return this.#mutationLock(known.runtimeSessionId as SessionId, [known.runtimeSessionId as SessionId], signal, () => {
+    return this.#mutationLock(known.runtimeSessionId as SessionId, [known.runtimeSessionId as SessionId], signal, async () => {
       signal?.throwIfAborted();
       const record = this.#requireDeleteIdentity(token, clientMutationId);
-      if (record.phase === "purged") return record;
+      if (record.phase === "purged") { await this.#purgeReceiptGenerations(record); return record; }
       if (record.phase !== "committed") {
         throw new Error(`delete cannot purge from ${record.phase}`);
       }
@@ -1283,6 +1273,7 @@ export class ProductSqliteStore implements ProductCheckpointStore,
         ...receipt,
         collectedCheckpointBlobs: 0,
         purged: true as const,
+        nativeGenerationIds: database.prepare("SELECT generation_id FROM session_generations WHERE session_id = ?").all(record.runtimeSessionId).map((row) => String(row.generation_id)),
       });
       database.exec("BEGIN IMMEDIATE");
       try {
@@ -1337,7 +1328,9 @@ export class ProductSqliteStore implements ProductCheckpointStore,
       } catch (error) {
         this.#rollback(error, "delete purge");
       }
-      return this.#requireDeleteIdentity(token, clientMutationId);
+      const purged = this.#requireDeleteIdentity(token, clientMutationId);
+      await this.#purgeReceiptGenerations(purged);
+      return purged;
     });
   }
 
@@ -1433,13 +1426,13 @@ export class ProductSqliteStore implements ProductCheckpointStore,
     return this.#locks.run(input.runtimeSessionId as SessionId, signal, async () => {
       signal?.throwIfAborted();
       this.#assertSchema();
-      const active = this.#readActiveSession(input.runtimeSessionId as SessionId, false);
+      const active = await this.#readActiveSession(input.runtimeSessionId as SessionId, false);
       if (active === undefined) throw new Error("fork source Session is unavailable");
       const boundary = this.#readStableBoundary(input.sourceStableBoundaryId);
       if (boundary?.sessionId !== active.sessionId
         || boundary.generationId !== active.activeGenerationId
         || boundary.seqExclusive > active.eventCount
-        || boundary.prefixHash !== this.#prefixHashAt(active, boundary.seqExclusive)) {
+        || boundary.prefixHash !== await this.#prefixHashAt(active, boundary.seqExclusive)) {
         throw new Error("fork stable boundary is unavailable or changed");
       }
       const fingerprint = createHash("sha256")
@@ -1529,13 +1522,13 @@ export class ProductSqliteStore implements ProductCheckpointStore,
       if (record.phase !== "prepared" && record.phase !== "committing") {
         throw new Error(`fork cannot commit from ${record.phase}`);
       }
-      const active = this.#readActiveSession(record.runtimeSessionId as SessionId, false);
+      const active = await this.#readActiveSession(record.runtimeSessionId as SessionId, false);
       const boundary = this.#readStableBoundary(record.sourceStableBoundaryId);
       if (active?.activeGenerationId !== record.sourceGenerationId
         || String(this.#revision(active)) !== record.sourceRevision
         || boundary?.generationId !== record.sourceGenerationId
         || boundary.sessionId !== record.runtimeSessionId
-        || boundary.prefixHash !== this.#prefixHashAt(active, boundary.seqExclusive)) {
+        || boundary.prefixHash !== await this.#prefixHashAt(active, boundary.seqExclusive)) {
         throw new Error("fork source locator, revision, or boundary changed before commit");
       }
       if (record.phase === "prepared") {
@@ -1605,10 +1598,10 @@ export class ProductSqliteStore implements ProductCheckpointStore,
     signal?: AbortSignal,
   ): Promise<ProductRewindRecord> {
     this.#validateRewindPrepareInput(input);
-    return this.#locks.run(input.runtimeSessionId as SessionId, signal, () => {
+    return this.#locks.run(input.runtimeSessionId as SessionId, signal, async () => {
       signal?.throwIfAborted();
       this.#assertSchema();
-      const active = this.#readActiveSession(input.runtimeSessionId as SessionId, false);
+      const active = await this.#readActiveSession(input.runtimeSessionId as SessionId, false);
       if (active === undefined) throw new Error("rewind source Session is unavailable");
       const fingerprint = createHash("sha256")
         .update("myagents-rewind-request-v1\0", "utf8")
@@ -1629,7 +1622,7 @@ export class ProductSqliteStore implements ProductCheckpointStore,
         return existing;
       }
       this.#assertPendingMutationCapacity(active.sessionId);
-      const events = this.#readAndValidateEvents(active);
+      const events = await this.#readAndValidateEvents(active);
       if (productTranscriptPostcondition(events) !== input.sourceTranscriptPostcondition) {
         throw new Error("rewind source transcript postcondition differs from durable history");
       }
@@ -1641,7 +1634,7 @@ export class ProductSqliteStore implements ProductCheckpointStore,
       }
       const targetEvents = events.slice(0, boundary.seqExclusive);
       if (targetEvents.at(-1)?.seq !== boundary.seqExclusive - 1
-        || boundary.prefixHash !== this.#prefixHashAt(active, boundary.seqExclusive)
+        || boundary.prefixHash !== await this.#prefixHashAt(active, boundary.seqExclusive)
         || productTranscriptPostcondition(targetEvents) !== input.targetTranscriptPostcondition) {
         throw new Error("rewind stable boundary transcript identity changed");
       }
@@ -1702,30 +1695,30 @@ export class ProductSqliteStore implements ProductCheckpointStore,
     this.#validateRewindSettlementIdentity(token, clientMutationId);
     const known = this.#readRewind(token);
     if (known === undefined) return Promise.reject(new Error("rewind token is unavailable"));
-    return this.#locks.run(known.runtimeSessionId as SessionId, signal, () => {
+    return this.#locks.run(known.runtimeSessionId as SessionId, signal, async () => {
       signal?.throwIfAborted();
       const record = this.#requireRewindIdentity(token, clientMutationId);
       if (record.phase === "committed") return;
       if (record.phase !== "prepared" && record.phase !== "committing") {
         throw new Error(`rewind cannot validate commit from ${record.phase}`);
       }
-      const active = this.#readActiveSession(record.runtimeSessionId as SessionId, false);
+      const active = await this.#readActiveSession(record.runtimeSessionId as SessionId, false);
       if (active?.activeGenerationId !== record.sourceGenerationId
         || String(this.#revision(active)) !== record.sourceRevision) {
         throw new Error("rewind source locator or revision changed before file publication");
       }
       const boundary = this.#readStableBoundary(record.boundaryId);
-      const events = this.#readAndValidateEvents(active);
+      const events = await this.#readAndValidateEvents(active);
       if (boundary?.sessionId !== active.sessionId
         || boundary.generationId !== active.activeGenerationId
-        || boundary.prefixHash !== this.#prefixHashAt(active, boundary.seqExclusive)
+        || boundary.prefixHash !== await this.#prefixHashAt(active, boundary.seqExclusive)
         || productTranscriptPostcondition(events) !== record.sourceTranscriptPostcondition
         || productTranscriptPostcondition(events.slice(0, boundary.seqExclusive))
           !== record.targetTranscriptPostcondition) {
         throw new Error("rewind source transcript changed before file publication");
       }
       for (const child of this.#readRewindChildPlans(token)) {
-        const current = this.#readActiveSession(child.childSessionId as SessionId, false);
+        const current = await this.#readActiveSession(child.childSessionId as SessionId, false);
         if (child.state !== "prepared" || current?.activeGenerationId !== child.childGenerationId
           || current.sessionRevision !== child.childSessionRevision
           || current.generationRevision !== child.childGenerationRevision) {
@@ -1743,7 +1736,7 @@ export class ProductSqliteStore implements ProductCheckpointStore,
     this.#validateRewindSettlementIdentity(token, clientMutationId);
     const known = this.#readRewind(token);
     if (known === undefined) return Promise.reject(new Error("rewind token is unavailable"));
-    return this.#mutationLock(known.runtimeSessionId as SessionId, [known.runtimeSessionId as SessionId, ...this.#readRewindChildPlans(token).map((child) => child.childSessionId as SessionId)], signal, () => {
+    return this.#mutationLock(known.runtimeSessionId as SessionId, [known.runtimeSessionId as SessionId, ...this.#readRewindChildPlans(token).map((child) => child.childSessionId as SessionId)], signal, async () => {
       signal?.throwIfAborted();
       const record = this.#requireRewindIdentity(token, clientMutationId);
       if (record.phase === "committed") return record;
@@ -1751,7 +1744,7 @@ export class ProductSqliteStore implements ProductCheckpointStore,
         throw new Error(`rewind cannot commit from ${record.phase}`);
       }
       const database = this.#requireDatabase();
-      const active = this.#readActiveSession(record.runtimeSessionId as SessionId, false);
+      const active = await this.#readActiveSession(record.runtimeSessionId as SessionId, false);
       if (active?.activeGenerationId !== record.sourceGenerationId
         || String(this.#revision(active)) !== record.sourceRevision) {
         throw new Error("rewind source locator or revision changed before commit");
@@ -1759,10 +1752,10 @@ export class ProductSqliteStore implements ProductCheckpointStore,
       const boundary = this.#readStableBoundary(record.boundaryId);
       if (boundary?.generationId !== record.sourceGenerationId
         || boundary.sessionId !== record.runtimeSessionId
-        || boundary.prefixHash !== this.#prefixHashAt(active, boundary.seqExclusive)) {
+        || boundary.prefixHash !== await this.#prefixHashAt(active, boundary.seqExclusive)) {
         throw new Error("rewind boundary changed before commit");
       }
-      const sourceEvents = this.#readAndValidateEvents(active);
+      const sourceEvents = await this.#readAndValidateEvents(active);
       if (productTranscriptPostcondition(sourceEvents) !== record.sourceTranscriptPostcondition
         || productTranscriptPostcondition(sourceEvents.slice(0, boundary.seqExclusive))
           !== record.targetTranscriptPostcondition
@@ -1783,8 +1776,15 @@ export class ProductSqliteStore implements ProductCheckpointStore,
       }
       const targetRevision = active.sessionRevision + 1;
       const targetBoundaryId = `b_${randomUUID()}`;
-      const committedAt = Date.now();
-      const rewindEvent = createProductRewindReceiptEvent(boundary.seqExclusive, committedAt, {
+      const committedAt = rowInteger(asRecord(database.prepare("SELECT created_at FROM mutation_journals WHERE token = ?").get(token), "rewind creation time"), "created_at", "rewind creation time");
+      const inheritedEventCount = Math.min(active.inheritedEventCount, boundary.seqExclusive);
+      const prefix = sourceEvents.slice(0, boundary.seqExclusive);
+      // A boundary inside inherited history excludes this generation's native
+      // end-seed marker. Let DSH construct the valid seed before adding our receipt.
+      const seed = this.#decodeHeader(active).isSeeded && boundary.seqExclusive <= active.inheritedEventCount
+        ? buildForkSeed(prefix, SessionSeq(boundary.seqExclusive - 1))
+        : prefix;
+      const rewindEvent = createProductRewindReceiptEvent(seed.length, committedAt, {
         boundaryId: boundary.boundaryId,
         clientMutationId: record.clientMutationId,
         sourceGenerationId: record.sourceGenerationId,
@@ -1793,12 +1793,12 @@ export class ProductSqliteStore implements ProductCheckpointStore,
         targetTranscriptPostcondition: record.targetTranscriptPostcondition,
         token,
       });
-      const rewindEnvelopeJson = snapshotCanonicalJson(rewindEvent, "rewind receipt event");
-      const targetHeadHash = chainHash(boundary.prefixHash, rewindEnvelopeJson);
-      const targetEventCount = boundary.seqExclusive + 1;
+      const targetEvents = [...seed, rewindEvent];
+      const targetHeadHash = this.#eventHead(targetEvents);
+      const targetEventCount = targetEvents.length;
       const receipt = Object.freeze({
         durableSequence: targetEventCount,
-        rewindEventSequence: boundary.seqExclusive,
+        rewindEventSequence: rewindEvent.seq,
         sourceGenerationId: record.sourceGenerationId,
         stableBoundaryId: targetBoundaryId,
         targetGenerationId,
@@ -1812,6 +1812,8 @@ export class ProductSqliteStore implements ProductCheckpointStore,
         `).run(Date.now(), token);
         if (Number(outcome.changes) !== 1) throw new Error("rewind commit lost its prepared journal");
       }
+      await this.nativeLogs.seed(targetGenerationId, this.#decodeHeader(active),
+        SessionLogOffset(inheritedEventCount), targetEvents);
       database.exec("BEGIN IMMEDIATE");
       try {
         database.prepare(`
@@ -1827,35 +1829,7 @@ export class ProductSqliteStore implements ProductCheckpointStore,
           targetEventCount,
           targetHeadHash,
           committedAt,
-          Math.min(active.inheritedEventCount, boundary.seqExclusive),
-        );
-        database.prepare(`
-          INSERT INTO session_events(session_id, generation_id, seq, type, time, envelope_json, chain_hash)
-          SELECT session_id, ?, seq, type, time, envelope_json, chain_hash
-            FROM session_events
-           WHERE session_id = ? AND generation_id = ? AND seq < ?
-           ORDER BY seq
-        `).run(targetGenerationId, active.sessionId, active.activeGenerationId, boundary.seqExclusive);
-        const copied = database.prepare(`
-          SELECT count(*) AS count FROM session_events
-           WHERE session_id = ? AND generation_id = ?
-        `).get(active.sessionId, targetGenerationId);
-        if (rowInteger(asRecord(copied, "rewind copied prefix"), "count", "rewind copied prefix")
-          !== boundary.seqExclusive) {
-          throw new Error("rewind copied prefix is incomplete");
-        }
-        database.prepare(`
-          INSERT INTO session_events(
-            session_id, generation_id, seq, type, time, envelope_json, chain_hash
-          ) VALUES (?, ?, ?, ?, ?, ?, ?)
-        `).run(
-          active.sessionId,
-          targetGenerationId,
-          rewindEvent.seq,
-          rewindEvent.type,
-          rewindEvent.time,
-          rewindEnvelopeJson,
-          targetHeadHash,
+          inheritedEventCount,
         );
         const sourceArchived = database.prepare(`
           UPDATE session_generations SET state = 'archived'
@@ -1950,7 +1924,7 @@ export class ProductSqliteStore implements ProductCheckpointStore,
     this.#validateRewindSettlementIdentity(token, clientMutationId);
     const known = this.#readRewind(token);
     if (known === undefined) return Promise.reject(new Error("rewind token is unavailable"));
-    return this.#locks.run(known.runtimeSessionId as SessionId, signal, () => {
+    return this.#locks.run(known.runtimeSessionId as SessionId, signal, async () => {
       signal?.throwIfAborted();
       const record = this.#requireRewindIdentity(token, clientMutationId);
       if (record.phase === "prepared" || record.phase === "rolled_back") return;
@@ -1958,7 +1932,7 @@ export class ProductSqliteStore implements ProductCheckpointStore,
         || record.targetGenerationId === undefined) {
         throw new Error(`rewind cannot validate rollback from ${record.phase}`);
       }
-      const active = this.#readActiveSession(record.runtimeSessionId as SessionId, false);
+      const active = await this.#readActiveSession(record.runtimeSessionId as SessionId, false);
       const receiptSequence = record.receipt?.durableSequence;
       const receiptHeadHash = record.receipt?.targetHeadHash;
       if (active?.activeGenerationId !== record.targetGenerationId
@@ -1966,7 +1940,7 @@ export class ProductSqliteStore implements ProductCheckpointStore,
         || typeof receiptHeadHash !== "string" || !HASH_PATTERN.test(receiptHeadHash)) {
         throw new Error("rewind rollback target locator changed before file restoration");
       }
-      const targetEvents = this.#readAndValidateEvents(active);
+      const targetEvents = await this.#readAndValidateEvents(active);
       const allowedResumeSeed = targetEvents.length === (receiptSequence as number) + 1
         && targetEvents.at(-1)?.type === "session/end-seed"
         && snapshotCanonicalJson(targetEvents.at(-1)?.data, "rewind rollback resume seed") === "{}";
@@ -2009,7 +1983,7 @@ export class ProductSqliteStore implements ProductCheckpointStore,
     this.#validateRewindSettlementIdentity(token, clientMutationId);
     const known = this.#readRewind(token);
     if (known === undefined) return Promise.reject(new Error("rewind token is unavailable"));
-    return this.#mutationLock(known.runtimeSessionId as SessionId, (known.phase === "prepared" || known.phase === "rolled_back") ? [] : [known.runtimeSessionId as SessionId, ...this.#readRewindChildPlans(token).map((child) => child.childSessionId as SessionId)], signal, () => {
+    return this.#mutationLock(known.runtimeSessionId as SessionId, (known.phase === "prepared" || known.phase === "rolled_back") ? [] : [known.runtimeSessionId as SessionId, ...this.#readRewindChildPlans(token).map((child) => child.childSessionId as SessionId)], signal, async () => {
       signal?.throwIfAborted();
       const record = this.#requireRewindIdentity(token, clientMutationId);
       if (record.phase === "rolled_back") return record;
@@ -2025,7 +1999,7 @@ export class ProductSqliteStore implements ProductCheckpointStore,
       }
       if (record.targetGenerationId === undefined) throw new Error("committed rewind lacks a target generation");
       const database = this.#requireDatabase();
-      const active = this.#readActiveSession(record.runtimeSessionId as SessionId, false);
+      const active = await this.#readActiveSession(record.runtimeSessionId as SessionId, false);
       if (active?.activeGenerationId !== record.targetGenerationId) {
         throw new Error("rewind rollback target locator changed");
       }
@@ -2035,7 +2009,7 @@ export class ProductSqliteStore implements ProductCheckpointStore,
         || typeof receiptHeadHash !== "string" || !HASH_PATTERN.test(receiptHeadHash)) {
         throw new Error("rewind rollback receipt lacks exact committed generation identity");
       }
-      const targetEvents = this.#readAndValidateEvents(active);
+      const targetEvents = await this.#readAndValidateEvents(active);
       const allowedResumeSeed = targetEvents.length === (receiptSequence as number) + 1
         && targetEvents.at(-1)?.type === "session/end-seed"
         && snapshotCanonicalJson(targetEvents.at(-1)?.data, "rewind rollback resume seed") === "{}";
@@ -2052,13 +2026,7 @@ export class ProductSqliteStore implements ProductCheckpointStore,
         committedTail,
         "rewind rollback receipt event",
       );
-      const predecessorHash = (receiptSequence as number) === 1
-        ? EMPTY_HEAD_HASH
-        : rowString(asRecord(database.prepare(`
-            SELECT chain_hash FROM session_events
-             WHERE session_id = ? AND generation_id = ? AND seq = ?
-          `).get(active.sessionId, active.activeGenerationId, (receiptSequence as number) - 2),
-        "rewind rollback receipt predecessor"), "chain_hash", "rewind rollback receipt predecessor");
+      const predecessorHash = await this.#prefixHashAt(active, (receiptSequence as number) - 1);
       if (chainHash(predecessorHash, committedEnvelope) !== receiptHeadHash) {
         throw new Error("rewind rollback committed generation identity changed");
       }
@@ -2165,14 +2133,44 @@ export class ProductSqliteStore implements ProductCheckpointStore,
     return this.#locks.run(known.runtimeSessionId as SessionId, signal, () => this.#readRewind(token));
   }
 
-  appendBatch(
-    storage: SessionStorageMetadata,
-    events: readonly SessionEvent[],
-    isMaterialized: boolean,
-  ): Promise<void> {
-    const { meta, inheritedEventCount } = storage;
-    return this.#locks.run(meta.id, undefined, () => {
-      this.#appendBatch(meta, events, isMaterialized, inheritedEventCount);
+  async reserveNativeGeneration(meta: SessionHeader, inheritedEventCount: SessionLogOffset, generationId: string): Promise<void> {
+    await this.#locks.run(meta.id, undefined, async () => {
+      const database = this.#requireDatabase();
+      const known = this.#readLocator(meta.id);
+      if (known !== undefined) {
+        if (await this.nativeLogs.inspect(known.activeGenerationId, meta.id) !== undefined || known.eventCount !== 0) {
+          throw new Error("Session already has a native generation");
+        }
+        database.prepare("DELETE FROM sessions WHERE id = ?").run(meta.id);
+      }
+      database.exec("BEGIN IMMEDIATE");
+      try {
+        database.prepare("INSERT INTO sessions(id, active_generation_id, state, revision, event_count, head_hash, created_at) VALUES (?, ?, 'active', 0, 0, ?, ?)")
+          .run(meta.id, generationId, EMPTY_HEAD_HASH, Date.now());
+        database.prepare("INSERT INTO session_generations(session_id, generation_id, header_json, origin, state, revision, event_count, head_hash, created_at, inherited_event_count) VALUES (?, ?, ?, 'create', 'active', 0, 0, ?, ?, ?)")
+          .run(meta.id, generationId, snapshotCanonicalJson(meta, "native generation header"), EMPTY_HEAD_HASH, Date.now(), inheritedEventCount);
+        database.exec("COMMIT");
+      } catch (error) { this.#rollback(error, "native generation reservation"); }
+    });
+  }
+
+  async assertNativeGeneration(id: SessionId, generationId: string): Promise<void> {
+    await this.#locks.run(id, undefined, () => {
+      if (this.#readLocator(id)?.activeGenerationId !== generationId) throw new SessionOwnershipLostError(id);
+    });
+  }
+
+  async synchronizeNativeGeneration(id: SessionId): Promise<void> {
+    await this.#locks.run(id, undefined, async () => { await this.#readActiveSession(id); });
+  }
+
+  async discardUnmaterializedGeneration(id: SessionId, generationId: string): Promise<void> {
+    await this.#locks.run(id, undefined, async () => {
+      const row = this.#readLocator(id);
+      if (row?.activeGenerationId === generationId && row.eventCount === 0
+        && await this.nativeLogs.inspect(generationId, id) === undefined) {
+        this.#requireDatabase().prepare("DELETE FROM sessions WHERE id = ? AND active_generation_id = ?").run(id, generationId);
+      }
     });
   }
 
@@ -2181,7 +2179,8 @@ export class ProductSqliteStore implements ProductCheckpointStore,
     await this.initialize();
     signal?.throwIfAborted();
     const rows = this.#activeSessionRows();
-    const headers = rows.map((row) => this.#decodeHeader(row));
+    const headers: SessionHeader[] = [];
+    for (const row of rows) { const active = await this.#readActiveSession(row.sessionId as SessionId); if (active !== undefined) headers.push(this.#decodeHeader(active)); }
     signal?.throwIfAborted();
     return headers;
   }
@@ -2190,17 +2189,18 @@ export class ProductSqliteStore implements ProductCheckpointStore,
     signal?.throwIfAborted();
     await this.initialize();
     signal?.throwIfAborted();
-    const snapshots = this.#activeSessionRows().map((row) => ({
-      header: this.#decodeHeader(row),
-      revision: this.#revision(row),
-      eventCount: row.eventCount,
-    }));
+    const snapshots: SessionPersistenceSnapshot[] = [];
+    for (const row of this.#activeSessionRows()) {
+      const active = await this.#readActiveSession(row.sessionId as SessionId);
+      if (active !== undefined) snapshots.push({ header: this.#decodeHeader(active), revision: this.#revision(active), eventCount: active.eventCount });
+    }
     signal?.throwIfAborted();
     return snapshots;
   }
 
   close(): Promise<void> {
     this.#closePromise ??= (async () => {
+      await this.nativeLogs.close();
       await this.#locks.close();
       await Promise.all([...this.#forkTargetStores.values()].map((store) => store.close()));
       this.#forkTargetStores.clear();
@@ -2215,7 +2215,7 @@ export class ProductSqliteStore implements ProductCheckpointStore,
   }
 
   async #initialize(): Promise<void> {
-    if (this.#closePromise !== undefined) throw new Error("product SQLite persistence is closing");
+    if (this.#closePromise !== undefined) throw new Error("product mutation store is closing");
     const path = this.#options.durability.databasePath;
     const parent = dirname(path);
     const createdParent = await this.#prepareDirectory(this.#options.runtimeHome, parent);
@@ -2240,7 +2240,7 @@ export class ProductSqliteStore implements ProductCheckpointStore,
       database.exec("PRAGMA trusted_schema = OFF; PRAGMA mmap_size = 0;");
       const journal = asRecord(database.prepare("PRAGMA journal_mode = WAL").get(), "journal mode");
       if (String(journal.journal_mode).toLowerCase() !== "wal") {
-        throw new Error("product SQLite persistence could not enable WAL journal mode");
+        throw new Error("product mutation store could not enable WAL journal mode");
       }
       database.exec("PRAGMA synchronous = FULL; PRAGMA foreign_keys = ON;");
       const pageSize = rowInteger(
@@ -2312,7 +2312,7 @@ export class ProductSqliteStore implements ProductCheckpointStore,
     const version = asRecord(database.prepare("PRAGMA user_version").get(), "user version");
     if (application.application_id !== PRODUCT_PERSISTENCE_APPLICATION_ID
       || version.user_version !== PRODUCT_PERSISTENCE_SCHEMA_VERSION) {
-      throw new Error("product SQLite persistence schema identity is incompatible; reset the selected unreleased DSH development Session before opening it with this Runtime");
+      throw new Error("product mutation store schema identity is incompatible with this Runtime");
     }
     const schemaRows = (database.prepare(
       "SELECT name, sql FROM sqlite_schema WHERE sql IS NOT NULL AND name NOT LIKE 'sqlite_%' ORDER BY name",
@@ -2325,13 +2325,13 @@ export class ProductSqliteStore implements ProductCheckpointStore,
     });
     if (JSON.stringify(schemaRows) !== JSON.stringify(EXPECTED_SCHEMA_ROWS)
       || JSON.stringify(schemaRows.map(({ name }) => name)) !== JSON.stringify(PRODUCT_PERSISTENCE_TABLES)) {
-      throw new Error("product SQLite persistence table authority differs from schema v10");
+      throw new Error("product mutation store table authority differs from coordination schema v1");
     }
     for (const [table, expected] of Object.entries(EXPECTED_COLUMNS)) {
       const columns = (database.prepare(`PRAGMA table_info(${JSON.stringify(table)})`).all() as unknown[])
         .map((row) => rowString(asRecord(row, `${table} column`), "name", `${table} column`));
       if (JSON.stringify(columns) !== JSON.stringify(expected)) {
-        throw new Error(`product SQLite persistence ${table} columns differ from schema v10`);
+        throw new Error(`product mutation store ${table} columns differ from coordination schema v1`);
       }
     }
     const meta = asRecord(database.prepare(
@@ -2340,7 +2340,7 @@ export class ProductSqliteStore implements ProductCheckpointStore,
     const storeId = rowString(meta, "store_id", "store metadata");
     if (storeId.length === 0 || meta.schema_version !== PRODUCT_PERSISTENCE_SCHEMA_VERSION
       || meta.persistence_format !== PRODUCT_PERSISTENCE_FORMAT) {
-      throw new Error("product SQLite persistence store metadata is incompatible");
+      throw new Error("product mutation store store metadata is incompatible");
     }
     this.#storeId = storeId;
     const pragmas = {
@@ -2352,95 +2352,41 @@ export class ProductSqliteStore implements ProductCheckpointStore,
     };
     if (pragmas.foreignKeys !== 1 || pragmas.journal !== "wal" || pragmas.mmap !== 0
       || pragmas.synchronous !== 2 || pragmas.trusted !== 0) {
-      throw new Error("product SQLite persistence durability pragmas differ from the selected platform plan");
+      throw new Error("product mutation store durability pragmas differ from the selected platform plan");
     }
   }
 
-  #appendBatch(meta: SessionHeader, events: readonly SessionEvent[], isMaterialized: boolean, inheritedEventCount: SessionLogOffset): void {
-    materializeProductSessionHeader(meta, inheritedEventCount);
-    validateProductStoredEvents(meta, [...events]);
-    SessionLogOffset(inheritedEventCount);
-    if (!meta.isSeeded && inheritedEventCount !== 0) throw new Error("unseeded Session has inherited events");
-    if (events.length === 0 && isMaterialized) return;
+  async #readActiveSession(id: SessionId, validateSchema = true): Promise<ActiveSessionRow | undefined> {
+    const row = this.#readLocator(id, validateSchema, true);
+    if (row === undefined) return undefined;
+    const nativeSnapshot = await (await this.nativeLogs.backend(row.activeGenerationId)).stat(id);
+    if (nativeSnapshot === undefined) return undefined;
+    const observationKey = `${id}:${row.activeGenerationId}`;
+    const previous = this.#nativeObservations.get(observationKey);
+    if (previous?.revision === String(nativeSnapshot.revision) && previous.locatorRevision === row.sessionRevision) return row;
+    const native = await this.nativeLogs.inspect(row.activeGenerationId, id);
+    if (native === undefined) return undefined;
+    if (snapshotCanonicalJson(native.meta, "native Session header") !== row.headerJson
+      || native.inheritedEventCount !== row.inheritedEventCount) throw new Error("native generation metadata differs from its product locator");
+    const headHash = this.#eventHead(native.events);
+    if (native.events.length < row.eventCount) throw new Error("native Session lost a previously durable prefix");
+    if (this.#eventHead(native.events.slice(0, row.eventCount)) !== row.headHash) throw new Error("native Session changed a previously durable prefix");
+    const changed = native.events.length !== row.eventCount || headHash !== row.headHash;
     const database = this.#requireDatabase();
-    this.#assertSchema();
     database.exec("BEGIN IMMEDIATE");
     try {
-      let row = this.#readActiveSession(meta.id, false);
-      if (!isMaterialized) {
-        if (row !== undefined) throw new Error(`session ${meta.id} already has a materialized storage generation`);
-        const sessionCount = rowInteger(
-          asRecord(database.prepare("SELECT count(*) AS count FROM sessions").get(), "Session count"),
-          "count",
-          "Session count",
-        );
-        if (sessionCount >= PRODUCT_PERSISTENCE_LIMITS.maxSessions) {
-          throw new Error("product SQLite persistence reached the Session-count bound");
-        }
-        const generationId = randomUUID();
-        const headerJson = snapshotCanonicalJson(
-          meta,
-          `session ${meta.id} header`,
-          PRODUCT_PERSISTENCE_LIMITS.maxHeaderBytes,
-        );
-        const createdAt = Date.now();
-        database.prepare(
-          "INSERT INTO sessions(id, active_generation_id, state, revision, event_count, head_hash, created_at) VALUES (?, ?, 'active', 0, 0, ?, ?)",
-        ).run(meta.id, generationId, EMPTY_HEAD_HASH, createdAt);
-        database.prepare(
-          "INSERT INTO session_generations(session_id, generation_id, header_json, origin, state, revision, event_count, head_hash, created_at, inherited_event_count) VALUES (?, ?, ?, 'create', 'active', 0, 0, ?, ?, ?)",
-        ).run(meta.id, generationId, headerJson, EMPTY_HEAD_HASH, createdAt, inheritedEventCount);
-        row = this.#readActiveSession(meta.id, false, true);
-      } else if (row === undefined) {
-        throw new Error(`session ${meta.id} has no active storage generation`);
-      }
-      if (row === undefined) throw new Error(`session ${meta.id} materialization failed`);
-      if (row.eventCount > PRODUCT_PERSISTENCE_LIMITS.maxSessionEvents - events.length) {
-        throw new Error(`session ${meta.id} exceeds the durable event-count bound`);
-      }
-      const headerJson = snapshotCanonicalJson(
-        meta,
-        `session ${meta.id} header`,
-        PRODUCT_PERSISTENCE_LIMITS.maxHeaderBytes,
-      );
-      if (snapshotCanonicalJson(this.#decodeHeader(row), "stored Session header") !== headerJson
-        || row.inheritedEventCount !== inheritedEventCount) {
-        throw new Error(`session ${meta.id} immutable storage metadata changed`);
-      }
-      let expectedSeq = row.eventCount;
-      let headHash = row.headHash;
-      const insert = database.prepare(
-        "INSERT INTO session_events(session_id, generation_id, seq, type, time, envelope_json, chain_hash) VALUES (?, ?, ?, ?, ?, ?, ?)",
-      );
-      for (const event of events) {
-        if (event.seq !== expectedSeq) {
-          throw new Error(`session ${meta.id} append starts at seq ${event.seq}, stored next seq is ${expectedSeq}`);
-        }
-        const envelopeJson = snapshotCanonicalJson(
-          event,
-          `session ${meta.id} event ${event.seq}`,
-          PRODUCT_PERSISTENCE_LIMITS.maxEventBytes,
-        );
-        headHash = chainHash(headHash, envelopeJson);
-        insert.run(meta.id, row.activeGenerationId, event.seq, event.type, event.time, envelopeJson, headHash);
-        expectedSeq += 1;
-      }
-      if (inheritedEventCount > expectedSeq) throw new Error("Session inherited prefix exceeds its materialized log");
-      this.#materializeStableBoundary(row, events, expectedSeq, headHash);
-      const revision = row.sessionRevision + 1;
-      const sessionUpdate = database.prepare(
-        "UPDATE sessions SET revision = ?, event_count = ?, head_hash = ? WHERE id = ? AND active_generation_id = ? AND revision = ?",
-      ).run(revision, expectedSeq, headHash, meta.id, row.activeGenerationId, row.sessionRevision);
-      const generationUpdate = database.prepare(
-        "UPDATE session_generations SET revision = ?, event_count = ?, head_hash = ? WHERE session_id = ? AND generation_id = ? AND state = 'active' AND revision = ?",
-      ).run(revision, expectedSeq, headHash, meta.id, row.activeGenerationId, row.generationRevision);
-      if (Number(sessionUpdate.changes) !== 1 || Number(generationUpdate.changes) !== 1) {
-        throw new Error(`session ${meta.id} active generation changed during append`);
+      this.#materializeNativeBoundaries(row, native.events);
+      if (changed) {
+        database.prepare("UPDATE sessions SET event_count = ?, head_hash = ?, revision = revision + 1 WHERE id = ? AND active_generation_id = ?")
+          .run(native.events.length, headHash, id, row.activeGenerationId);
+        database.prepare("UPDATE session_generations SET event_count = ?, head_hash = ?, revision = revision + 1 WHERE session_id = ? AND generation_id = ?")
+          .run(native.events.length, headHash, id, row.activeGenerationId);
       }
       database.exec("COMMIT");
-    } catch (error) {
-      this.#rollback(error, "append");
-    }
+    } catch (error) { this.#rollback(error, "native observation metadata"); }
+    const reconciled = this.#readLocator(id, false);
+    if (reconciled !== undefined) this.#nativeObservations.set(observationKey, { revision: String(nativeSnapshot.revision), locatorRevision: reconciled.sessionRevision });
+    return reconciled;
   }
 
   #activeSessionRows(): ActiveSessionRow[] {
@@ -2461,108 +2407,36 @@ export class ProductSqliteStore implements ProductCheckpointStore,
        LIMIT ${String(PRODUCT_PERSISTENCE_LIMITS.maxSessions + 1)}
     `).all() as unknown[];
     if (rows.length > PRODUCT_PERSISTENCE_LIMITS.maxSessions) {
-      throw new Error("product SQLite persistence exceeds the Session-count bound");
+      throw new Error("product mutation store exceeds the Session-count bound");
     }
     return rows.map((row) => this.#decodeActiveSessionRow(row));
   }
 
-  #materializeStableBoundary(
-    row: ActiveSessionRow,
-    events: readonly SessionEvent[],
-    seqExclusive: number,
-    prefixHash: string,
-  ): void {
-    const tailType = events.at(-1)?.type;
-    if (tailType !== "myagents/operation/terminal" && tailType !== "turn/end") return;
-    this.#materializeGenesisBoundary(row);
-    if (tailType === "turn/end") {
-      const productOperations = asRecord(this.#requireDatabase().prepare(`
-        SELECT count(*) AS count FROM session_events
-         WHERE session_id = ? AND generation_id = ? AND type = 'myagents/operation/accepted'
-      `).get(row.sessionId, row.activeGenerationId), "stable boundary operation aggregate");
-      if (rowInteger(productOperations, "count", "stable boundary operation aggregate") !== 0) return;
+  #materializeNativeBoundaries(row: ActiveSessionRow, events: readonly SessionEvent[]): void {
+    const database = this.#requireDatabase();
+    const firstOperation = events.find((event) => event.type === "myagents/operation/accepted" || event.type === "turn/start");
+    const productOperations = events.some((event) => event.type === "myagents/operation/accepted");
+    let head = EMPTY_HEAD_HASH;
+    let turn = 0;
+    const insert = database.prepare(`INSERT INTO stable_boundaries(boundary_id, session_id, generation_id, seq_exclusive, turn, prefix_hash, policy_version, created_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT(session_id, generation_id, seq_exclusive) DO NOTHING`);
+    for (const event of events) {
+      if (event === firstOperation && event.seq > 0) insert.run(`g_${randomUUID()}`, row.sessionId, row.activeGenerationId, event.seq, 1, head, "genesis-boundary-v1", Date.now());
+      head = chainHash(head, canonicalJson(event as unknown as JsonValue));
+      if (event.type === "turn/end") turn = event.data.turn;
+      if ((event.type !== "myagents/operation/terminal" && (event.type !== "turn/end" || productOperations)) || turn < 1) continue;
+      // Fork staging already publishes the canonical boundary through its complete receipt.
+      // Preserve that boundary while materializing earlier inherited turns normally.
+      const existing = database.prepare(`SELECT 1 FROM stable_boundaries WHERE session_id = ? AND generation_id = ?
+        AND turn = ? AND policy_version = 'stable-boundary-v1' LIMIT 1`).get(row.sessionId, row.activeGenerationId, turn);
+      if (existing !== undefined) continue;
+      const unsettled = database.prepare(`SELECT 1 FROM checkpoint_records WHERE session_id = ? AND generation_id = ? AND dsh_turn <= ?
+        AND (state NOT IN ('settled', 'aborted') OR last_event_phase IS NULL OR last_event_phase <> state) LIMIT 1`).get(row.sessionId, row.activeGenerationId, turn);
+      if (unsettled === undefined) insert.run(`b_${randomUUID()}`, row.sessionId, row.activeGenerationId, event.seq + 1, turn, head, "stable-boundary-v1", Date.now());
     }
-    const unsettled = asRecord(this.#requireDatabase().prepare(`
-      SELECT count(*) AS count FROM checkpoint_records
-       WHERE session_id = ? AND generation_id = ?
-         AND (state NOT IN ('settled', 'aborted')
-           OR last_event_phase IS NULL OR last_event_phase <> state)
-    `).get(row.sessionId, row.activeGenerationId), "stable boundary checkpoint aggregate");
-    if (rowInteger(unsettled, "count", "stable boundary checkpoint aggregate") !== 0) return;
-    const boundaryTurnRow = this.#requireDatabase().prepare(`
-      SELECT envelope_json FROM session_events
-       WHERE session_id = ? AND generation_id = ? AND type = 'turn/end' AND seq < ?
-       ORDER BY seq DESC LIMIT 1
-    `).get(row.sessionId, row.activeGenerationId, seqExclusive);
-    if (boundaryTurnRow === undefined) return;
-    const envelopeJson = rowString(
-      asRecord(boundaryTurnRow, "stable boundary turn"),
-      "envelope_json",
-      "stable boundary turn",
-    );
-    if (Buffer.byteLength(envelopeJson, "utf8") > PRODUCT_PERSISTENCE_LIMITS.maxEventBytes) {
-      throw new Error("stable boundary turn envelope exceeds the persisted byte bound");
-    }
-    let envelope: unknown;
-    try {
-      envelope = JSON.parse(envelopeJson);
-    } catch (error) {
-      throw new Error("stable boundary turn envelope is invalid JSON", { cause: error });
-    }
-    assertBoundedPlainJson(envelope, "stable boundary turn envelope");
-    const snapshot = snapshotJsonValue(envelope);
-    const turn = snapshot !== undefined && snapshot !== null && typeof snapshot === "object"
-      && !Array.isArray(snapshot)
-      ? (snapshot as Record<string, unknown>).data
-      : undefined;
-    const turnNumber = turn !== null && typeof turn === "object" && !Array.isArray(turn)
-      ? (turn as Record<string, unknown>).turn
-      : undefined;
-    if (!Number.isSafeInteger(turnNumber) || (turnNumber as number) < 1) {
-      throw new Error("stable boundary turn identity is invalid");
-    }
-    this.#requireDatabase().prepare(`
-      INSERT INTO stable_boundaries(
-        boundary_id, session_id, generation_id, seq_exclusive,
-        turn, prefix_hash, policy_version, created_at
-      ) VALUES (?, ?, ?, ?, ?, ?, 'stable-boundary-v1', ?)
-      ON CONFLICT(session_id, generation_id, seq_exclusive) DO NOTHING
-    `).run(
-      `b_${randomUUID()}`,
-      row.sessionId,
-      row.activeGenerationId,
-      seqExclusive,
-      turnNumber as number,
-      prefixHash,
-      Date.now(),
-    );
   }
 
-  #materializeGenesisBoundary(row: ActiveSessionRow): void {
-    const accepted = this.#requireDatabase().prepare(`
-      SELECT seq FROM session_events
-       WHERE session_id = ? AND generation_id = ?
-         AND type IN ('myagents/operation/accepted', 'turn/start')
-       ORDER BY seq ASC LIMIT 1
-    `).get(row.sessionId, row.activeGenerationId);
-    if (accepted === undefined) return;
-    const sequence = rowInteger(asRecord(accepted, "genesis operation"), "seq", "genesis operation");
-    if (sequence < 1) return;
-    const prefixHash = rowString(asRecord(this.#requireDatabase().prepare(`
-      SELECT chain_hash FROM session_events
-       WHERE session_id = ? AND generation_id = ? AND seq = ?
-    `).get(row.sessionId, row.activeGenerationId, sequence - 1), "genesis prefix"),
-    "chain_hash", "genesis prefix");
-    this.#requireDatabase().prepare(`
-      INSERT INTO stable_boundaries(
-        boundary_id, session_id, generation_id, seq_exclusive,
-        turn, prefix_hash, policy_version, created_at
-      ) VALUES (?, ?, ?, ?, 1, ?, 'genesis-boundary-v1', ?)
-      ON CONFLICT(session_id, generation_id, seq_exclusive) DO NOTHING
-    `).run(`g_${randomUUID()}`, row.sessionId, row.activeGenerationId, sequence, prefixHash, Date.now());
-  }
-
-  #latestStableBoundaryId(row: ActiveSessionRow): string | undefined {
+  async #latestStableBoundaryId(row: ActiveSessionRow): Promise<string | undefined> {
     const value = this.#requireDatabase().prepare(`
       SELECT boundary_id, prefix_hash, seq_exclusive FROM stable_boundaries
        WHERE session_id = ? AND generation_id = ? AND seq_exclusive <= ?
@@ -2577,13 +2451,7 @@ export class ProductSqliteStore implements ProductCheckpointStore,
     if (!boundaryId.startsWith("b_") || boundaryId.length > 256 || !HASH_PATTERN.test(prefixHash)) {
       throw new Error("stable boundary identity is invalid");
     }
-    const storedPrefixHash = seqExclusive === 0
-      ? EMPTY_HEAD_HASH
-      : rowString(asRecord(this.#requireDatabase().prepare(`
-          SELECT chain_hash FROM session_events
-           WHERE session_id = ? AND generation_id = ? AND seq = ?
-        `).get(row.sessionId, row.activeGenerationId, seqExclusive - 1), "stable boundary prefix"),
-        "chain_hash", "stable boundary prefix");
+    const storedPrefixHash = await this.#prefixHashAt(row, seqExclusive);
     if (storedPrefixHash !== prefixHash) throw new Error("stable boundary prefix hash changed");
     return boundaryId;
   }
@@ -2611,15 +2479,17 @@ export class ProductSqliteStore implements ProductCheckpointStore,
     return decoded;
   }
 
-  #prefixHashAt(row: ActiveSessionRow, seqExclusive: number): string {
-    if (!Number.isSafeInteger(seqExclusive) || seqExclusive < 1 || seqExclusive > row.eventCount) {
+  async #prefixHashAt(row: ActiveSessionRow, seqExclusive: number): Promise<string> {
+    if (!Number.isSafeInteger(seqExclusive) || seqExclusive < 0 || seqExclusive > row.eventCount) {
       throw new Error("stable boundary sequence is outside the active generation");
     }
-    return rowString(asRecord(this.#requireDatabase().prepare(`
-      SELECT chain_hash FROM session_events
-       WHERE session_id = ? AND generation_id = ? AND seq = ?
-    `).get(row.sessionId, row.activeGenerationId, seqExclusive - 1), "stable boundary prefix"),
-    "chain_hash", "stable boundary prefix");
+    return this.#eventHead((await this.#readAndValidateEvents(row)).slice(0, seqExclusive));
+  }
+
+  #eventHead(events: readonly SessionEvent[]): string {
+    let head = EMPTY_HEAD_HASH;
+    for (const event of events) head = chainHash(head, canonicalJson(event as unknown as JsonValue));
+    return head;
   }
 
   #readGeneration(sessionId: string, generationId: string): StoredGenerationRow | undefined {
@@ -2781,24 +2651,39 @@ export class ProductSqliteStore implements ProductCheckpointStore,
     }));
   }
 
+  /** Immutable checkpoints remain in their creation generation. Published rewind
+   * journals carry the exact retained turn cut; use that existing lineage instead
+   * of copying records or losing earlier recovery when the active locator changes. */
+  #retainedSettledCheckpoints(sessionId: string, generationId: string): ProductCheckpointRecord[] {
+    const rows = this.#requireDatabase().prepare(`
+      WITH RECURSIVE retained(generation_id, through_turn) AS (
+        SELECT ?, ?
+        UNION
+        SELECT m.source_generation_id,
+               min(r.through_turn, CASE WHEN b.policy_version = 'genesis-boundary-v1' THEN 0 ELSE b.turn END)
+          FROM retained AS r
+          JOIN mutation_journals AS m ON m.target_generation_id = r.generation_id
+           AND m.session_id = ? AND m.phase = 'committed'
+          JOIN stable_boundaries AS b ON b.boundary_id = m.boundary_id
+      )
+      SELECT DISTINCT c.* FROM checkpoint_records AS c
+        JOIN retained AS r ON r.generation_id = c.generation_id AND c.dsh_turn <= r.through_turn
+       WHERE c.session_id = ? AND c.state = 'settled' AND c.last_event_phase = 'settled'
+       ORDER BY c.path, c.dsh_turn, c.prepared_at, c.checkpoint_id
+    `).all(generationId, Number.MAX_SAFE_INTEGER, sessionId, sessionId) as unknown[];
+    return rows.map((row) => this.#decodeCheckpoint(row));
+  }
+
   #insertRewindFilePlans(
     active: ActiveSessionRow,
     boundary: StableBoundaryRow,
     token: string,
   ): void {
-    const rows = this.#requireDatabase().prepare(`
-      SELECT * FROM checkpoint_records
-       WHERE session_id = ? AND generation_id = ? AND dsh_turn > ?
-         AND state = 'settled' AND last_event_phase = 'settled'
-       ORDER BY path, dsh_turn, prepared_at, checkpoint_id
-    `).all(
-      active.sessionId,
-      active.activeGenerationId,
-      boundary.policyVersion === "genesis-boundary-v1" ? 0 : boundary.turn,
-    ) as unknown[];
+    const turn = boundary.policyVersion === "genesis-boundary-v1" ? 0 : boundary.turn;
+    const records = this.#retainedSettledCheckpoints(active.sessionId, active.activeGenerationId)
+      .filter((record) => record.dshTurn > turn);
     const byPath = new Map<string, ProductCheckpointRecord[]>();
-    for (const value of rows) {
-      const record = this.#decodeCheckpoint(value);
+    for (const record of records) {
       if (record.actualSha256 === undefined) {
         throw new Error("settled rewind checkpoint lacks actual file identity");
       }
@@ -3078,6 +2963,12 @@ export class ProductSqliteStore implements ProductCheckpointStore,
     return record;
   }
 
+  async #purgeReceiptGenerations(record: ProductDeleteRecord): Promise<void> {
+    const generations = record.receipt?.nativeGenerationIds;
+    if (!Array.isArray(generations) || generations.some((id: unknown) => typeof id !== "string")) throw new Error("purge receipt lacks native generation identities");
+    for (const generationId of generations as string[]) await this.nativeLogs.purge(generationId);
+  }
+
   #deleteReceipt(record: ProductDeleteRecord): Readonly<{
     deletedGenerationId: string;
     durableSequence: number;
@@ -3209,7 +3100,7 @@ export class ProductSqliteStore implements ProductCheckpointStore,
     return record;
   }
 
-  async #forkTargetStore(targetRuntimeHome: string): Promise<ProductSqliteStore> {
+  async #forkTargetStore(targetRuntimeHome: string): Promise<ProductMutationStore> {
     await this.#validateDirectory(targetRuntimeHome, "fork target Runtime home");
     const canonicalSource = await realpath(this.#options.runtimeHome);
     const sourceToTarget = relative(canonicalSource, targetRuntimeHome);
@@ -3227,7 +3118,7 @@ export class ProductSqliteStore implements ProductCheckpointStore,
     let store = this.#forkTargetStores.get(targetRuntimeHome);
     if (store === undefined) {
       const databasePath = resolve(targetRuntimeHome, suffix);
-      store = new ProductSqliteStore({
+      store = new ProductMutationStore({
         durability: Object.freeze({ ...this.#options.durability, databasePath }),
         runtimeHome: targetRuntimeHome,
         ownership: this.#options.ownership,
@@ -3251,7 +3142,7 @@ export class ProductSqliteStore implements ProductCheckpointStore,
     boundary: StableBoundaryRow,
     source: ActiveSessionRow,
   ): Promise<void> {
-    const sourceEvents = this.#readAndValidateEvents(source).slice(0, boundary.seqExclusive);
+    const sourceEvents = (await this.#readAndValidateEvents(source)).slice(0, boundary.seqExclusive);
     if (sourceEvents.length !== boundary.seqExclusive
       || sourceEvents.at(-1)?.seq !== boundary.seqExclusive - 1) {
       throw new Error("fork source prefix is not exact and contiguous");
@@ -3263,7 +3154,8 @@ export class ProductSqliteStore implements ProductCheckpointStore,
       parentSession: source.sessionId as SessionId,
       isSeeded: true,
     }) as SessionHeader;
-    const receiptEvent = createProductForkReceiptEvent(boundary.seqExclusive, record.createdAt, {
+    const seed = buildForkSeed(sourceEvents, SessionSeq(boundary.seqExclusive - 1));
+    const receiptEvent = createProductForkReceiptEvent(seed.length, record.createdAt, {
       clientMutationId: record.clientMutationId,
       sourceGenerationId: record.sourceGenerationId,
       sourceRuntimeSessionId: record.runtimeSessionId,
@@ -3274,40 +3166,32 @@ export class ProductSqliteStore implements ProductCheckpointStore,
       targetWorkspaceIdentity: record.targetWorkspaceIdentity,
       token: record.token,
     });
-    const events = Object.freeze([...sourceEvents, receiptEvent]);
+    const events = Object.freeze([...seed, receiptEvent]);
     if (events.length > PRODUCT_PERSISTENCE_LIMITS.maxSessionEvents) {
       throw new Error("fork target exceeds the durable event-count bound");
     }
     let headHash = EMPTY_HEAD_HASH;
     for (const event of events) {
-      headHash = chainHash(headHash, snapshotCanonicalJson(
-        event,
-        "fork target event",
-        PRODUCT_PERSISTENCE_LIMITS.maxEventBytes,
-      ));
+      headHash = chainHash(headHash, canonicalJson(event as unknown as JsonValue));
     }
-    const checkpointRows = this.#requireDatabase().prepare(`
-      SELECT * FROM checkpoint_records
-       WHERE session_id = ? AND generation_id = ? AND dsh_turn <= ?
-         AND state = 'settled' AND last_event_phase = 'settled'
-       ORDER BY prepared_at, checkpoint_id
-    `).all(source.sessionId, source.activeGenerationId, boundary.turn) as unknown[];
-    const checkpoints = checkpointRows.map((value): ForkCheckpointCopy => {
-      const checkpoint = this.#decodeCheckpoint(value);
-      let priorBytes: Uint8Array | undefined;
-      if (checkpoint.priorSha256 !== null) {
-        const blob = asRecord(this.#requireDatabase().prepare(
-          "SELECT size, bytes FROM checkpoint_blobs WHERE sha256 = ?",
-        ).get(checkpoint.priorSha256), "fork checkpoint blob");
-        if (!(blob.bytes instanceof Uint8Array)
-          || blob.size !== blob.bytes.byteLength
-          || createHash("sha256").update(blob.bytes).digest("hex") !== checkpoint.priorSha256) {
-          throw new Error("fork checkpoint blob identity is invalid");
+    const checkpoints = this.#retainedSettledCheckpoints(source.sessionId, source.activeGenerationId)
+      .filter((record) => record.dshTurn <= boundary.turn)
+      .sort((left, right) => left.preparedAt - right.preparedAt || compareCodePoints(left.checkpointId, right.checkpointId))
+      .map((checkpoint): ForkCheckpointCopy => {
+        let priorBytes: Uint8Array | undefined;
+        if (checkpoint.priorSha256 !== null) {
+          const blob = asRecord(this.#requireDatabase().prepare(
+            "SELECT size, bytes FROM checkpoint_blobs WHERE sha256 = ?",
+          ).get(checkpoint.priorSha256), "fork checkpoint blob");
+          if (!(blob.bytes instanceof Uint8Array)
+            || blob.size !== blob.bytes.byteLength
+            || createHash("sha256").update(blob.bytes).digest("hex") !== checkpoint.priorSha256) {
+            throw new Error("fork checkpoint blob identity is invalid");
+          }
+          priorBytes = Uint8Array.from(blob.bytes);
         }
-        priorBytes = Uint8Array.from(blob.bytes);
-      }
-      return Object.freeze({ ...(priorBytes === undefined ? {} : { priorBytes }), record: checkpoint });
-    });
+        return Object.freeze({ ...(priorBytes === undefined ? {} : { priorBytes }), record: checkpoint });
+      });
     const targetStore = await this.#forkTargetStore(record.targetRuntimeHome);
     await targetStore.#stageForkTarget(Object.freeze({
       inheritedEventCount: boundary.seqExclusive,
@@ -3322,7 +3206,7 @@ export class ProductSqliteStore implements ProductCheckpointStore,
   }
 
   async #stageForkTarget(stage: ForkTargetStageInput): Promise<void> {
-    await this.#mutationLock(stage.sessionId as SessionId, [stage.sessionId as SessionId], undefined, () => {
+    await this.#mutationLock(stage.sessionId as SessionId, [stage.sessionId as SessionId], undefined, async () => {
       this.#assertSchema();
       const database = this.#requireDatabase();
       const existing = database.prepare(`
@@ -3351,6 +3235,7 @@ export class ProductSqliteStore implements ProductCheckpointStore,
         if (sessionCount !== 1) {
           throw new Error("fork target Runtime home already owns another Session");
         }
+        await this.nativeLogs.seed(stage.generationId, stage.header, SessionLogOffset(stage.inheritedEventCount), stage.events);
         return;
       }
       const sessionCount = rowInteger(asRecord(database.prepare(
@@ -3359,6 +3244,7 @@ export class ProductSqliteStore implements ProductCheckpointStore,
       if (sessionCount !== 0) {
         throw new Error("fork target Runtime home already owns another Session");
       }
+      await this.nativeLogs.seed(stage.generationId, stage.header, SessionLogOffset(stage.inheritedEventCount), stage.events);
       database.exec("BEGIN IMMEDIATE");
       try {
         const headerJson = snapshotCanonicalJson(
@@ -3376,27 +3262,8 @@ export class ProductSqliteStore implements ProductCheckpointStore,
             revision, event_count, head_hash, created_at, inherited_event_count
           ) VALUES (?, ?, ?, 'fork', 'staging', 0, ?, ?, ?, ?)
         `).run(stage.sessionId, stage.generationId, headerJson, stage.events.length, stage.headHash, stage.createdAt, stage.inheritedEventCount);
-        const insertEvent = database.prepare(`
-          INSERT INTO session_events(session_id, generation_id, seq, type, time, envelope_json, chain_hash)
-          VALUES (?, ?, ?, ?, ?, ?, ?)
-        `);
-        let previous = EMPTY_HEAD_HASH;
-        for (const event of stage.events) {
-          const envelope = snapshotCanonicalJson(
-            event,
-            "fork target event",
-            PRODUCT_PERSISTENCE_LIMITS.maxEventBytes,
-          );
-          previous = chainHash(previous, envelope);
-          insertEvent.run(stage.sessionId, stage.generationId, event.seq, event.type, event.time, envelope, previous);
-        }
-        if (previous !== stage.headHash) throw new Error("fork target event head differs from its plan");
-        const boundarySeq = stage.events.length - 1;
-        const prefixHash = boundarySeq === 0 ? EMPTY_HEAD_HASH : rowString(asRecord(database.prepare(`
-          SELECT chain_hash FROM session_events
-           WHERE session_id = ? AND generation_id = ? AND seq = ?
-        `).get(stage.sessionId, stage.generationId, boundarySeq - 1), "fork target prefix"),
-        "chain_hash", "fork target prefix");
+        const boundarySeq = stage.events.length;
+        const prefixHash = this.#eventHead(stage.events.slice(0, boundarySeq));
         database.prepare(`
           INSERT INTO stable_boundaries(
             boundary_id, session_id, generation_id, seq_exclusive,
@@ -3496,7 +3363,7 @@ export class ProductSqliteStore implements ProductCheckpointStore,
   }
 
   #abortForkTarget(record: ProductForkRecord, signal?: AbortSignal): Promise<void> {
-    return this.#mutationLock(record.targetRuntimeSessionId as SessionId, [record.targetRuntimeSessionId as SessionId], signal, () => {
+    return this.#mutationLock(record.targetRuntimeSessionId as SessionId, [record.targetRuntimeSessionId as SessionId], signal, async () => {
       signal?.throwIfAborted();
       const database = this.#requireDatabase();
       const raw = database.prepare(`
@@ -3505,7 +3372,7 @@ export class ProductSqliteStore implements ProductCheckpointStore,
             ON g.session_id = s.id AND g.generation_id = s.active_generation_id
          WHERE s.id = ?
       `).get(record.targetRuntimeSessionId);
-      if (raw === undefined) return;
+      if (raw === undefined) { await this.nativeLogs.purge(record.targetGenerationId); return; }
       const row = asRecord(raw, "fork target abort");
       if (row.active_generation_id !== record.targetGenerationId
         || row.session_state !== "tombstoned" || row.generation_state !== "staging") {
@@ -3537,6 +3404,7 @@ export class ProductSqliteStore implements ProductCheckpointStore,
       } catch (error) {
         this.#rollback(error, "fork target abort");
       }
+      await this.nativeLogs.purge(record.targetGenerationId);
     });
   }
 
@@ -3556,7 +3424,7 @@ export class ProductSqliteStore implements ProductCheckpointStore,
     });
   }
 
-  #readActiveSession(id: SessionId, validateSchema = true, allowIncompleteSeed = false): ActiveSessionRow | undefined {
+  #readLocator(id: SessionId, validateSchema = true, allowIncompleteSeed = false): ActiveSessionRow | undefined {
     if (validateSchema) this.#assertSchema();
     const row = this.#requireDatabase().prepare(`
       SELECT s.id AS session_id,
@@ -3596,135 +3464,19 @@ export class ProductSqliteStore implements ProductCheckpointStore,
     return decoded;
   }
 
-  #readAndValidateEvents(row: ActiveSessionRow): SessionEvent[] {
-    const values = this.#requireDatabase().prepare(`
-      SELECT seq, type, time, envelope_json, chain_hash
-        FROM session_events
-       WHERE session_id = ? AND generation_id = ?
-       ORDER BY seq
-    `).all(row.sessionId, row.activeGenerationId) as unknown[];
-    if (values.length !== row.eventCount) {
-      throw new Error(`session ${row.sessionId} event count differs from active generation metadata`);
+  async #readAndValidateEvents(row: ActiveSessionRow): Promise<SessionEvent[]> {
+    const native = await this.nativeLogs.inspect(row.activeGenerationId, row.sessionId as SessionId);
+    if (native === undefined) throw new Error("native Session JSONL is unavailable");
+    if (snapshotCanonicalJson(native.meta, "native Session header") !== row.headerJson
+      || native.inheritedEventCount !== row.inheritedEventCount
+      || native.events.length !== row.eventCount || this.#eventHead(native.events) !== row.headHash) {
+      throw new Error("native Session changed during product observation");
     }
-    let previousHash = EMPTY_HEAD_HASH;
-    const events: SessionEvent[] = [];
-    for (const [index, value] of values.entries()) {
-      const stored = this.#decodeEventRow(value);
-      if (stored.seq !== index) throw new Error(`session ${row.sessionId} stored event sequence is not contiguous`);
-      const decoded = this.#validateEventEnvelope(row.sessionId, stored, previousHash);
-      previousHash = decoded.chainHash;
-      events.push(decoded.event);
-    }
-    if (previousHash !== row.headHash) {
-      throw new Error(`session ${row.sessionId} active generation head hash is invalid`);
-    }
-    if (row.inheritedEventCount > events.length) throw new Error("stored Session inherited prefix exceeds its log");
-    return validateProductStoredEvents(this.#decodeHeader(row), events);
+    return [...native.events];
   }
 
-  #readAndValidateEventsFrom(row: ActiveSessionRow, fromSeq: number): SessionEvent[] {
-    const database = this.#requireDatabase();
-    const prefixLength = Math.min(fromSeq, row.eventCount);
-    const aggregate = asRecord(database.prepare(`
-      SELECT count(*) AS count, min(seq) AS min_seq, max(seq) AS max_seq
-        FROM session_events
-       WHERE session_id = ? AND generation_id = ? AND seq < ?
-    `).get(row.sessionId, row.activeGenerationId, prefixLength), "Session prefix aggregate");
-    const count = rowInteger(aggregate, "count", "Session prefix aggregate");
-    const prefixBoundsMatch = prefixLength === 0
-      ? aggregate.min_seq === null && aggregate.max_seq === null
-      : aggregate.min_seq === 0 && aggregate.max_seq === prefixLength - 1;
-    if (count !== prefixLength || !prefixBoundsMatch) {
-      throw new Error(`session ${row.sessionId} stored prefix below seq ${fromSeq} is not contiguous`);
-    }
-
-    let previousHash = EMPTY_HEAD_HASH;
-    if (prefixLength > 0) {
-      const predecessor = database.prepare(`
-        SELECT seq, type, time, envelope_json, chain_hash
-          FROM session_events
-         WHERE session_id = ? AND generation_id = ? AND seq = ?
-      `).get(row.sessionId, row.activeGenerationId, prefixLength - 1);
-      if (predecessor === undefined) {
-        throw new Error(`session ${row.sessionId} suffix lacks its exact predecessor anchor`);
-      }
-      const stored = this.#decodeEventRow(predecessor);
-      if (stored.seq !== prefixLength - 1) {
-        throw new Error(`session ${row.sessionId} suffix predecessor identity is invalid`);
-      }
-      previousHash = stored.chainHash;
-    }
-
-    const values = database.prepare(`
-      SELECT seq, type, time, envelope_json, chain_hash
-        FROM session_events
-       WHERE session_id = ? AND generation_id = ? AND seq >= ?
-       ORDER BY seq
-    `).all(row.sessionId, row.activeGenerationId, prefixLength) as unknown[];
-    const expectedLength = row.eventCount - prefixLength;
-    if (values.length !== expectedLength) {
-      throw new Error(`session ${row.sessionId} suffix length differs from active generation metadata`);
-    }
-    const events: SessionEvent[] = [];
-    for (const [offset, value] of values.entries()) {
-      const stored = this.#decodeEventRow(value);
-      if (stored.seq !== prefixLength + offset) {
-        throw new Error(`session ${row.sessionId} stored suffix sequence is not contiguous`);
-      }
-      const decoded = this.#validateEventEnvelope(row.sessionId, stored, previousHash);
-      previousHash = decoded.chainHash;
-      events.push(decoded.event);
-    }
-    if (previousHash !== row.headHash) {
-      throw new Error(`session ${row.sessionId} active generation head hash is invalid`);
-    }
-    if (row.inheritedEventCount > row.eventCount) throw new Error("stored Session inherited prefix exceeds its log");
-    return validateProductStoredEvents(this.#decodeHeader(row), events);
-  }
-
-  #validateEventEnvelope(
-    sessionId: string,
-    stored: EventRow,
-    previousHash: string,
-  ): Readonly<{ chainHash: string; event: SessionEvent }> {
-    if (Buffer.byteLength(stored.envelopeJson, "utf8") > PRODUCT_PERSISTENCE_LIMITS.maxEventBytes) {
-      throw new Error(`session ${sessionId} event ${stored.seq} exceeds the persisted byte bound`);
-    }
-    let parsed: unknown;
-    try {
-      parsed = JSON.parse(stored.envelopeJson);
-    } catch (error) {
-      throw new Error(`session ${sessionId} event ${stored.seq} contains invalid JSON`, { cause: error });
-    }
-    assertBoundedPlainJson(parsed, `session ${sessionId} event ${stored.seq}`);
-    const snapshot = snapshotJsonValue(parsed);
-    if (snapshot === undefined || canonicalJson(snapshot as JsonValue) !== stored.envelopeJson) {
-      throw new Error(`session ${sessionId} event ${stored.seq} is not canonical lossless JSON`);
-    }
-    const event = snapshot as unknown as SessionEvent;
-    if (event.seq !== stored.seq || event.type !== stored.type || event.time !== stored.time) {
-      throw new Error(`session ${sessionId} event ${stored.seq} row disagrees with its envelope`);
-    }
-    const expectedHash = chainHash(previousHash, stored.envelopeJson);
-    if (stored.chainHash !== expectedHash) {
-      throw new Error(`session ${sessionId} event ${stored.seq} chain hash is invalid`);
-    }
-    return Object.freeze({ chainHash: expectedHash, event });
-  }
-
-  #decodeEventRow(value: unknown): EventRow {
-    const row = asRecord(value, "Session event");
-    const decoded = {
-      chainHash: rowString(row, "chain_hash", "Session event"),
-      envelopeJson: rowString(row, "envelope_json", "Session event"),
-      seq: rowInteger(row, "seq", "Session event"),
-      time: rowInteger(row, "time", "Session event"),
-      type: rowString(row, "type", "Session event"),
-    };
-    if (!HASH_PATTERN.test(decoded.chainHash) || decoded.type.length === 0) {
-      throw new Error("Session event row identity is invalid");
-    }
-    return decoded;
+  async #readAndValidateEventsFrom(row: ActiveSessionRow, fromSeq: number): Promise<SessionEvent[]> {
+    return (await this.#readAndValidateEvents(row)).slice(fromSeq);
   }
 
   #decodeHeader(row: ActiveSessionRow): SessionHeader {
@@ -3999,7 +3751,7 @@ export class ProductSqliteStore implements ProductCheckpointStore,
   #requireDatabase(): DatabaseSync {
     const database = this.#database;
     if (database === undefined || this.#closePromise !== undefined) {
-      throw new Error("product SQLite persistence is not open");
+      throw new Error("product mutation store is not open");
     }
     this.#validateStorageIdentitySync();
     return database;
@@ -4012,7 +3764,7 @@ export class ProductSqliteStore implements ProductCheckpointStore,
       aggregateFailure(
         error,
         rollbackError,
-        `product SQLite persistence ${operation} failed and rollback also failed`,
+        `product mutation store ${operation} failed and rollback also failed`,
       );
     }
     throw error;

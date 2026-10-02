@@ -2,7 +2,7 @@
 type: technical-architecture
 status: implemented
 module: mutations-and-checkpoints
-updated: 2026-09-02
+updated: 2026-10-02
 decision: ../../adr/0004-shared-backend-lock-and-immutable-rewind-generation.md
 ---
 
@@ -28,10 +28,10 @@ source.
 | --- | --- |
 | Host | user confirmation/boundary choice, one durable external mutation journal per source Session, fork target catalog/control and catalog removal only after Runtime success |
 | ProductSession Runtime | RPC admission, root lifecycle/quiescence, generation replacement/resume and mutation orchestration |
-| `persistence-product` | SQLite journals/tokens, boundaries, generations, tombstones, checkpoint rows/content-addressed preimage blobs and rewind file plans |
+| `persistence-product` | SQLite journals/tokens, boundaries, generation locators, tombstones, checkpoint rows/content-addressed preimage blobs and rewind file plans |
 | `checkpoint` | checkpoint state machine, DSH event correlation and restore coordination |
 | `tools-fs` | canonical path/precondition checks, file capture and temporary-file-plus-rename restore I/O |
-| DSH | sole Session event log, derived conversation and Agent lifecycle |
+| DSH | official JSONL event log and physical handles, native fork seed, derived conversation and Agent lifecycle |
 
 ## 4. Operation-specific transaction model
 
@@ -58,9 +58,31 @@ new active generation containing the stable DSH prefix plus one durable
 `myagents/session/rewind` receipt; the old generation becomes archived. Direct children and
 descendants born after the boundary are tombstoned/archived and can be restored by rollback.
 
+When a selected prefix ends inside inherited history, it excludes the generation's inherited
+end-seed marker. Rewind uses official `buildForkSeed` to complete that native seed before appending
+the Product receipt; the inherited cut and selected stable-prefix postcondition remain exact.
+Prefixes already containing their native marker are retained unchanged. Cold JSONL decoding is
+part of the regression, so a hash-valid but structurally invalid candidate cannot pass acceptance.
+
+Official JSONL create/append/flush completes the candidate before the locator transaction.
+The journal's timestamp makes candidate bytes deterministic across retries. A crash before locator
+publication leaves the source authoritative; retry validates the candidate and completes the same
+switch. A complete candidate is reused. A partial or corrupt unpublished candidate may be removed
+and reseeded through native persistence while holding the mutation lease; an active generation is
+never eligible for this recovery. Rollback selects the retained source log. No Session event bytes
+are copied into SQLite.
+
 File plans use only settled checkpoints after the boundary and require strict hash continuity for
 each path. Manual/untracked gaps or external drift produce conflict. Each file checkpoint is capped
 at 8 MiB. Coverage still excludes shell, child and external changes.
+
+Checkpoint records retain their immutable creation generation. The existing committed rewind
+journals and selected boundary cuts define which earlier records remain in the active history:
+each ancestor contributes only turns through the intersection of retained cuts. File plans,
+directory plans and subsequent fork copies share this selection. Discarded future records never
+re-enter history. No duplicate checkpoint rows, lineage cache or new persistence schema is needed.
+Cold repeated-rewind coverage restores an earlier file and its created directories, copies exactly
+the retained checkpoint into a fork, and verifies rollback after the next generation publication.
 
 File publication and SQLite phase updates are separate durable operations. Replay now captures each
 file and accepts only the sealed source or target hash (including recorded absence). Commit finishes
@@ -79,7 +101,12 @@ source must use the same Workspace identity; target `runtimeHome` must not overl
 its Store may not already contain another Session. The target receives the stable source prefix,
 one `myagents/session/fork` receipt, and only settled checkpoint rows/blobs inside the boundary. It
 does not copy the child Session graph or Workspace files, and both Sessions still point at the same
-Workspace. The source Agent is not retired; commit waits only for root idle.
+Workspace. The source Agent is not retired; commit waits only for root idle. Native `buildForkSeed` appends the inherited marker and any required native closers before the product receipt. The exact inherited cut excludes those native suffix facts.
+
+The target's initial stable boundary includes its complete seed and fork receipt, preserving the
+lineage when it is forked again. Cold boundary materialization keeps that canonical boundary for its
+turn and materializes earlier inherited turns normally. Each turn has one stable boundary, so all
+retained history remains available for rewind and fork without duplicate target boundaries.
 
 Fork is a recoverable phased cross-Store commit, not one atomic SQLite transaction: the source
 journal reaches `committing`, target activation is idempotent, then the source journal becomes
@@ -90,8 +117,8 @@ journal reaches `committing`, target activation is idempotent, then the source j
 Delete tombstones the current Runtime Session locator and active generation; "Session graph" here
 means this Session's SQLite relation graph, not native child Session lineage. A committed,
 non-purged delete can roll back. Optional purge removes this Session's
-generations/events/boundaries/checkpoints/source mutation journals and garbage-collects checkpoint
-blobs no longer referenced anywhere in the database; purge is not rollbackable. It does not delete
+native generation directories and product boundaries/checkpoints/source mutation journals and garbage-collects checkpoint
+blobs no longer referenced anywhere in the database; purge is not rollbackable. The durable purge receipt retains the generation ids so native-directory cleanup can repeat after a crash or response loss. It does not delete
 Workspace files, child lineage or the Host catalog. The Host removes its catalog entry only after
 Runtime purge success.
 
@@ -107,8 +134,7 @@ checkpoint service and SQLite tables internally, keyed by the child Session, to 
 and abort/crash cleanup; root rewind queries select the root Session only and child results carry no
 root checkpoint receipt. This does not extend the root file rollback claim.
 
-SQLite schema v9 adds an optional directory plan to checkpoint records. Existing v8 records migrate
-with no directory ownership. Plans contain at most 64 missing parents under an existing canonical
+The current coordination schema stores an optional directory plan in checkpoint records. No old development schema migration runs. Plans contain at most 64 missing parents under an existing canonical
 anchor. Each entry advances through `planned`, `created`, `removing`, `removed` and (on rollback)
 `restoring`, retaining exact directory identities. The immutable checkpoint/DSH event correlation
 continues to own the file operation. A fork copies recorded checkpoint directory facts with its

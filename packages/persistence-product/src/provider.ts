@@ -4,8 +4,10 @@ import {
   SessionAlreadyExistsError,
   SessionAlreadyOwnedError,
   SessionHandleClosedError,
-  SessionPersistence,
+  SessionOwnershipLostError,
+  materializeAppendBatch,
   SessionPersistenceNotFoundError,
+  SessionPersistence,
   type SessionAccess,
   type SessionHandle,
   type SessionPersistenceCreateOptions,
@@ -14,6 +16,7 @@ import {
   type SessionPersistenceStatOptions,
   type SessionPersistenceSnapshot,
 } from "@deepseek-ai/dsh-session-persistence";
+import { randomUUID } from "node:crypto";
 import { posix, win32 } from "node:path";
 import { isProxy } from "node:util/types";
 
@@ -24,17 +27,16 @@ import {
   type SqliteDurabilityPlan,
 } from "@myagents-dsh/product-profile";
 
-import { ProductSessionHandle } from "./session-handle.js";
 import { createProductSessionOwnershipProvider, type ProductSessionOwnershipProvider } from "./session-ownership.js";
-import { materializeProductSessionHeader } from "./storage-contract.js";
+import { validateProductStoredEvents, materializeProductSessionHeader } from "./storage-contract.js";
 import {
   ProductSessionReadProjector,
   type ProductSessionReadRequest,
 } from "./read.js";
 import {
-  ProductSqliteStore,
+  ProductMutationStore,
   type ProductPersistedRecoveryInspection,
-} from "./sqlite-store.js";
+} from "./mutation-store.js";
 import type { MethodResult } from "@myagents-dsh/protocol";
 import type { ProductCheckpointStore } from "@myagents-dsh/checkpoint";
 import type {
@@ -53,12 +55,11 @@ import type {
   ProductRewindStore,
 } from "./rewind.js";
 
-export interface ProductSqliteSessionPersistenceConfig {
+export interface ProductJsonlSessionPersistenceConfig {
   readonly durability: SqliteDurabilityPlan;
   readonly platform: PlatformAdapterContract;
   readonly registerCheckpointStore?: (store: ProductCheckpointStore) => void;
   readonly runtimeHome: string;
-  readonly writeBatchMaxDelayMs?: number;
 }
 
 type JsonObject = Record<string, unknown>;
@@ -90,22 +91,7 @@ const exactOwnDataObject = (
   return record;
 };
 
-const optionalBoundedInteger = (
-  value: unknown,
-  present: boolean,
-  fallback: number,
-  minimum: number,
-  maximum: number,
-  description: string,
-): number => {
-  if (!present) return fallback;
-  if (!Number.isSafeInteger(value) || (value as number) < minimum || (value as number) > maximum) {
-    throw new TypeError(`${description} must be a bounded safe integer`);
-  }
-  return value as number;
-};
-
-export const productSessionDatabasePath = (
+export const productCoordinationDatabasePath = (
   platform: PlatformAdapterContract,
   runtimeHome: string,
 ): string => {
@@ -120,59 +106,59 @@ export const productSessionDatabasePath = (
     throw new TypeError("product persistence Runtime home must already be canonical");
   }
   const path = canonicalPlatform.pathFlavor === "win32"
-    ? win32.join(canonicalHome, "persistence", "sessions-v1.sqlite")
-    : posix.join(canonicalHome, "persistence", "sessions-v1.sqlite");
+    ? win32.join(canonicalHome, "persistence", "coordination.sqlite")
+    : posix.join(canonicalHome, "persistence", "coordination.sqlite");
   return canonicalPlatform.normalizeAbsolutePath(path);
 };
 
-const validateConfig = (value: unknown): Readonly<Required<ProductSqliteSessionPersistenceConfig>> => {
+const validateConfig = (value: unknown): Readonly<Required<ProductJsonlSessionPersistenceConfig>> => {
   const record = exactOwnDataObject(
     value,
     ["durability", "platform", "runtimeHome"],
-    ["registerCheckpointStore", "writeBatchMaxDelayMs"],
-    "product SQLite persistence config",
+    ["registerCheckpointStore"],
+    "product JSONL persistence config",
   );
   const platform = PLATFORM_TARGETS
     .map((target) => selectPlatformAdapter(target))
     .find((candidate) => candidate === record.platform);
   if (platform === undefined) {
-    throw new TypeError("product SQLite persistence platform differs from the canonical adapter");
+    throw new TypeError("product JSONL persistence platform differs from the canonical adapter");
   }
   if (typeof record.runtimeHome !== "string") {
-    throw new TypeError("product SQLite persistence Runtime home must be a string");
+    throw new TypeError("product JSONL persistence Runtime home must be a string");
   }
-  const databasePath = productSessionDatabasePath(platform, record.runtimeHome);
+  const databasePath = productCoordinationDatabasePath(platform, record.runtimeHome);
   const expectedDurability = platform.sqliteDurabilityPlan(databasePath);
   const registerCheckpointStore = Object.hasOwn(record, "registerCheckpointStore")
     ? record.registerCheckpointStore
     : () => undefined;
   if (typeof registerCheckpointStore !== "function" || isProxy(registerCheckpointStore)) {
-    throw new TypeError("product SQLite checkpoint Store registration must be a non-Proxy function");
+    throw new TypeError("product JSONL checkpoint Store registration must be a non-Proxy function");
   }
   const durability = exactOwnDataObject(
     record.durability,
     ["databasePath", "pragmas", "parentDirectoryFlush"],
     [],
-    "product SQLite durability plan",
+    "product JSONL durability plan",
   );
   const pragmas = durability.pragmas;
   if (!Array.isArray(pragmas) || isProxy(pragmas)
     || Object.getPrototypeOf(pragmas) !== Array.prototype) {
-    throw new TypeError("product SQLite durability pragmas must be a plain array");
+    throw new TypeError("product JSONL durability pragmas must be a plain array");
   }
   const pragmaDescriptors = Object.getOwnPropertyDescriptors(pragmas);
   if (Reflect.ownKeys(pragmaDescriptors).some((key) => typeof key !== "string"
     || !["0", "1", "length"].includes(key))
     || !("value" in (pragmaDescriptors["0"] ?? {}))
     || !("value" in (pragmaDescriptors["1"] ?? {}))) {
-    throw new TypeError("product SQLite durability pragmas must contain exact data entries");
+    throw new TypeError("product JSONL durability pragmas must contain exact data entries");
   }
   if (durability.databasePath !== expectedDurability.databasePath
     || durability.parentDirectoryFlush !== expectedDurability.parentDirectoryFlush
     || pragmas.length !== 2
     || pragmaDescriptors["0"]?.value !== expectedDurability.pragmas[0]
     || pragmaDescriptors["1"]?.value !== expectedDurability.pragmas[1]) {
-    throw new TypeError("product SQLite durability plan differs from the selected platform authority");
+    throw new TypeError("product JSONL durability plan differs from the selected platform authority");
   }
   return Object.freeze({
     durability: expectedDurability,
@@ -181,74 +167,105 @@ const validateConfig = (value: unknown): Readonly<Required<ProductSqliteSessionP
       Reflect.apply(registerCheckpointStore, value, [store]);
     },
     runtimeHome: record.runtimeHome,
-    writeBatchMaxDelayMs: optionalBoundedInteger(
-      record.writeBatchMaxDelayMs,
-      Object.hasOwn(record, "writeBatchMaxDelayMs"),
-      200,
-      1,
-      60_000,
-      "persistence write batch delay",
-    ),
+
   });
 };
 
 interface ProductPersistenceState {
   readonly reader: ProductSessionReadProjector;
-  readonly store: ProductSqliteStore;
+  readonly store: ProductMutationStore;
   readonly ownership: ProductSessionOwnershipProvider;
-  readonly writers: Map<SessionId, ProductSessionHandle>;
-  readonly handles: Set<ProductSessionHandle>;
+  readonly writers: Map<SessionId, { generationId: string; handle: SessionHandle }>;
+  readonly handles: Set<SessionHandle>;
   readonly admissions: Set<Promise<SessionHandle>>;
-  readonly batchDelayMs: number;
-  readonly reportFailure: (error: unknown) => void;
   closing: boolean;
 }
-
-const admitHandle = async (
-  state: ProductPersistenceState,
-  work: () => Promise<SessionHandle>,
-): Promise<SessionHandle> => {
-  if (state.closing) throw new Error("Product Session persistence is closing");
-  const result = work();
-  state.admissions.add(result);
-  try { return await result; } finally { state.admissions.delete(result); }
+const productPersistenceStates = new WeakMap<ProductJsonlSessionPersistence, ProductPersistenceState>();
+const stateOf = (service: ProductJsonlSessionPersistence): ProductPersistenceState => {
+  const original = (service as unknown as Record<PropertyKey, unknown>)[symbols.original];
+  const identity = original !== null && typeof original === "object" ? original as ProductJsonlSessionPersistence : service;
+  const state = productPersistenceStates.get(identity);
+  if (state === undefined) throw new Error("product JSONL coordination lost its private state");
+  return state;
 };
-
-const registerHandle = (state: ProductPersistenceState, options: ConstructorParameters<typeof ProductSessionHandle>[0]): ProductSessionHandle => {
-  const handle = new ProductSessionHandle(options);
-  state.handles.add(handle);
-  if (handle.access === "write") state.writers.set(handle.id, handle);
-  return handle;
-};
-
 const throwFailures = (results: readonly PromiseSettledResult<unknown>[], description: string): void => {
   const failures = results.flatMap((result) => result.status === "rejected" ? [result.reason as unknown] : []);
   if (failures.length > 0) throw new AggregateError(failures, description);
 };
-
-const productPersistenceStates = new WeakMap<ProductSqliteSessionPersistence, ProductPersistenceState>();
-
-const stateOf = (service: ProductSqliteSessionPersistence): ProductPersistenceState => {
-  const original = (service as unknown as Record<PropertyKey, unknown>)[symbols.original];
-  const identity = original !== null && typeof original === "object"
-    ? original as ProductSqliteSessionPersistence
-    : service;
-  const state = productPersistenceStates.get(identity);
-  if (state === undefined) throw new Error("product SQLite persistence lost its private state");
-  return state;
+const admitHandle = async (state: ProductPersistenceState, work: () => Promise<SessionHandle>): Promise<SessionHandle> => {
+  if (state.closing) throw new Error("Product Session persistence is closing");
+  const result = work(); state.admissions.add(result);
+  try { return await result; } finally { state.admissions.delete(result); }
 };
 
-/** Product-owned SQLite Provider over the public DSH persistence seam. */
-export class ProductSqliteSessionPersistence extends SessionPersistence {
-  override readonly name = "product-session-persistence-sqlite";
+/** Official JSONL handles own log IO; this wrapper holds only the product locator lease. */
+const coordinateHandle = (
+  state: ProductPersistenceState,
+  native: SessionHandle,
+  generationId: string,
+  ownership?: Awaited<ReturnType<ProductSessionOwnershipProvider["acquire"]>>,
+): SessionHandle => {
+  let closing: Promise<void> | undefined;
+  let ownershipLost: SessionOwnershipLostError | undefined;
+  const synchronize = async (): Promise<void> => {
+    if (native.access === "write") await state.store.synchronizeNativeGeneration(native.id);
+  };
+  const barrier = async (): Promise<void> => {
+    if (ownershipLost !== undefined) throw ownershipLost;
+    try { await ownership?.assertHeld(); }
+    catch (error) { if (error instanceof SessionOwnershipLostError) ownershipLost = error; throw error; }
+  };
+  const handle: SessionHandle = {
+    id: native.id, header: native.header, inheritedEventCount: native.inheritedEventCount, access: native.access,
+    read: async (offset, length, options) => { const result = await native.read(offset, length, options); await state.store.assertNativeGeneration(native.id, generationId); return result; },
+    append: async (events, options) => {
+      if (closing !== undefined) throw new SessionHandleClosedError(native.id, "append");
+      const batch = validateProductStoredEvents(native.header, [...materializeAppendBatch(events)]);
+      await barrier();
+      await native.append(batch, options);
+    },
+    flush: async (options) => {
+      if (closing !== undefined) throw new SessionHandleClosedError(native.id, "flush");
+      options?.signal?.throwIfAborted();
+      if (native.access === "read") return native.flush(options);
+      await barrier();
+      // The native service barrier drains its routed live buffer before fsync.
+      // Each generation context has exactly one native writer.
+      await (await state.store.nativeLogs.backend(generationId)).flush();
+      await synchronize();
+    },
+    close: () => closing ??= (async () => {
+      let failure: unknown;
+      try {
+        await native.close();
+        if (ownershipLost === undefined) { await barrier(); await synchronize(); }
+        if (native.access === "write") await state.store.discardUnmaterializedGeneration(native.id, generationId);
+      } catch (error) { failure = error; }
+      const released = await Promise.allSettled(ownership === undefined ? [] : [ownership.release()]);
+      state.handles.delete(handle);
+      if (state.writers.get(native.id)?.handle === handle) state.writers.delete(native.id);
+      if (failure !== undefined && released.every((result) => result.status === "fulfilled")) {
+        throw failure instanceof Error ? failure : new Error("native close failed", { cause: failure });
+      }
+      if (failure !== undefined) throwFailures([{ status: "rejected", reason: failure }, ...released], "native close and product lease release failed");
+      throwFailures(released, "product locator lease release failed");
+    })(),
+    [Symbol.asyncDispose]: () => handle.close(),
+  };
+  state.handles.add(handle);
+  if (native.access === "write") state.writers.set(native.id, { generationId, handle });
+  return handle;
+};
 
+/** Necessary product mutation/checkpoint coordination around the official JSONL provider. */
+export class ProductJsonlSessionPersistence extends SessionPersistence {
+  override readonly name = "product-session-persistence-jsonl";
   static inject = ["sessions"];
-
-  constructor(ctx: Context, config: ProductSqliteSessionPersistenceConfig) {
+  constructor(ctx: Context, config: ProductJsonlSessionPersistenceConfig) {
     super(ctx);
     const normalized = validateConfig(config);
     const ownership = createProductSessionOwnershipProvider(normalized.platform.target);
-    const store = new ProductSqliteStore({ ...normalized, ownership });
+    const store = new ProductMutationStore({ ...normalized, ownership });
     const state: ProductPersistenceState = {
       reader: new ProductSessionReadProjector({
         cursorMac: (payload, signal) => store.cursorMac(payload, signal),
@@ -259,154 +276,86 @@ export class ProductSqliteSessionPersistence extends SessionPersistence {
         },
         snapshot: (id, signal) => store.readProductSnapshot(id, signal),
         mutationBoundaries: (id, signal) => store.readMutationBoundaries(id, signal),
-      }),
-      store,
-      ownership,
-      writers: new Map(),
-      handles: new Set(),
-      admissions: new Set(),
-      closing: false,
-      batchDelayMs: normalized.writeBatchMaxDelayMs,
-      reportFailure: (error) => { ctx.logger.warn(`Product Session background persistence failed (events retained): ${String(error)}`); },
+      }), store, ownership, writers: new Map(), handles: new Set(), admissions: new Set(), closing: false,
     };
     productPersistenceStates.set(this, state);
-    ctx.on("session/event", (session, event) => { state.writers.get(session.id)?.enqueueLive(event); });
-    ctx.on("session/flush", (session) => state.writers.get(session.id)?.flush());
-    ctx.on("session/disposed", (session) => {
+    ctx.on("session/event", (session, event) => {
       const writer = state.writers.get(session.id);
-      if (writer !== undefined) void writer.close().catch((error: unknown) => {
-        ctx.logger.warn(`Product Session final drain for ${session.id} failed: ${String(error)}`);
-      });
+      if (writer === undefined) return;
+      store.nativeLogs.publishEvent(writer.generationId, session, event);
+    });
+    ctx.on("session/flush", (session) => state.writers.get(session.id)?.handle.flush());
+    ctx.on("session/disposed", (session) => {
+      void state.writers.get(session.id)?.handle.close().catch((error: unknown) => ctx.logger.warn(`native final drain failed: ${String(error)}`));
     });
     ctx.effect(() => async () => {
       state.closing = true;
       await Promise.allSettled([...state.admissions]);
       const results = await Promise.allSettled([...state.handles].map((handle) => handle.close()));
       const closedStore = await Promise.allSettled([store.close()]);
-      throwFailures([...results, ...closedStore], "Product Session persistence disposal failed");
-    }, "Product Session persistence handles and SQLite connection");
+      throwFailures([...results, ...closedStore], "native JSONL and product coordination disposal failed");
+    }, "official JSONL handles and product coordination");
     const checkpointStore = Object.freeze<ProductCheckpointStore>({
-      updateDirectoryPlan: (checkpointId, expected, next, signal) => store.updateDirectoryPlan(checkpointId, expected, next, signal),
+      updateDirectoryPlan: (id, expected, next, signal) => store.updateDirectoryPlan(id, expected, next, signal),
       listRewindDirectoryPlans: (token, signal) => store.listRewindDirectoryPlans(token, signal),
-      get: (checkpointId, signal) => store.get(checkpointId, signal),
-      listUnsettled: (sessionId, signal) => store.listUnsettled(sessionId, signal),
+      get: (id, signal) => store.get(id, signal),
+      listUnsettled: (id, signal) => store.listUnsettled(id, signal),
       listRewindFiles: (token, signal) => store.listRewindFiles(token, signal),
-      markEvent: (checkpointId, phase, eventSeq, signal) =>
-        store.markEvent(checkpointId, phase, eventSeq, signal),
+      markEvent: (id, phase, seq, signal) => store.markEvent(id, phase, seq, signal),
       prepare: (input, signal) => store.prepare(input, signal),
-      sealRewindFile: (token, path, rollbackBytes, rollbackSha256, signal) =>
-        store.sealRewindFile(token, path, rollbackBytes, rollbackSha256, signal),
-      transition: (checkpointId, expected, next, actualSha256, signal) =>
-        store.transition(checkpointId, expected, next, actualSha256, signal),
-      transitionRewindFile: (token, path, expected, next, actualSha256, signal) =>
-        store.transitionRewindFile(token, path, expected, next, actualSha256, signal),
+      sealRewindFile: (token, path, bytes, sha, signal) => store.sealRewindFile(token, path, bytes, sha, signal),
+      transition: (id, expected, next, sha, signal) => store.transition(id, expected, next, sha, signal),
+      transitionRewindFile: (token, path, expected, next, sha, signal) => store.transitionRewindFile(token, path, expected, next, sha, signal),
     });
     normalized.registerCheckpointStore(checkpointStore);
   }
-
-  protected async [Service.init](): Promise<void> {
-    await stateOf(this).store.initialize();
-  }
+  protected async [Service.init](): Promise<void> { await stateOf(this).store.initialize(); }
 
   async create(header: SessionHeader, options?: SessionPersistenceCreateOptions): Promise<SessionHandle> {
     options?.signal?.throwIfAborted();
     const meta = materializeProductSessionHeader(header, options?.inheritedEventCount);
     const state = stateOf(this);
     return admitHandle(state, async () => {
-      if (state.writers.has(meta.id)) throw new SessionAlreadyExistsError(meta.id);
       await state.store.initialize();
-      if (await state.store.readStoredRevision(meta.id, options?.signal) !== undefined) throw new SessionAlreadyExistsError(meta.id);
+      if (state.writers.has(meta.id)) throw new SessionAlreadyExistsError(meta.id);
       const ownership = await state.ownership.acquire(state.store.ownershipPath(meta.id), meta.id, options?.signal);
+      const generationId = randomUUID();
       try {
         if (await state.store.readStoredRevision(meta.id, options?.signal) !== undefined) throw new SessionAlreadyExistsError(meta.id);
-        options?.signal?.throwIfAborted();
-        if (state.closing) throw new Error("Product Session persistence is closing");
-        const handle = registerHandle(state, {
-          header: meta, inheritedEventCount: SessionLogOffset(options?.inheritedEventCount ?? 0), access: "write",
-          store: state.store, ownership, batchDelayMs: state.batchDelayMs,
-          isPending: () => state.writers.get(meta.id)?.materialized === false,
-          release: () => { state.handles.delete(handle); state.writers.delete(meta.id); },
-          reportFailure: state.reportFailure,
-        });
-        return handle;
-      } catch (error) {
-        try { await ownership.release(); } catch (releaseError) { throw new AggregateError([error, releaseError], "Session create and ownership release failed", { cause: releaseError }); }
-        throw error;
-      }
+        const backend = await state.store.nativeLogs.backend(generationId);
+        const native = await backend.create(meta, options);
+        try { await state.store.reserveNativeGeneration(meta, SessionLogOffset(options?.inheritedEventCount ?? 0), generationId); }
+        catch (error) { await native.close(); throw error; }
+        return coordinateHandle(state, native, generationId, ownership);
+      } catch (error) { await ownership.release(); throw error; }
     });
   }
-
   async open(id: SessionId, access: SessionAccess, options?: SessionPersistenceOpenOptions): Promise<SessionHandle> {
     options?.signal?.throwIfAborted();
-    const requestedAccess: unknown = access;
-    if (requestedAccess !== "read" && requestedAccess !== "write") throw new TypeError("Session access must be read or write");
     const state = stateOf(this);
     return admitHandle(state, async () => {
       await state.store.initialize();
       if (access === "write" && state.writers.has(id)) throw new SessionAlreadyOwnedError(id);
-      const ownership = access === "write"
-        ? await state.ownership.acquire(state.store.ownershipPath(id), id, options?.signal)
-        : undefined;
+      const ownership = access === "write" ? await state.ownership.acquire(state.store.ownershipPath(id), id, options?.signal) : undefined;
       try {
         const stored = await state.store.loadStored(id, options?.signal);
-        const pending = state.writers.get(id);
-        if (stored === undefined && (pending === undefined || pending.materialized)) throw new SessionPersistenceNotFoundError(id);
-        options?.signal?.throwIfAborted();
-        if (state.closing) throw new Error("Product Session persistence is closing");
-        const metadata = stored ?? pending;
-        if (metadata === undefined) throw new SessionPersistenceNotFoundError(id);
-        const meta = stored?.meta ?? pending?.header;
-        if (meta === undefined) throw new SessionPersistenceNotFoundError(id);
-        const handle = registerHandle(state, {
-          header: meta, inheritedEventCount: metadata.inheritedEventCount, access,
-          store: state.store, ...(ownership === undefined ? {} : { ownership }),
-          ...(stored === undefined ? {} : { stored }), batchDelayMs: state.batchDelayMs,
-          isPending: () => state.writers.get(id)?.materialized === false,
-          release: () => { state.handles.delete(handle); if (state.writers.get(id) === handle) state.writers.delete(id); },
-          reportFailure: state.reportFailure,
-        });
-        return handle;
-      } catch (error) {
-        try { await ownership?.release(); } catch (releaseError) { throw new AggregateError([error, releaseError], "Session open and ownership release failed", { cause: releaseError }); }
-        throw error;
-      }
+        if (stored === undefined) throw new SessionPersistenceNotFoundError(id);
+        const native = await (await state.store.nativeLogs.backend(stored.generationId)).open(id, access, options);
+        return coordinateHandle(state, native, stored.generationId, ownership);
+      } catch (error) { await ownership?.release(); throw error; }
     });
   }
-
   async flush(): Promise<void> {
-    const writers = [...stateOf(this).writers.values()];
-    const results = await Promise.allSettled(writers.map(async (writer) => {
-      try { await writer.flush(); } catch (error) {
-        if (!(error instanceof SessionHandleClosedError)) throw error;
-        await writer.close();
-      }
-    }));
-    throwFailures(results, "Product Session persistence flush failed");
+    throwFailures(await Promise.allSettled([...stateOf(this).writers.values()].map(({ handle }) => handle.flush())), "native Session flush failed");
   }
-
   async stat(id: SessionId, options?: SessionPersistenceStatOptions): Promise<SessionPersistenceSnapshot | undefined> {
-    const state = stateOf(this);
-    await state.store.initialize();
+    const state = stateOf(this); await state.store.initialize();
     const snapshot = await state.store.readProductSnapshot(id, options?.signal);
-    if (snapshot !== undefined) return { header: snapshot.header, revision: snapshot.revision, eventCount: snapshot.durableSequence };
-    const pending = state.writers.get(id);
-    return pending?.materialized === false
-      ? { header: pending.header, revision: pending.pendingRevision, eventCount: 0 }
-      : undefined;
+    return snapshot === undefined ? undefined : { header: snapshot.header, revision: snapshot.revision, eventCount: snapshot.durableSequence };
   }
-
   async list(options?: SessionPersistenceListOptions): Promise<readonly SessionPersistenceSnapshot[]> {
-    const state = stateOf(this);
-    const stored = await state.store.listSnapshots(options?.signal);
-    const ids = new Set(stored.map(({ header }) => header.id));
-    for (const [id, pending] of state.writers) {
-      if (!ids.has(id) && !pending.materialized) stored.push({
-        header: pending.header, revision: pending.pendingRevision, eventCount: 0,
-      });
-    }
-    return stored;
+    return stateOf(this).store.listSnapshots(options?.signal);
   }
-
   inspectRecovery(id: SessionId, signal?: AbortSignal): Promise<ProductPersistedRecoveryInspection> {
     return stateOf(this).store.inspectRecovery(id, signal);
   }
@@ -509,4 +458,4 @@ export class ProductSqliteSessionPersistence extends SessionPersistence {
   }
 }
 
-export default ProductSqliteSessionPersistence;
+export default ProductJsonlSessionPersistence;

@@ -58,7 +58,7 @@ export const materializeProductSessionHeader = (
   if (!snapshot.isSeeded && cut !== 0) throw new TypeError("unseeded Session cannot inherit events");
   // Validate the header without inventing events for an as-yet unmaterialized
   // inherited prefix. Its actual cut is checked against the first stored batch.
-  return Session.fromRestore(snapshot.id, [], snapshot, SessionLogOffset(0), "detached").header;
+  return Session.fromRestore(snapshot.id, [], { ...snapshot, delegationDepth: snapshot.delegationDepth ?? 0 }, SessionLogOffset(0), "detached").header;
 };
 
 /** Compose the native vocabulary with the exact Product registry, without changing native globals. */

@@ -858,14 +858,14 @@ describe("accepted DSH seam decision registry", () => {
     expect(evidence.decisions.map(({ status }) => status)).toEqual([
       "candidate_patch_pending_product_validation",
       "candidate_patch_pending_product_validation",
-      "candidate_retirement_pending_product_validation",
+      "candidate_patch_pending_product_validation",
       "candidate_public_composition_pending_product_validation",
       "candidate_patch_pending_product_validation",
       "candidate_patch_pending_product_validation",
       "candidate_retirement_pending_product_validation",
       ...Array.from({ length: 6 }, () => "candidate_patch_pending_product_validation"),
     ]);
-    expect(evidence.patchSeries).toHaveLength(10);
+    expect(evidence.patchSeries).toHaveLength(11);
     for (const patch of evidence.patchSeries) {
       const digest = createHash("sha256")
         .update(readFileSync(resolve(repositoryRoot, patch.path)))

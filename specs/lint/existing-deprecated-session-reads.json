@@ -248,14 +248,14 @@
     "path": "packages/tool-runtime-product/src/permission.ts",
     "ruleId": "@typescript-eslint/no-deprecated",
     "message": "`snapshotEvents` is deprecated. Existing logic may remain unmigrated for now, but new calls are prohibited.",
-    "lineText": "agent.session.snapshotEvents(),",
+    "lineText": "agent.session.snapshotEvents().filter((event) => agent.session.isOwnSeq(event.seq)),",
     "count": 1
   },
   {
     "path": "packages/tool-runtime-product/src/permission.ts",
     "ruleId": "@typescript-eslint/no-deprecated",
     "message": "`snapshotEvents` is deprecated. Existing logic may remain unmigrated for now, but new calls are prohibited.",
-    "lineText": "session.snapshotEvents(),",
+    "lineText": "session.snapshotEvents().filter((event) => session.isOwnSeq(event.seq)),",
     "count": 1
   },
   {
@@ -290,14 +290,14 @@
     "path": "packages/tools-interaction/src/runtime.ts",
     "ruleId": "@typescript-eslint/no-deprecated",
     "message": "`snapshotEvents` is deprecated. Existing logic may remain unmigrated for now, but new calls are prohibited.",
-    "lineText": "agent.session.snapshotEvents(),",
+    "lineText": "agent.session.snapshotEvents().filter((event) => agent.session.isOwnSeq(event.seq)),",
     "count": 1
   },
   {
     "path": "packages/tools-interaction/src/runtime.ts",
     "ruleId": "@typescript-eslint/no-deprecated",
     "message": "`snapshotEvents` is deprecated. Existing logic may remain unmigrated for now, but new calls are prohibited.",
-    "lineText": "return foldProductPlan(agent.session.snapshotEvents(), sessionId, this.configValue.revision, path);",
+    "lineText": "return foldProductPlan(agent.session.snapshotEvents().filter((event) => agent.session.isOwnSeq(event.seq)), sessionId, this.configValue.revision, path);",
     "count": 1
   },
   {

@@ -111,9 +111,9 @@ import {
 } from "@myagents-dsh/product-profile";
 import {
   PRODUCT_PERSISTENCE_FORMAT,
-  ProductSqliteSessionPersistence,
+  ProductJsonlSessionPersistence,
   foldProductCompactions,
-  productSessionDatabasePath,
+  productCoordinationDatabasePath,
   type ProductDeleteStore,
   type ProductForkStore,
   type ProductRewindStore,
@@ -694,7 +694,7 @@ const installProductPersistence = (
     return Promise.reject(new Error("product persistence platform differs from the canonical tool plane"));
   }
   const platform = selectPlatformAdapter(platformTarget);
-  const databasePath = productSessionDatabasePath(platform, runtimeHome);
+  const databasePath = productCoordinationDatabasePath(platform, runtimeHome);
   const durability = platform.sqliteDurabilityPlan(databasePath);
   state.persistencePlane = "installing";
   state.persistenceRuntimeHome = runtimeHome;
@@ -702,7 +702,7 @@ const installProductPersistence = (
   const installation = (async () => {
     let providerFiber: { dispose(): Promise<void> } | undefined;
     try {
-      providerFiber = await state.context.plugin(ProductSqliteSessionPersistence, {
+      providerFiber = await state.context.plugin(ProductJsonlSessionPersistence, {
         durability,
         platform,
         registerCheckpointStore: (store) => {
@@ -713,7 +713,7 @@ const installProductPersistence = (
         },
         runtimeHome,
       });
-      if (!(state.context.sessionPersistence instanceof ProductSqliteSessionPersistence)) {
+      if (!(state.context.sessionPersistence instanceof ProductJsonlSessionPersistence)) {
         throw new Error("product SQLite persistence did not install through the public DSH service seam");
       }
       await state.configureShellHome?.(runtimeHome);
@@ -2392,7 +2392,7 @@ export const composeDshRootServices = async (
       },
       readSession: (request) => {
         const persistence = root.get("sessionPersistence");
-        if (!(persistence instanceof ProductSqliteSessionPersistence)) {
+        if (!(persistence instanceof ProductJsonlSessionPersistence)) {
           throw new ProtocolError(
             "primary_session_not_ready",
             "Product Session persistence is not installed",
@@ -2402,7 +2402,7 @@ export const composeDshRootServices = async (
       },
       deleteStore: () => {
         const persistence = root.get("sessionPersistence");
-        if (!(persistence instanceof ProductSqliteSessionPersistence)) return undefined;
+        if (!(persistence instanceof ProductJsonlSessionPersistence)) return undefined;
         return Object.freeze({
           commitDelete: (token, clientMutationId, signal) =>
             persistence.commitDelete(token, clientMutationId, signal),
@@ -2416,7 +2416,7 @@ export const composeDshRootServices = async (
       },
       forkStore: () => {
         const persistence = root.get("sessionPersistence");
-        if (!(persistence instanceof ProductSqliteSessionPersistence)) return undefined;
+        if (!(persistence instanceof ProductJsonlSessionPersistence)) return undefined;
         return Object.freeze({
           abortFork: (token, clientMutationId, signal) =>
             persistence.abortFork(token, clientMutationId, signal),
@@ -2428,7 +2428,7 @@ export const composeDshRootServices = async (
       },
       inspectResume: async (request) => {
         const persistence = root.get("sessionPersistence");
-        if (!(persistence instanceof ProductSqliteSessionPersistence)) {
+        if (!(persistence instanceof ProductJsonlSessionPersistence)) {
           return Object.freeze({
             state: "recovery_required" as const,
             runtimeSessionId: request.runtimeSessionId,
@@ -2493,7 +2493,7 @@ export const composeDshRootServices = async (
       },
       rewindStore: () => {
         const persistence = root.get("sessionPersistence");
-        if (!(persistence instanceof ProductSqliteSessionPersistence)) return undefined;
+        if (!(persistence instanceof ProductJsonlSessionPersistence)) return undefined;
         const rewindStore = Object.freeze({
           prepareRewind: async (input, signal) => {
             const record = await persistence.prepareRewind(input, signal);

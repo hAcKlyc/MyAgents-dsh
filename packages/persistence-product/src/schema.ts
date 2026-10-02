@@ -1,8 +1,8 @@
-export const PRODUCT_PERSISTENCE_FORMAT = "myagents-sqlite-session-v1" as const;
-export const PRODUCT_PERSISTENCE_SCHEMA_VERSION = 10 as const;
+/** Product coordination and checkpoint preimages only; native events live in official JSONL. */
+export const PRODUCT_PERSISTENCE_FORMAT = "myagents-jsonl-coordination-v1" as const;
+export const PRODUCT_PERSISTENCE_SCHEMA_VERSION = 1 as const;
 export const PRODUCT_PERSISTENCE_APPLICATION_ID = 0x4d594147 as const;
-
-export const PRODUCT_PERSISTENCE_SCHEMA_V1_SQL = `
+export const PRODUCT_PERSISTENCE_SCHEMA_SQL = `
 CREATE TABLE store_meta (
   singleton          INTEGER PRIMARY KEY CHECK (singleton = 1),
   store_id           TEXT NOT NULL,
@@ -26,29 +26,14 @@ CREATE TABLE session_generations (
   generation_id TEXT NOT NULL,
   header_json   TEXT NOT NULL,
   origin         TEXT NOT NULL CHECK (origin IN ('create', 'rewind', 'fork', 'recovery')),
-  state          TEXT NOT NULL CHECK (state IN ('active', 'archived', 'staging', 'purging')),
+  state          TEXT NOT NULL CHECK (state IN ('active', 'archived', 'staging', 'purging', 'tombstoned')),
   revision       INTEGER NOT NULL CHECK (revision >= 0),
   event_count    INTEGER NOT NULL CHECK (event_count >= 0),
   head_hash      TEXT NOT NULL,
-  created_at     INTEGER NOT NULL,
+  created_at     INTEGER NOT NULL, inherited_event_count INTEGER NOT NULL DEFAULT 0 CHECK (inherited_event_count >= 0),
   PRIMARY KEY (session_id, generation_id)
 ) STRICT;
 
-CREATE TABLE session_events (
-  session_id    TEXT NOT NULL,
-  generation_id TEXT NOT NULL,
-  seq            INTEGER NOT NULL CHECK (seq >= 0),
-  type           TEXT NOT NULL,
-  time           INTEGER NOT NULL,
-  envelope_json  TEXT NOT NULL,
-  chain_hash     TEXT NOT NULL,
-  PRIMARY KEY (session_id, generation_id, seq),
-  FOREIGN KEY (session_id, generation_id)
-    REFERENCES session_generations(session_id, generation_id) ON DELETE CASCADE
-) STRICT;
-` as const;
-
-export const PRODUCT_CHECKPOINT_SCHEMA_SQL = `
 CREATE TABLE checkpoint_blobs (
   sha256     TEXT PRIMARY KEY,
   size       INTEGER NOT NULL CHECK (size >= 0 AND size <= 8388608),
@@ -74,20 +59,13 @@ CREATE TABLE checkpoint_records (
   last_event_phase    TEXT CHECK (last_event_phase IS NULL OR last_event_phase IN ('prepared', 'published', 'settled', 'aborted', 'conflict')),
   last_event_seq      INTEGER CHECK (last_event_seq IS NULL OR last_event_seq >= 0),
   prepared_at         INTEGER NOT NULL,
-  settled_at          INTEGER,
+  settled_at          INTEGER, directory_plan_json TEXT,
   UNIQUE (session_id, generation_id, call_id, path),
   FOREIGN KEY (session_id, generation_id)
     REFERENCES session_generations(session_id, generation_id) ON DELETE RESTRICT,
   FOREIGN KEY (prior_sha256) REFERENCES checkpoint_blobs(sha256) ON DELETE RESTRICT
 ) STRICT;
-` as const;
 
-export const PRODUCT_PERSISTENCE_SCHEMA_V2_SQL = `${PRODUCT_PERSISTENCE_SCHEMA_V1_SQL.trim()}
-
-${PRODUCT_CHECKPOINT_SCHEMA_SQL.trim()}
-` as const;
-
-export const PRODUCT_STABLE_BOUNDARY_SCHEMA_SQL = `
 CREATE TABLE mutation_journals (
   token                            TEXT PRIMARY KEY,
   kind                             TEXT NOT NULL CHECK (kind = 'rewind'),
@@ -139,14 +117,7 @@ CREATE TABLE stable_boundaries (
   FOREIGN KEY (session_id, generation_id)
     REFERENCES session_generations(session_id, generation_id) ON DELETE RESTRICT
 ) STRICT;
-` as const;
 
-export const PRODUCT_PERSISTENCE_SCHEMA_V3_SQL = `${PRODUCT_PERSISTENCE_SCHEMA_V2_SQL.trim()}
-
-${PRODUCT_STABLE_BOUNDARY_SCHEMA_SQL.trim()}
-` as const;
-
-export const PRODUCT_REWIND_CHILD_SCHEMA_SQL = `
 CREATE TABLE rewind_child_plans (
   token                     TEXT NOT NULL REFERENCES mutation_journals(token) ON DELETE RESTRICT,
   child_session_id          TEXT NOT NULL,
@@ -158,14 +129,7 @@ CREATE TABLE rewind_child_plans (
   FOREIGN KEY (child_session_id, child_generation_id)
     REFERENCES session_generations(session_id, generation_id) ON DELETE RESTRICT
 ) STRICT;
-` as const;
 
-export const PRODUCT_PERSISTENCE_SCHEMA_V4_SQL = `${PRODUCT_PERSISTENCE_SCHEMA_V3_SQL.trim()}
-
-${PRODUCT_REWIND_CHILD_SCHEMA_SQL.trim()}
-` as const;
-
-export const PRODUCT_FORK_SCHEMA_SQL = `
 CREATE TABLE fork_journals (
   token                       TEXT PRIMARY KEY,
   client_mutation_id          TEXT NOT NULL,
@@ -188,58 +152,7 @@ CREATE TABLE fork_journals (
   FOREIGN KEY (source_session_id, source_generation_id)
     REFERENCES session_generations(session_id, generation_id) ON DELETE RESTRICT
 ) STRICT;
-` as const;
 
-export const PRODUCT_PERSISTENCE_SCHEMA_V5_SQL = `${PRODUCT_PERSISTENCE_SCHEMA_V4_SQL.trim()}
-
-${PRODUCT_FORK_SCHEMA_SQL.trim()}
-` as const;
-
-export const PRODUCT_DELETE_SCHEMA_SQL = `
-CREATE TABLE delete_journals (
-  token                 TEXT PRIMARY KEY,
-  client_mutation_id    TEXT NOT NULL,
-  request_fingerprint   TEXT NOT NULL,
-  session_id            TEXT NOT NULL,
-  source_generation_id  TEXT NOT NULL,
-  source_revision       TEXT NOT NULL,
-  phase                 TEXT NOT NULL CHECK (phase IN ('prepared', 'committing', 'committed', 'rolling_back', 'rolled_back', 'recovery_required')),
-  attempt               INTEGER NOT NULL CHECK (attempt >= 0),
-  receipt_json          TEXT,
-  created_at            INTEGER NOT NULL,
-  updated_at            INTEGER NOT NULL,
-  UNIQUE (session_id, client_mutation_id),
-  FOREIGN KEY (session_id, source_generation_id)
-    REFERENCES session_generations(session_id, generation_id) ON DELETE RESTRICT
-) STRICT;
-` as const;
-
-export const PRODUCT_SESSION_GENERATIONS_V6_SCHEMA_SQL = `
-CREATE TABLE session_generations (
-  session_id    TEXT NOT NULL REFERENCES sessions(id) ON DELETE CASCADE,
-  generation_id TEXT NOT NULL,
-  header_json   TEXT NOT NULL,
-  origin         TEXT NOT NULL CHECK (origin IN ('create', 'rewind', 'fork', 'recovery')),
-  state          TEXT NOT NULL CHECK (state IN ('active', 'archived', 'staging', 'purging', 'tombstoned')),
-  revision       INTEGER NOT NULL CHECK (revision >= 0),
-  event_count    INTEGER NOT NULL CHECK (event_count >= 0),
-  head_hash      TEXT NOT NULL,
-  created_at     INTEGER NOT NULL,
-  PRIMARY KEY (session_id, generation_id)
-) STRICT;
-` as const;
-
-const PRODUCT_PERSISTENCE_SCHEMA_V6_BASE_SQL = PRODUCT_PERSISTENCE_SCHEMA_V5_SQL.replace(
-  /CREATE TABLE session_generations \([\s\S]*?\n\) STRICT;/u,
-  PRODUCT_SESSION_GENERATIONS_V6_SCHEMA_SQL.trim(),
-);
-
-export const PRODUCT_PERSISTENCE_SCHEMA_V6_SQL = `${PRODUCT_PERSISTENCE_SCHEMA_V6_BASE_SQL.trim()}
-
-${PRODUCT_DELETE_SCHEMA_SQL.trim()}
-` as const;
-
-export const PRODUCT_DELETE_SCHEMA_V7_SQL = `
 CREATE TABLE delete_journals (
   token                 TEXT PRIMARY KEY,
   client_mutation_id    TEXT NOT NULL,
@@ -255,29 +168,6 @@ CREATE TABLE delete_journals (
   UNIQUE (session_id, client_mutation_id)
 ) STRICT;
 ` as const;
-
-export const PRODUCT_PERSISTENCE_SCHEMA_V7_SQL = PRODUCT_PERSISTENCE_SCHEMA_V6_SQL.replace(
-  PRODUCT_DELETE_SCHEMA_SQL.trim(),
-  PRODUCT_DELETE_SCHEMA_V7_SQL.trim(),
-);
-
-export const PRODUCT_INHERITED_PREFIX_SCHEMA_SQL =
-  "ALTER TABLE session_generations ADD COLUMN inherited_event_count INTEGER NOT NULL DEFAULT 0 CHECK (inherited_event_count >= 0);";
-
-// Match the exact sqlite_schema spelling produced by the v7 ALTER migration.
-export const PRODUCT_PERSISTENCE_SCHEMA_V8_SQL = PRODUCT_PERSISTENCE_SCHEMA_V7_SQL.replace(
-  "  created_at     INTEGER NOT NULL,\n  PRIMARY KEY (session_id, generation_id)\n) STRICT;",
-  "  created_at     INTEGER NOT NULL, inherited_event_count INTEGER NOT NULL DEFAULT 0 CHECK (inherited_event_count >= 0),\n  PRIMARY KEY (session_id, generation_id)\n) STRICT;",
-);
-
-export const PRODUCT_CHECKPOINT_DIRECTORIES_MIGRATION_SQL =
-  "ALTER TABLE checkpoint_records ADD COLUMN directory_plan_json TEXT;";
-
-export const PRODUCT_PERSISTENCE_SCHEMA_SQL = PRODUCT_PERSISTENCE_SCHEMA_V8_SQL.replace(
-  "  settled_at          INTEGER,\n  UNIQUE (session_id, generation_id, call_id, path)",
-  "  settled_at          INTEGER, directory_plan_json TEXT,\n  UNIQUE (session_id, generation_id, call_id, path)",
-);
-
 export const PRODUCT_PERSISTENCE_TABLES = Object.freeze([
   "checkpoint_blobs",
   "checkpoint_records",
@@ -286,7 +176,6 @@ export const PRODUCT_PERSISTENCE_TABLES = Object.freeze([
   "mutation_journals",
   "rewind_child_plans",
   "rewind_file_plans",
-  "session_events",
   "session_generations",
   "sessions",
   "stable_boundaries",

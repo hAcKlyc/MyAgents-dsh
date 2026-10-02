@@ -147,10 +147,10 @@ export const PACKED_WORKSPACE_POLICIES: readonly PackedWorkspacePolicy[] = Objec
       "src/rewind.ts",
       "src/schema.ts",
       "src/session-lock.ts",
-      "src/session-handle.ts",
+      "src/native-jsonl.ts",
       "src/session-ownership.ts",
       "src/storage-contract.ts",
-      "src/sqlite-store.ts",
+      "src/mutation-store.ts",
     ],
   },
   {

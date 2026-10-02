@@ -16,30 +16,29 @@ import {
 } from "@deepseek-ai/dsh-session";
 import { createHash } from "node:crypto";
 import { mkdirSync, mkdtempSync, realpathSync } from "node:fs";
-import { chmod, link, mkdir, mkdtemp, realpath, rename, rm, symlink, writeFile } from "node:fs/promises";
+import { glob, link, mkdir, mkdtemp, readFile, realpath, rename, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
+import { constants as zstdConstants, zstdCompressSync, zstdDecompressSync } from "node:zlib";
+import { default as JsonlSessionPersistence } from "@deepseek-ai/dsh-session-persistence-jsonl";
+import { NativeJsonlGenerations } from "../packages/persistence-product/src/native-jsonl.js";
 import { join, resolve } from "node:path";
 import { DatabaseSync, type SQLInputValue } from "node:sqlite";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { supportsDirectorySymlinks } from "./setup/symlink-capability.js";
 
 import {
   PRODUCT_PERSISTENCE_FORMAT,
-  PRODUCT_PERSISTENCE_APPLICATION_ID,
   PRODUCT_PERSISTENCE_LIMITS,
   PRODUCT_PERSISTENCE_SCHEMA_VERSION,
-  PRODUCT_PERSISTENCE_SCHEMA_V1_SQL,
-  PRODUCT_PERSISTENCE_SCHEMA_V7_SQL,
-  PRODUCT_PERSISTENCE_SCHEMA_V8_SQL,
   PRODUCT_REQUIRED_SESSION_EVENT_TYPES,
-  ProductSqliteSessionPersistence,
+  ProductJsonlSessionPersistence,
   foldProductCompactions,
   isProductKnownSessionEventType,
-  productSessionDatabasePath,
+  productCoordinationDatabasePath,
   productTranscriptPostcondition,
   validateProductCompactionReceipt,
 } from "@myagents-dsh/persistence-product";
-import { canonicalSessionReadData, SessionReadAssembler } from "@myagents-dsh/protocol";
+import { SessionReadAssembler } from "@myagents-dsh/protocol";
 import { resolveRuntimePlatformTarget, selectPlatformAdapter } from "@myagents-dsh/product-profile";
 
 const fixtureWriters = new WeakMap<object, Map<SessionId, SessionHandle>>();
@@ -61,6 +60,43 @@ const inspectFixtureSession = async (persistence: SessionPersistence, id: Sessio
   try { return { meta: reader.header, inheritedEventCount: reader.inheritedEventCount, events: (await reader.read(offset)).events }; }
   finally { await reader.close(); }
 };
+// Corruption fixtures change physical bytes; production always uses the native API.
+const nativeLogPath = async (home: string, id: SessionId): Promise<string> => {
+  const database = new DatabaseSync(productCoordinationDatabasePath(nativePlatform(), home), { readOnly: true });
+  const row = database.prepare("SELECT active_generation_id FROM sessions WHERE id = ?").get(id) as { active_generation_id: string };
+  database.close();
+  const files: string[] = [];
+  for await (const path of glob(join(home, "sessions", row.active_generation_id, "**", "*.jsonl.zstd"))) files.push(path);
+  if (files.length !== 1) throw new Error("fixture must own exactly one native log");
+  const path = files[0];
+  if (path === undefined) throw new Error("native fixture log is absent");
+  return path;
+};
+const rewriteNativeRows = async (home: string, id: SessionId, mutate: (rows: string[]) => void): Promise<string> => {
+  const path = await nativeLogPath(home, id);
+  const bytes = await readFile(path);
+  const frames: Buffer[] = [];
+  for (let offset = 0; offset < bytes.length;) {
+    const decoded = zstdDecompressSync(bytes.subarray(offset), { info: true }) as unknown as { buffer: Buffer; engine: { bytesWritten: number } };
+    if (decoded.engine.bytesWritten < 1) throw new Error("fixture made no frame progress");
+    frames.push(decoded.buffer);
+    offset += decoded.engine.bytesWritten;
+  }
+  const rows = Buffer.concat(frames).toString("utf8").trimEnd().split("\n");
+  mutate(rows);
+  const compression = { params: { [zstdConstants.ZSTD_c_checksumFlag]: 1 } };
+  const header = rows[0];
+  if (header === undefined) throw new Error("native fixture header is absent");
+  await writeFile(path, Buffer.concat([
+    zstdCompressSync(header + "\n", compression),
+    zstdCompressSync(rows.slice(1).join("\n") + "\n", compression),
+  ]));
+  return path;
+};
+const inspectGeneration = async (home: string, generation: string, id: SessionId) => {
+  const logs = new NativeJsonlGenerations(home);
+  try { return await logs.inspect(generation, id); } finally { await logs.close(); }
+};
 const mountNativeLoop = async (ctx: Context): Promise<void> => {
   await ctx.plugin(LlmRuntime);
   await ctx.plugin(SessionProjectionRegistry);
@@ -73,6 +109,7 @@ const mountNativeLoop = async (ctx: Context): Promise<void> => {
 const nativePlatform = () => selectPlatformAdapter(resolveRuntimePlatformTarget(process.platform, process.arch));
 
 const roots: string[] = [];
+const contexts = new Set<Context>();
 
 const makeRuntimeHome = async (): Promise<string> => {
   const root = await realpath(await mkdtemp(join(tmpdir(), "myagents-product-persistence-")));
@@ -113,13 +150,14 @@ const mount = async (runtimeHome: string): Promise<Context> => {
   try {
     await context.plugin(SessionStore);
     const platform = nativePlatform();
-    const databasePath = productSessionDatabasePath(platform, runtimeHome);
-    await context.plugin(ProductSqliteSessionPersistence, {
+    const databasePath = productCoordinationDatabasePath(platform, runtimeHome);
+    await context.plugin(ProductJsonlSessionPersistence, {
       durability: platform.sqliteDurabilityPlan(databasePath),
       platform,
       runtimeHome,
-      writeBatchMaxDelayMs: 1,
     });
+    contexts.add(context);
+    context.effect(() => () => { contexts.delete(context); });
     return context;
   } catch (error) {
     await context.fiber.dispose();
@@ -133,10 +171,13 @@ const scalar = (database: DatabaseSync, sql: string, ...params: SQLInputValue[])
 };
 
 afterEach(async () => {
+  // The fixture owns every mounted context, including cold readers and fork
+  // target stores. Windows cannot unlink their live SQLite/JSONL handles.
+  await Promise.all([...contexts].map((context) => context.fiber.dispose()));
   await Promise.all(roots.splice(0).map((root) => rm(root, { force: true, recursive: true })));
 });
 
-describe("ProductSqliteSessionPersistence", () => {
+describe("ProductJsonlSessionPersistence", () => {
   it("owns the exact immutable product event registry", () => {
     expect(Object.isFrozen(PRODUCT_REQUIRED_SESSION_EVENT_TYPES)).toBe(true);
     expect(new Set(PRODUCT_REQUIRED_SESSION_EVENT_TYPES).size).toBe(PRODUCT_REQUIRED_SESSION_EVENT_TYPES.length);
@@ -186,25 +227,25 @@ describe("ProductSqliteSessionPersistence", () => {
 
   it("derives one fixed database location from every selected platform adapter", () => {
     expect(Object.isFrozen(PRODUCT_PERSISTENCE_LIMITS)).toBe(true);
-    expect(productSessionDatabasePath(
+    expect(productCoordinationDatabasePath(
       selectPlatformAdapter("darwin-arm64"),
       "/Users/fixture/Library/Application Support/MyAgents",
-    )).toBe("/Users/fixture/Library/Application Support/MyAgents/persistence/sessions-v1.sqlite");
-    expect(productSessionDatabasePath(
+    )).toBe("/Users/fixture/Library/Application Support/MyAgents/persistence/coordination.sqlite");
+    expect(productCoordinationDatabasePath(
       selectPlatformAdapter("linux-x64"),
       "/home/fixture/.local/share/myagents",
-    )).toBe("/home/fixture/.local/share/myagents/persistence/sessions-v1.sqlite");
-    expect(productSessionDatabasePath(
+    )).toBe("/home/fixture/.local/share/myagents/persistence/coordination.sqlite");
+    expect(productCoordinationDatabasePath(
       selectPlatformAdapter("win32-x64"),
       "C:\\Users\\fixture\\AppData\\Local\\MyAgents",
-    )).toBe("C:\\Users\\fixture\\AppData\\Local\\MyAgents\\persistence\\sessions-v1.sqlite");
+    )).toBe("C:\\Users\\fixture\\AppData\\Local\\MyAgents\\persistence\\coordination.sqlite");
   });
 
-  it("enforces durable JSON, event-count, and SQLite page bounds before unbounded recovery work", async () => {
+  it("accepts native large events while bounding product coordination metadata", async () => {
     const runtimeHome = await makeRuntimeHome();
     const context = await mount(runtimeHome);
     const id = SessionId("product-persistence-storage-bounds");
-    const databasePath = productSessionDatabasePath(nativePlatform(), runtimeHome);
+    const databasePath = productCoordinationDatabasePath(nativePlatform(), runtimeHome);
     await createFixtureSession(context.sessionPersistence, header(id));
     await appendFixtureEvents(context.sessionPersistence, id, turn(0, 1));
 
@@ -215,22 +256,8 @@ describe("ProductSqliteSessionPersistence", () => {
       type: "fixture/optional-json",
       ignorable: true,
     }) as unknown as SessionEvent;
-    await expect(appendFixtureEvents(context.sessionPersistence, id, [oversized]))
-      .rejects.toThrow(/persisted byte bound/u);
-    expect((await inspectFixtureSession(context.sessionPersistence, id, SessionLogOffset(0))).events).toHaveLength(2);
-
-    let deepData: unknown = "leaf";
-    for (let depth = 0; depth <= PRODUCT_PERSISTENCE_LIMITS.maxJsonDepth; depth += 1) {
-      deepData = { child: deepData };
-    }
-    await expect(appendFixtureEvents(context.sessionPersistence, id, [Object.freeze({
-      data: deepData,
-      seq: 2,
-      time: 3,
-      type: "fixture/optional-json",
-      ignorable: true,
-    }) as unknown as SessionEvent])).rejects.toThrow(/JSON depth bound/u);
-    expect((await inspectFixtureSession(context.sessionPersistence, id, SessionLogOffset(0))).events).toHaveLength(2);
+    await appendFixtureEvents(context.sessionPersistence, id, [oversized]);
+    expect((await inspectFixtureSession(context.sessionPersistence, id)).events.at(-1)).toEqual(oversized);
 
     const probe = new DatabaseSync(databasePath);
     probe.prepare("UPDATE sessions SET event_count = ? WHERE id = ?")
@@ -246,10 +273,10 @@ describe("ProductSqliteSessionPersistence", () => {
     const runtimeHome = await makeRuntimeHome();
     const context = await mount(runtimeHome);
     const id = SessionId("product-persistence-journal-bound");
-    const databasePath = productSessionDatabasePath(nativePlatform(), runtimeHome);
+    const databasePath = productCoordinationDatabasePath(nativePlatform(), runtimeHome);
     await createFixtureSession(context.sessionPersistence, header(id));
     await appendFixtureEvents(context.sessionPersistence, id, turn(0, 1));
-    if (!(context.sessionPersistence instanceof ProductSqliteSessionPersistence)) {
+    if (!(context.sessionPersistence instanceof ProductJsonlSessionPersistence)) {
       throw new Error("journal-bound fixture did not install product persistence");
     }
     const persistence = context.sessionPersistence;
@@ -294,7 +321,7 @@ describe("ProductSqliteSessionPersistence", () => {
     const runtimeHome = await makeRuntimeHome();
     const context = await mount(runtimeHome);
     const id = SessionId("product-persistence-database-substitution");
-    const databasePath = productSessionDatabasePath(nativePlatform(), runtimeHome);
+    const databasePath = productCoordinationDatabasePath(nativePlatform(), runtimeHome);
     await createFixtureSession(context.sessionPersistence, header(id));
     await appendFixtureEvents(context.sessionPersistence, id, turn(0, 1));
 
@@ -312,89 +339,13 @@ describe("ProductSqliteSessionPersistence", () => {
     await context.fiber.dispose();
   });
 
-  it("refuses the old v1 store without migrating its schema", async () => {
-    const runtimeHome = await makeRuntimeHome();
-    const platform = nativePlatform();
-    const databasePath = productSessionDatabasePath(platform, runtimeHome);
-    await mkdir(join(runtimeHome, "persistence"), { mode: 0o700 });
-    const database = new DatabaseSync(databasePath);
-    database.exec(PRODUCT_PERSISTENCE_SCHEMA_V1_SQL);
-    database.prepare(
-      "INSERT INTO store_meta(singleton, store_id, schema_version, persistence_format, created_at) VALUES (1, ?, 1, ?, 1)",
-    ).run("store-v1-fixture", PRODUCT_PERSISTENCE_FORMAT);
-    database.exec(`PRAGMA application_id = ${PRODUCT_PERSISTENCE_APPLICATION_ID}; PRAGMA user_version = 1;`);
-    database.close();
-    await chmod(databasePath, 0o600);
-
-    await expect(mount(runtimeHome)).rejects.toThrow(/schema identity is incompatible/);
-    const probe = new DatabaseSync(databasePath, { readOnly: true });
-    expect(probe.prepare("PRAGMA user_version").get()).toEqual({ user_version: 1 });
-    expect(probe.prepare("SELECT schema_version, store_id FROM store_meta WHERE singleton = 1").get())
-      .toEqual({ schema_version: 1, store_id: "store-v1-fixture" });
-    expect(probe.prepare("SELECT count(*) AS value FROM sqlite_schema WHERE type = 'table' AND name = 'checkpoint_records'").get())
-      .toEqual({ value: 0 });
-    probe.close();
-  });
-
-  it("refuses v8 stores without adding directory ownership", async () => {
-    const runtimeHome = await makeRuntimeHome();
-    const platform = nativePlatform();
-    const databasePath = productSessionDatabasePath(platform, runtimeHome);
-    await mkdir(join(runtimeHome, "persistence"), { mode: 0o700 });
-    const database = new DatabaseSync(databasePath);
-    database.exec(PRODUCT_PERSISTENCE_SCHEMA_V8_SQL);
-    database.prepare("INSERT INTO store_meta VALUES (1, 'directory-migration', 8, ?, 1)").run(PRODUCT_PERSISTENCE_FORMAT);
-    database.exec(`PRAGMA application_id = ${PRODUCT_PERSISTENCE_APPLICATION_ID}; PRAGMA user_version = 8;`);
-    database.close();
-    await chmod(databasePath, 0o600);
-    await expect(mount(runtimeHome)).rejects.toThrow(/schema identity is incompatible/);
-    const probe = new DatabaseSync(databasePath, { readOnly: true });
-    expect(probe.prepare("PRAGMA user_version").get()).toEqual({ user_version: 8 });
-    expect(probe.prepare("PRAGMA table_info(checkpoint_records)").all().some((row) => row.name === "directory_plan_json")).toBe(false);
-    probe.close();
-  });
-
-  it("refuses legacy fork metadata while preserving its original header and event bytes", async () => {
-    const runtimeHome = await makeRuntimeHome();
-    const platform = nativePlatform();
-    const databasePath = productSessionDatabasePath(platform, runtimeHome);
-    await mkdir(join(runtimeHome, "persistence"), { mode: 0o700 });
-    const database = new DatabaseSync(databasePath);
-    database.exec(PRODUCT_PERSISTENCE_SCHEMA_V7_SQL);
-    database.prepare("INSERT INTO store_meta VALUES (1, 'legacy-prefix-fixture', 7, ?, 1)").run(PRODUCT_PERSISTENCE_FORMAT);
-    database.exec(`PRAGMA application_id = ${PRODUCT_PERSISTENCE_APPLICATION_ID}; PRAGMA user_version = 7;`);
-    const id = SessionId("legacy-fork");
-    const legacyHeader = { createdAt: 1_000, cwd: "/fixture/workspace", id, parentSession: "legacy-parent", seedLength: 2, version: SESSION_FORMAT_VERSION };
-    const headerBytes = canonicalSessionReadData(legacyHeader).bytes.toString("utf8");
-    const events = turn(0, 1);
-    let head = createHash("sha256").digest("hex");
-    const rows = events.map((event) => {
-      const bytes = canonicalSessionReadData(event).bytes.toString("utf8");
-      head = createHash("sha256").update(Buffer.from(head, "hex")).update(bytes).digest("hex");
-      return { event, bytes, head };
-    });
-    database.prepare("INSERT INTO sessions VALUES (?, 'legacy-generation', 'active', 1, 2, ?, 1)").run(id, head);
-    database.prepare("INSERT INTO session_generations VALUES (?, 'legacy-generation', ?, 'fork', 'active', 1, 2, ?, 1)").run(id, headerBytes, head);
-    for (const row of rows) database.prepare("INSERT INTO session_events VALUES (?, 'legacy-generation', ?, ?, ?, ?, ?)")
-      .run(id, row.event.seq, row.event.type, row.event.time, row.bytes, row.head);
-    database.close();
-    await chmod(databasePath, 0o600);
-    await expect(mount(runtimeHome)).rejects.toThrow(/schema identity is incompatible/);
-    const probe = new DatabaseSync(databasePath, { readOnly: true });
-    expect(probe.prepare("PRAGMA user_version").get()).toEqual({ user_version: 7 });
-    expect(probe.prepare("SELECT header_json FROM session_generations").get()).toEqual({ header_json: headerBytes });
-    expect(probe.prepare("SELECT envelope_json FROM session_events ORDER BY seq").all())
-      .toEqual(rows.map(({ bytes }) => ({ envelope_json: bytes })));
-    probe.close();
-  });
-
   it("persists and projects one opaque stable boundary for a closed durable history", async () => {
     const runtimeHome = await makeRuntimeHome();
     const context = await mount(runtimeHome);
     const id = SessionId("product-persistence-stable-boundary");
     await createFixtureSession(context.sessionPersistence, header(id));
     await appendFixtureEvents(context.sessionPersistence, id, turn(0, 1));
-    if (!(context.sessionPersistence instanceof ProductSqliteSessionPersistence)) {
+    if (!(context.sessionPersistence instanceof ProductJsonlSessionPersistence)) {
       throw new Error("test did not install product persistence");
     }
     const first = await context.sessionPersistence.readSession({
@@ -411,7 +362,7 @@ describe("ProductSqliteSessionPersistence", () => {
     });
     expect(second.durableHead.stableBoundaryId).toBe(first.durableHead.stableBoundaryId);
 
-    const databasePath = productSessionDatabasePath(nativePlatform(), runtimeHome);
+    const databasePath = productCoordinationDatabasePath(nativePlatform(), runtimeHome);
     const probe = new DatabaseSync(databasePath, { readOnly: true });
     expect(probe.prepare(`
       SELECT boundary_id, seq_exclusive, turn, policy_version FROM stable_boundaries
@@ -440,7 +391,7 @@ describe("ProductSqliteSessionPersistence", () => {
     const sourceEvents = Object.freeze([configuration, ...firstTurn]);
     await createFixtureSession(context.sessionPersistence, header(id));
     await appendFixtureEvents(context.sessionPersistence, id, sourceEvents);
-    if (!(context.sessionPersistence instanceof ProductSqliteSessionPersistence)) {
+    if (!(context.sessionPersistence instanceof ProductJsonlSessionPersistence)) {
       throw new Error("test did not install product persistence");
     }
     const persistence = context.sessionPersistence;
@@ -467,17 +418,9 @@ describe("ProductSqliteSessionPersistence", () => {
       phase: "committed",
       receipt: { durableSequence: 2, rewindEventSequence: 1 },
     });
-    const databasePath = productSessionDatabasePath(nativePlatform(), runtimeHome);
-    const probe = new DatabaseSync(databasePath, { readOnly: true });
-    expect((probe.prepare(`
-      SELECT e.type FROM session_events AS e
-      JOIN sessions AS s ON s.id = e.session_id AND s.active_generation_id = e.generation_id
-      WHERE e.session_id = ? ORDER BY e.seq
-    `).all(id) as Array<{ type: string }>).map(({ type }) => type)).toEqual([
-      "session/end-seed",
-      "myagents/session/rewind",
+    expect((await inspectFixtureSession(persistence, id)).events.map(({ type }) => type)).toEqual([
+      "session/end-seed", "myagents/session/rewind",
     ]);
-    probe.close();
     await context.fiber.dispose();
   });
 
@@ -488,7 +431,7 @@ describe("ProductSqliteSessionPersistence", () => {
     const events = turn(0, 1);
     await createFixtureSession(context.sessionPersistence, header(id));
     await appendFixtureEvents(context.sessionPersistence, id, events);
-    if (!(context.sessionPersistence instanceof ProductSqliteSessionPersistence)) {
+    if (!(context.sessionPersistence instanceof ProductJsonlSessionPersistence)) {
       throw new Error("delete fixture did not install product persistence");
     }
     const persistence = context.sessionPersistence;
@@ -560,7 +503,7 @@ describe("ProductSqliteSessionPersistence", () => {
     expect(await persistence.list()).toEqual([]);
     await expect(inspectFixtureSession(persistence, id, SessionLogOffset(0))).rejects.toThrow(/not found|unavailable/u);
 
-    const databasePath = productSessionDatabasePath(nativePlatform(), runtimeHome);
+    const databasePath = productCoordinationDatabasePath(nativePlatform(), runtimeHome);
     const tombstoneProbe = new DatabaseSync(databasePath);
     tombstoneProbe.prepare("UPDATE sessions SET revision = revision + 1 WHERE id = ?").run(id);
     tombstoneProbe.close();
@@ -592,7 +535,7 @@ describe("ProductSqliteSessionPersistence", () => {
     const secondTurn = turn(2, 2);
     await createFixtureSession(context.sessionPersistence, header(id));
     await appendFixtureEvents(context.sessionPersistence, id, firstTurn);
-    if (!(context.sessionPersistence instanceof ProductSqliteSessionPersistence)) {
+    if (!(context.sessionPersistence instanceof ProductJsonlSessionPersistence)) {
       throw new Error("delete revision-drift fixture did not install product persistence");
     }
     const persistence = context.sessionPersistence;
@@ -617,7 +560,7 @@ describe("ProductSqliteSessionPersistence", () => {
     const id = SessionId("product-persistence-delete-purge");
     await createFixtureSession(context.sessionPersistence, header(id));
     await appendFixtureEvents(context.sessionPersistence, id, turn(0, 1));
-    if (!(context.sessionPersistence instanceof ProductSqliteSessionPersistence)) {
+    if (!(context.sessionPersistence instanceof ProductJsonlSessionPersistence)) {
       throw new Error("delete purge fixture did not install product persistence");
     }
     const persistence = context.sessionPersistence;
@@ -657,17 +600,10 @@ describe("ProductSqliteSessionPersistence", () => {
     const id = SessionId("product-persistence-recovery-corrupt");
     await createFixtureSession(context.sessionPersistence, header(id));
     await appendFixtureEvents(context.sessionPersistence, id, turn(0, 1));
-    if (!(context.sessionPersistence instanceof ProductSqliteSessionPersistence)) {
+    if (!(context.sessionPersistence instanceof ProductJsonlSessionPersistence)) {
       throw new Error("recovery fixture did not install product persistence");
     }
-    const database = new DatabaseSync(productSessionDatabasePath(
-      nativePlatform(),
-      runtimeHome,
-    ));
-    database.prepare(
-      "UPDATE session_events SET chain_hash = ? WHERE session_id = ? AND seq = 0",
-    ).run("0".repeat(64), id);
-    database.close();
+    await rewriteNativeRows(runtimeHome, id, (rows) => { rows[1] = "not-json"; });
     expect(await context.sessionPersistence.inspectRecovery(id)).toEqual({
       state: "recovery_required",
       reason: "persisted_history_invalid",
@@ -685,7 +621,7 @@ describe("ProductSqliteSessionPersistence", () => {
     const secondTurn = turn(2, 2);
     await createFixtureSession(context.sessionPersistence, header(id));
     await appendFixtureEvents(context.sessionPersistence, id, firstTurn);
-    if (!(context.sessionPersistence instanceof ProductSqliteSessionPersistence)) {
+    if (!(context.sessionPersistence instanceof ProductJsonlSessionPersistence)) {
       throw new Error("test did not install product persistence");
     }
     const persistence = context.sessionPersistence;
@@ -728,6 +664,21 @@ describe("ProductSqliteSessionPersistence", () => {
       targetTranscriptPostcondition: productTranscriptPostcondition(firstTurn),
     })).toEqual(prepared);
 
+    const interrupted = vi.spyOn(NativeJsonlGenerations.prototype, "seed");
+    interrupted.mockImplementationOnce(async function (this: NativeJsonlGenerations, generation, meta, cut, events) {
+      const backend = await this.backend(generation);
+      const writer = await backend.create(meta, { inheritedEventCount: cut });
+      try {
+        await writer.append(events);
+        await writer.flush();
+      } finally {
+        await writer.close();
+      }
+      throw new Error("candidate durable before locator publication");
+    });
+    await expect(persistence.commitRewind(prepared.token, "rewind-client-1")).rejects.toThrow("candidate durable");
+    interrupted.mockRestore();
+    expect((await inspectFixtureSession(persistence, id)).events).toEqual(allEvents);
     const committed = await persistence.commitRewind(prepared.token, "rewind-client-1");
     expect(committed).toMatchObject({
       attempt: 1,
@@ -742,15 +693,10 @@ describe("ProductSqliteSessionPersistence", () => {
     expect(await persistence.commitRewind(prepared.token, "rewind-client-1")).toEqual(committed);
     expect((await persistence.list()).map(({ header: { id: sessionId } }) => String(sessionId)).sort())
       .toEqual([String(id)]);
-    const databasePath = productSessionDatabasePath(nativePlatform(), runtimeHome);
+    const databasePath = productCoordinationDatabasePath(nativePlatform(), runtimeHome);
     const probe = new DatabaseSync(databasePath, { readOnly: true });
-    const rewoundEvents = (probe.prepare(`
-      SELECT envelope_json FROM session_events AS e
-       JOIN sessions AS s
-         ON s.id = e.session_id AND s.active_generation_id = e.generation_id
-       WHERE e.session_id = ? ORDER BY e.seq
-    `).all(id) as Array<{ envelope_json: string }>).map(({ envelope_json }) =>
-      JSON.parse(envelope_json) as SessionEvent);
+    const rewoundEvents = (await inspectFixtureSession(persistence, id)).events;
+    expect((await inspectGeneration(runtimeHome, prepared.sourceGenerationId, id))?.events).toEqual(allEvents);
     expect(rewoundEvents.slice(0, firstTurn.length)).toEqual(firstTurn);
     expect(rewoundEvents.at(-1)).toMatchObject({
       data: {
@@ -794,6 +740,67 @@ describe("ProductSqliteSessionPersistence", () => {
     await context.fiber.dispose();
   });
 
+  it("keeps every inherited turn available with one canonical fork boundary per turn", async () => {
+    const sourceHome = await makeRuntimeHome();
+    const targetHome = await makeRuntimeHome();
+    const sourceContext = await mount(sourceHome);
+    const source = sourceContext.sessionPersistence;
+    if (!(source instanceof ProductJsonlSessionPersistence)) throw new Error("source persistence is unavailable");
+    const id = SessionId("multi-turn-fork-source");
+    await createFixtureSession(source, header(id));
+    await appendFixtureEvents(source, id, [...turn(0, 1), ...turn(2, 2)]);
+    const sourceRead = await source.readSession({ maxResultBytes: 65_536, runtimeGeneration: "source", runtimeSessionId: id });
+    const boundary = sourceRead.durableHead.stableBoundaryId;
+    if (boundary === undefined) throw new Error("source boundary is unavailable");
+    const fork = await source.prepareFork({
+      clientMutationId: "multi-turn-fork", runtimeSessionId: id, sourceStableBoundaryId: boundary,
+      targetPersistenceRef: "multi-turn-target", targetRuntimeHome: targetHome,
+      targetRuntimeSessionId: "multi-turn-fork-target", targetWorkspaceIdentity: "multi-turn-workspace",
+    });
+    await source.commitFork(fork.token, "multi-turn-fork");
+    const targetContext = await mount(targetHome);
+    const target = targetContext.sessionPersistence;
+    if (!(target instanceof ProductJsonlSessionPersistence)) throw new Error("target persistence is unavailable");
+    const read = await target.readSession({ maxResultBytes: 65_536, runtimeGeneration: "cold-target", runtimeSessionId: fork.targetRuntimeSessionId });
+    expect(read.mutationBoundaries?.map(({ sequence, turn }) => ({ sequence, turn }))).toEqual([
+      { sequence: 2, turn: 1 }, { sequence: 6, turn: 2 },
+    ]);
+    const earlier = read.mutationBoundaries?.[0]?.stableBoundaryId;
+    if (earlier === undefined) throw new Error("earlier inherited boundary is unavailable");
+    const nested = await target.prepareFork({
+      clientMutationId: "early-inherited-fork", runtimeSessionId: fork.targetRuntimeSessionId, sourceStableBoundaryId: earlier,
+      targetPersistenceRef: "early-inherited-target", targetRuntimeHome: await makeRuntimeHome(),
+      targetRuntimeSessionId: "early-inherited-fork-target", targetWorkspaceIdentity: "multi-turn-workspace",
+    });
+    expect((await target.commitFork(nested.token, "early-inherited-fork")).phase).toBe("committed");
+    const beforeRewind = await inspectFixtureSession(target, SessionId(fork.targetRuntimeSessionId));
+    const rewind = await target.prepareRewind({
+      clientMutationId: "early-inherited-rewind", runtimeSessionId: fork.targetRuntimeSessionId,
+      sourceTranscriptPostcondition: productTranscriptPostcondition(beforeRewind.events),
+      targetStableBoundaryId: earlier,
+      targetTranscriptPostcondition: productTranscriptPostcondition(beforeRewind.events.slice(0, 2)),
+    });
+    const committed = await target.commitRewind(rewind.token, "early-inherited-rewind");
+    expect(committed.receipt).toMatchObject({ durableSequence: 4, rewindEventSequence: 3 });
+    await targetContext.fiber.dispose();
+    const coldContext = await mount(targetHome);
+    const cold = coldContext.sessionPersistence;
+    if (!(cold instanceof ProductJsonlSessionPersistence)) throw new Error("cold persistence is unavailable");
+    // This goes through the official JSONL decoder, which rejects a seeded log
+    // without its inherited end-seed marker even if its Product hash is valid.
+    const restored = await inspectFixtureSession(cold, SessionId(fork.targetRuntimeSessionId));
+    expect(restored.inheritedEventCount).toBe(2);
+    expect(restored.events.map(({ type }) => type)).toEqual([
+      "turn/start", "turn/end", "session/end-seed", "myagents/session/rewind",
+    ]);
+    expect(restored.events[2]).toMatchObject({ seq: 2, data: { inherited: true } });
+    expect(productTranscriptPostcondition(restored.events.slice(0, 2))).toBe(rewind.targetTranscriptPostcondition);
+    expect(await cold.commitRewind(rewind.token, "early-inherited-rewind")).toEqual(committed);
+    const coldRead = await cold.readSession({ maxResultBytes: 65_536, runtimeGeneration: "cold-rewound-target", runtimeSessionId: fork.targetRuntimeSessionId });
+    expect(coldRead.durableHead.sequence).toBe(4);
+    expect(coldRead.mutationBoundaries?.map(({ sequence, turn }) => ({ sequence, turn }))).toEqual([{ sequence: 2, turn: 1 }]);
+  });
+
   it("stages, commits, retries, and aborts an independent stable-prefix fork", async () => {
     const sourceRuntimeHome = await makeRuntimeHome();
     const committedTargetHome = await makeRuntimeHome();
@@ -806,7 +813,7 @@ describe("ProductSqliteSessionPersistence", () => {
     const firstTurn = turn(0, 1);
     await createFixtureSession(context.sessionPersistence, sourceHeader);
     await appendFixtureEvents(context.sessionPersistence, sourceId, firstTurn);
-    if (!(context.sessionPersistence instanceof ProductSqliteSessionPersistence)) {
+    if (!(context.sessionPersistence instanceof ProductJsonlSessionPersistence)) {
       throw new Error("test did not install product persistence");
     }
     const persistence = context.sessionPersistence;
@@ -817,7 +824,7 @@ describe("ProductSqliteSessionPersistence", () => {
     });
     const boundaryId = sourceRead.durableHead.stableBoundaryId;
     if (boundaryId === undefined) throw new Error("fork source boundary is unavailable");
-    const sourceDatabasePath = productSessionDatabasePath(
+    const sourceDatabasePath = productCoordinationDatabasePath(
       nativePlatform(),
       sourceRuntimeHome,
     );
@@ -871,6 +878,13 @@ describe("ProductSqliteSessionPersistence", () => {
       targetWorkspaceIdentity: "fork-target-workspace-1",
     })).rejects.toThrow(/already owns another Session/u);
 
+    const fail = vi.spyOn(JsonlSessionPersistence.prototype, "persistBatch").mockRejectedValueOnce(new Error("candidate append interrupted"));
+    await expect(persistence.prepareFork({
+      clientMutationId: "fork-client-1", runtimeSessionId: sourceId, sourceStableBoundaryId: boundaryId,
+      targetPersistenceRef: "fork-target-persistence-1", targetRuntimeHome: committedTargetHome,
+      targetRuntimeSessionId: "product-persistence-fork-target", targetWorkspaceIdentity: "fork-target-workspace-1",
+    })).rejects.toThrow("candidate append interrupted");
+    fail.mockRestore();
     const prepared = await persistence.prepareFork({
       clientMutationId: "fork-client-1",
       runtimeSessionId: sourceId,
@@ -898,7 +912,7 @@ describe("ProductSqliteSessionPersistence", () => {
       targetWorkspaceIdentity: "fork-target-workspace-1",
     })).toEqual(prepared);
 
-    const targetDatabasePath = productSessionDatabasePath(
+    const targetDatabasePath = productCoordinationDatabasePath(
       nativePlatform(),
       committedTargetHome,
     );
@@ -919,7 +933,7 @@ describe("ProductSqliteSessionPersistence", () => {
       attempt: 1,
       phase: "committed",
       receipt: {
-        durableSequence: 3,
+        durableSequence: 4,
         sourceRuntimeSessionId: sourceId,
         sourceStableBoundaryId: boundaryId,
         targetGenerationId: prepared.targetGenerationId,
@@ -940,25 +954,41 @@ describe("ProductSqliteSessionPersistence", () => {
       header_json: string;
       state: string;
     };
-    expect(target).toMatchObject({ event_count: 3, generation_state: "active", state: "active" });
+    expect(target).toMatchObject({ event_count: 4, generation_state: "active", state: "active" });
     expect(JSON.parse(target.header_json)).toMatchObject({
       id: prepared.targetRuntimeSessionId,
       parentSession: sourceId,
       isSeeded: true,
     });
-    expect(JSON.parse((probe.prepare(`
-      SELECT envelope_json FROM session_events
-       WHERE session_id = ? AND generation_id = ? ORDER BY seq DESC LIMIT 1
-    `).get(prepared.targetRuntimeSessionId, prepared.targetGenerationId) as {
-      envelope_json: string;
-    }).envelope_json)).toMatchObject({
-      data: { token: prepared.token },
-      seq: 2,
-      type: "myagents/session/fork",
-    });
+    const nativeTarget = await inspectGeneration(committedTargetHome, prepared.targetGenerationId, SessionId(prepared.targetRuntimeSessionId));
+    expect(nativeTarget?.inheritedEventCount).toBe(firstTurn.length);
+    expect(nativeTarget?.events.at(-2)).toMatchObject({ type: "session/end-seed", data: { inherited: true } });
+    expect(nativeTarget?.events.at(-1)).toMatchObject({ data: { token: prepared.token }, seq: 3, type: "myagents/session/fork" });
     expect(scalar(probe, "SELECT count(*) AS value FROM checkpoint_records")).toBe(1);
     expect(scalar(probe, "SELECT count(*) AS value FROM checkpoint_blobs")).toBe(1);
     probe.close();
+
+    const forkContext = await mount(committedTargetHome);
+    const forkPersistence = forkContext.sessionPersistence;
+    if (!(forkPersistence instanceof ProductJsonlSessionPersistence)) throw new Error("fork persistence is unavailable");
+    const targetId = SessionId(prepared.targetRuntimeSessionId);
+    const targetRead = await forkPersistence.readSession({
+      maxResultBytes: 65_536, runtimeGeneration: "fork-cold-read", runtimeSessionId: targetId,
+    });
+    expect(targetRead.inheritedEventCount).toBe(firstTurn.length);
+    expect(targetRead.mutationBoundaries).toHaveLength(1);
+    expect(targetRead.mutationBoundaries?.[0]).toMatchObject({ sequence: 4, turn: 1 });
+    const forkBoundaryId = targetRead.mutationBoundaries?.[0]?.stableBoundaryId;
+    if (forkBoundaryId === undefined) throw new Error("fork target boundary is unavailable");
+    const nestedHome = await makeRuntimeHome();
+    const nested = await forkPersistence.prepareFork({
+      clientMutationId: "nested-fork-client", runtimeSessionId: targetId, sourceStableBoundaryId: forkBoundaryId,
+      targetPersistenceRef: "nested-persistence", targetRuntimeHome: nestedHome,
+      targetRuntimeSessionId: "nested-fork-target", targetWorkspaceIdentity: "fork-target-workspace-1",
+    });
+    await forkPersistence.commitFork(nested.token, "nested-fork-client");
+    const nestedNative = await inspectGeneration(nestedHome, nested.targetGenerationId, SessionId(nested.targetRuntimeSessionId));
+    expect(nestedNative?.events.filter(event => event.type === "myagents/session/fork")).toHaveLength(2);
 
     const stalePrepared = await persistence.prepareFork({
       clientMutationId: "fork-client-stale-source",
@@ -986,11 +1016,12 @@ describe("ProductSqliteSessionPersistence", () => {
     const aborted = await persistence.abortFork(abortPrepared.token, "fork-client-abort");
     expect(aborted.phase).toBe("aborted");
     expect(await persistence.abortFork(abortPrepared.token, "fork-client-abort")).toEqual(aborted);
-    probe = new DatabaseSync(productSessionDatabasePath(
+    probe = new DatabaseSync(productCoordinationDatabasePath(
       nativePlatform(),
       abortedTargetHome,
     ), { readOnly: true });
     expect(scalar(probe, "SELECT count(*) AS value FROM sessions")).toBe(0);
+    expect(scalar(probe, "SELECT count(*) AS value FROM sqlite_master WHERE type = 'table' AND name = 'session_events'")).toBe(0);
     expect(scalar(probe, "SELECT count(*) AS value FROM checkpoint_records")).toBe(0);
     expect(scalar(probe, "SELECT count(*) AS value FROM checkpoint_blobs")).toBe(0);
     probe.close();
@@ -1002,11 +1033,12 @@ describe("ProductSqliteSessionPersistence", () => {
     const context = await mount(runtimeHome);
     const id = SessionId("product-persistence-primary");
     const meta = header(id);
-    const databasePath = productSessionDatabasePath(nativePlatform(), runtimeHome);
+    const databasePath = productCoordinationDatabasePath(nativePlatform(), runtimeHome);
 
     await createFixtureSession(context.sessionPersistence, meta);
     let probe = new DatabaseSync(databasePath, { readOnly: true });
-    expect(scalar(probe, "SELECT count(*) AS value FROM sessions")).toBe(0);
+    expect(scalar(probe, "SELECT count(*) AS value FROM sessions")).toBe(1);
+    expect(scalar(probe, "SELECT count(*) AS value FROM sqlite_master WHERE type = 'table' AND name = 'session_events'")).toBe(0);
     const storeMeta = probe.prepare(
       "SELECT persistence_format, schema_version FROM store_meta WHERE singleton = 1",
     ).get() as { persistence_format: string; schema_version: number };
@@ -1026,9 +1058,7 @@ describe("ProductSqliteSessionPersistence", () => {
       head_hash: string;
       revision: number;
     };
-    const firstEnvelope = (probe.prepare(
-      "SELECT envelope_json FROM session_events WHERE session_id = ? AND generation_id = ? AND seq = 0",
-    ).get(id, first.active_generation_id) as { envelope_json: string }).envelope_json;
+    const firstEvent = (await inspectFixtureSession(context.sessionPersistence, id)).events[0];
     expect(first.event_count).toBe(2);
     expect(first.revision).toBe(1);
     expect(first.head_hash).toMatch(/^[a-f0-9]{64}$/u);
@@ -1053,9 +1083,7 @@ describe("ProductSqliteSessionPersistence", () => {
       event_count: 4,
       revision: 2,
     });
-    expect((probe.prepare(
-      "SELECT envelope_json FROM session_events WHERE session_id = ? AND generation_id = ? AND seq = 0",
-    ).get(id, first.active_generation_id) as { envelope_json: string }).envelope_json).toBe(firstEnvelope);
+    expect((await inspectFixtureSession(context.sessionPersistence, id)).events[0]).toEqual(firstEvent);
     probe.close();
 
     await expect(appendFixtureEvents(context.sessionPersistence, id, turn(5, 3))).rejects.toThrow(/expected 4.*got 5/u);
@@ -1074,7 +1102,6 @@ describe("ProductSqliteSessionPersistence", () => {
     const context = await mount(runtimeHome);
     const id = SessionId("product-persistence-suffix");
     const meta = header(id);
-    const databasePath = productSessionDatabasePath(nativePlatform(), runtimeHome);
 
     await createFixtureSession(context.sessionPersistence, meta);
     await appendFixtureEvents(context.sessionPersistence, id, [...turn(0, 1), ...turn(2, 2)]);
@@ -1090,32 +1117,9 @@ describe("ProductSqliteSessionPersistence", () => {
     await expect(inspectFixtureSession(context.sessionPersistence, id, Number.MAX_SAFE_INTEGER + 1 as SessionLogOffset))
       .rejects.toThrow(/non-negative safe integer/u);
 
-    const probe = new DatabaseSync(databasePath);
-    const generation = probe.prepare(
-      "SELECT active_generation_id FROM sessions WHERE id = ?",
-    ).get(id) as { active_generation_id: string };
-    probe.prepare(`
-      UPDATE session_events
-         SET envelope_json = ?
-       WHERE session_id = ? AND generation_id = ? AND seq = 0
-    `).run("not-json", id, generation.active_generation_id);
-
-    await expect(inspectFixtureSession(context.sessionPersistence, id, SessionLogOffset(2))).rejects.toThrow(/event 0 contains invalid JSON/u);
-    await expect(inspectFixtureSession(context.sessionPersistence, id, SessionLogOffset(0))).rejects.toThrow(/event 0 contains invalid JSON/u);
-
-    probe.prepare(`
-      UPDATE session_events
-         SET envelope_json = ?
-       WHERE session_id = ? AND generation_id = ? AND seq = 2
-    `).run("also-not-json", id, generation.active_generation_id);
-    await expect(inspectFixtureSession(context.sessionPersistence, id, SessionLogOffset(2))).rejects.toThrow(/event 0 contains invalid JSON/u);
-
-    probe.prepare(`
-      DELETE FROM session_events
-       WHERE session_id = ? AND generation_id = ? AND seq = 1
-    `).run(id, generation.active_generation_id);
-    probe.close();
-    await expect(inspectFixtureSession(context.sessionPersistence, id, SessionLogOffset(2))).rejects.toThrow(/event count|not contiguous/u);
+    await rewriteNativeRows(runtimeHome, id, (rows) => { rows[1] = "not-json"; });
+    await expect(inspectFixtureSession(context.sessionPersistence, id, SessionLogOffset(2))).rejects.toThrow(/corrupt|JSON/u);
+    await expect(inspectFixtureSession(context.sessionPersistence, id, SessionLogOffset(0))).rejects.toThrow(/corrupt|JSON/u);
     await context.fiber.dispose();
   });
 
@@ -1128,7 +1132,7 @@ describe("ProductSqliteSessionPersistence", () => {
     })) as unknown as SessionEvent[];
     await createFixtureSession(context.sessionPersistence, header(id));
     await appendFixtureEvents(context.sessionPersistence, id, events);
-    if (!(context.sessionPersistence instanceof ProductSqliteSessionPersistence)) throw new Error("missing Provider");
+    if (!(context.sessionPersistence instanceof ProductJsonlSessionPersistence)) throw new Error("missing Provider");
     const assembler = new SessionReadAssembler();
     let cursor: string | undefined;
     do {
@@ -1164,7 +1168,7 @@ describe("ProductSqliteSessionPersistence", () => {
     ]) as unknown as readonly SessionEvent[];
     await createFixtureSession(context.sessionPersistence, header(id));
     await appendFixtureEvents(context.sessionPersistence, id, events);
-    if (!(context.sessionPersistence instanceof ProductSqliteSessionPersistence)) {
+    if (!(context.sessionPersistence instanceof ProductJsonlSessionPersistence)) {
       throw new Error("test did not install product persistence");
     }
     const persistence = context.sessionPersistence;
@@ -1284,7 +1288,7 @@ describe("ProductSqliteSessionPersistence", () => {
     ]) as unknown as readonly SessionEvent[];
     await createFixtureSession(context.sessionPersistence, header(id));
     await appendFixtureEvents(context.sessionPersistence, id, events);
-    if (!(context.sessionPersistence instanceof ProductSqliteSessionPersistence)) {
+    if (!(context.sessionPersistence instanceof ProductJsonlSessionPersistence)) {
       throw new Error("test did not install product persistence");
     }
     const persistence = context.sessionPersistence;
@@ -1295,14 +1299,12 @@ describe("ProductSqliteSessionPersistence", () => {
     });
     if (first.nextCursor === undefined) throw new Error("corrupt suffix fixture must span pages");
 
-    const databasePath = productSessionDatabasePath(nativePlatform(), runtimeHome);
+    const databasePath = productCoordinationDatabasePath(nativePlatform(), runtimeHome);
     const probe = new DatabaseSync(databasePath);
     const before = probe.prepare(
       "SELECT event_count, head_hash, revision FROM sessions WHERE id = ?",
     ).get(id);
-    probe.prepare(
-      "UPDATE session_events SET envelope_json = ? WHERE session_id = ? AND seq = 2",
-    ).run("not-json", id);
+    await rewriteNativeRows(runtimeHome, id, (rows) => { rows[3] = "not-json"; });
     await expect(persistence.readSession({
       cursor: first.nextCursor,
       maxResultBytes: 4_096,
@@ -1366,22 +1368,15 @@ describe("ProductSqliteSessionPersistence", () => {
     }) as unknown as SessionEvent, ...turn(1, 1)]);
     await first.fiber.dispose();
 
-    const databasePath = productSessionDatabasePath(nativePlatform(), runtimeHome);
-    // Synthesize a well-hashed log from a newer harness; current writers must
-    // reject unknown required events before admission.
-    const fixture = new DatabaseSync(databasePath);
-    const rows = fixture.prepare("SELECT seq, envelope_json FROM session_events WHERE session_id = ? ORDER BY seq").all(id) as { seq: number; envelope_json: string }[];
-    let head = createHash("sha256").digest("hex");
-    for (const row of rows) {
-      const event = JSON.parse(row.envelope_json) as Record<string, unknown>;
+    const databasePath = productCoordinationDatabasePath(nativePlatform(), runtimeHome);
+    const path = await rewriteNativeRows(runtimeHome, id, (rows) => {
+      const row = rows[1];
+      if (row === undefined) throw new Error("native fixture event is absent");
+      const event = JSON.parse(row) as Record<string, unknown>;
       delete event.ignorable;
-      const envelope = canonicalSessionReadData(event).bytes.toString("utf8");
-      head = createHash("sha256").update(Buffer.from(head, "hex")).update(envelope).digest("hex");
-      fixture.prepare("UPDATE session_events SET envelope_json = ?, chain_hash = ? WHERE session_id = ? AND seq = ?").run(envelope, head, id, row.seq);
-    }
-    fixture.prepare("UPDATE sessions SET head_hash = ? WHERE id = ?").run(head, id);
-    fixture.prepare("UPDATE session_generations SET head_hash = ? WHERE session_id = ?").run(head, id);
-    fixture.close();
+      rows[1] = JSON.stringify(event);
+    });
+    const rawBefore = await readFile(path);
     const before = new DatabaseSync(databasePath, { readOnly: true });
     const beforeRow = before.prepare(
       "SELECT event_count, head_hash FROM sessions WHERE id = ?",
@@ -1396,7 +1391,7 @@ describe("ProductSqliteSessionPersistence", () => {
     const after = new DatabaseSync(databasePath, { readOnly: true });
     expect(after.prepare("SELECT event_count, head_hash FROM sessions WHERE id = ?").get(id))
       .toEqual(beforeRow);
-    expect(scalar(after, "SELECT count(*) AS value FROM session_events WHERE session_id = ?", id)).toBe(3);
+    expect(await readFile(path)).toEqual(rawBefore);
     after.close();
   });
 
@@ -1417,7 +1412,7 @@ describe("ProductSqliteSessionPersistence", () => {
     await accepted.value.append(turn(0, 1));
     await accepted.value.close();
 
-    const databasePath = productSessionDatabasePath(nativePlatform(), runtimeHome);
+    const databasePath = productCoordinationDatabasePath(nativePlatform(), runtimeHome);
     const probe = new DatabaseSync(databasePath, { readOnly: true });
     expect(scalar(probe, "SELECT count(*) AS value FROM sessions WHERE id = ?", id)).toBe(1);
     expect(scalar(
@@ -1425,7 +1420,7 @@ describe("ProductSqliteSessionPersistence", () => {
       "SELECT count(*) AS value FROM session_generations WHERE session_id = ?",
       id,
     )).toBe(1);
-    expect(scalar(probe, "SELECT count(*) AS value FROM session_events WHERE session_id = ?", id)).toBe(2);
+    expect((await inspectFixtureSession(first.sessionPersistence, id)).events).toHaveLength(2);
     probe.close();
 
     await Promise.all([first.fiber.dispose(), second.fiber.dispose()]);
@@ -1441,7 +1436,7 @@ describe("ProductSqliteSessionPersistence", () => {
     session.append("turn/start", { turn: 1 });
     await context.fiber.dispose();
 
-    const databasePath = productSessionDatabasePath(nativePlatform(), runtimeHome);
+    const databasePath = productCoordinationDatabasePath(nativePlatform(), runtimeHome);
     const probe = new DatabaseSync(databasePath, { readOnly: true });
     expect(scalar(
       probe,
@@ -1462,7 +1457,7 @@ describe("ProductSqliteSessionPersistence", () => {
     await mkdir(persistenceDirectory, { mode: 0o700 });
     const outside = join(root, "outside.sqlite");
     await writeFile(outside, "");
-    const databasePath = productSessionDatabasePath(nativePlatform(), runtimeHome);
+    const databasePath = productCoordinationDatabasePath(nativePlatform(), runtimeHome);
     await link(outside, databasePath);
     await expect(mount(runtimeHome)).rejects.toThrow(/singly-linked regular file/u);
   });
@@ -1487,7 +1482,7 @@ describe("ProductSqliteSessionPersistence", () => {
   it("validates plugin configuration without executing nested accessors", async () => {
     const runtimeHome = await makeRuntimeHome();
     const platform = nativePlatform();
-    const databasePath = productSessionDatabasePath(platform, runtimeHome);
+    const databasePath = productCoordinationDatabasePath(platform, runtimeHome);
     const expected = platform.sqliteDurabilityPlan(databasePath);
     let getterHits = 0;
     const pragmas: unknown[] = [];
@@ -1501,7 +1496,7 @@ describe("ProductSqliteSessionPersistence", () => {
     pragmas[1] = expected.pragmas[1];
     const context = new Context();
     await context.plugin(SessionStore);
-    await expect(context.plugin(ProductSqliteSessionPersistence, {
+    await expect(context.plugin(ProductJsonlSessionPersistence, {
       durability: {
         databasePath,
         parentDirectoryFlush: expected.parentDirectoryFlush,
@@ -1511,7 +1506,7 @@ describe("ProductSqliteSessionPersistence", () => {
       runtimeHome,
     })).rejects.toThrow(/exact data entries/u);
     expect(getterHits).toBe(0);
-    await expect(context.plugin(ProductSqliteSessionPersistence, {
+    await expect(context.plugin(ProductJsonlSessionPersistence, {
       durability: expected,
       platform,
       preparedSessionCacheSize: undefined,

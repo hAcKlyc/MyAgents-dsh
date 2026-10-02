@@ -11,7 +11,7 @@ own acceptance. This tree owns task-oriented current subsystem explanation.
 | If you need to… | Read |
 | --- | --- |
 | Understand the complete process and authority graph | [Architecture](../ARCHITECTURE.md), then [Runtime control](./runtime/) |
-| Add/update a DSH or MyAgents Runtime plugin | [Plugin composition and native prompt configuration](./runtime/plugin-composition.md), then the guide for the affected capability |
+| Add/update a DSH or MyAgents Runtime plugin | [Plugin composition, native persistence and prompt configuration](./runtime/plugin-composition.md), then the guide for the affected capability |
 | Integrate a new Host or Runtime implementation | [Protocol](./runtime/protocol.md), [Host reverse ports](./boundaries/host-reverse-ports.md), [Compatibility truth](./assurance/compatibility-and-capability-truth.md) |
 | Diagnose query/queue/resume/retry behavior | [Operations, messages and turns](./runtime/operations-messages-and-turns.md), [Sessions and recovery](./state/sessions-persistence-and-recovery.md), [Event reconciliation](./runtime/event-projection-and-reconciliation.md) |
 | Add a Provider or model | [Model Provider plane](./execution/model-provider-plane.md), [Configuration and generations](./runtime/configuration-and-generations.md) |

@@ -2,7 +2,7 @@
 type: technical-architecture
 status: implemented
 module: sessions-persistence-and-recovery
-updated: 2026-09-25
+updated: 2026-10-02
 decisions:
   - ../../adr/0003-product-session-event-predicate.md
   - ../../adr/0004-shared-backend-lock-and-immutable-rewind-generation.md
@@ -12,11 +12,11 @@ decisions:
 
 ## 1. Purpose and authority
 
-This guide explains the one-primary-Session product boundary, the production DSH persistence Provider and crash recovery. DSH Session events are the only durable model-conversation log. Product events declaration-merge into that vocabulary; SQLite stores the same sequence and transaction journals rather than a shadow transcript.
+This guide explains the one-primary-Session product boundary, the production DSH persistence Provider and crash recovery. DSH Session events are the only durable model-conversation log. Product events declaration-merge into that vocabulary. Official JSONL stores the event sequence; a product SQLite store contains only locators, transaction journals and checkpoint records.
 
 ## 2. Relationships
 
-- **Owns:** primary root Session admission, active storage locator, storage-generation identity, append-only event admission/storage, locking, cold-load validation, close and resume recovery.
+- **Owns:** primary root Session admission, active storage locator, storage-generation identity, Product payload admission, locator locking and recovery coordination; DSH owns native event storage and handle lifecycle.
 - **Depends on:** public DSH Session/Persistence APIs, known product event declarations, operation/component/config recovery and SQLite/filesystem adapters.
 - **Consumed by:** AgentLoop, operations, event projection, compaction, mutations, children, Reference Web and MyAgents Hosts.
 - **Does not own:** model or tool execution, Host routing catalog, UI history, mutation policy, checkpoints or a second event vocabulary.
@@ -25,18 +25,27 @@ This guide explains the one-primary-Session product boundary, the production DSH
 
 One Runtime generation owns at most one primary root DSH Session and its exact Agent. Active product Sessions in a multi-Session Host therefore map to separate Runtime processes. Cold Sessions are durable storage plus Host routing metadata, not resident Agents in a daemon.
 
-The current implementation uses the pinned DSH distribution: `ProductSqliteSessionPersistence`
-implements public `SessionPersistence.create/open/flush/stat/list`. Each create/open returns a
-native-contract `SessionHandle`; the removed PersistenceCoordinator/Backend is not reproduced.
-The accepted Runtime and Host handoff are identified by the Host lock; platform and release claims remain byte-specific.
+`ProductJsonlSessionPersistence` selects native JSONL generations through the public
+`SessionPersistence.create/open/flush/stat/list` and `SessionHandle` contracts. Official handles
+own all physical I/O and the live event buffer. The adapter retains only the product locator lease,
+payload policy and metadata reconciliation; no Product handle buffer or append backend remains.
 
-One active locator points to one immutable-generation identity. Appends advance its sequence,
-revision/count and head hash; rewind replaces the active locator under the existing Product
-mutation companion. SQLite schema **10** admits native **V4** headers and events only. The
-physical SQLite format remains `myagents-sqlite-session-v1`, with exact `inherited_event_count`
-separate from the immutable header. Schemas 1–9 are refused; no header/event migration or
-`seedLength` translation runs. The approved one-time development reset is a separate Host-owned
-workflow, still pending its synthetic containment and preservation evidence.
+One active locator selects an immutable generation identity. Its native append-only V4 log lives
+under `<runtimeHome>/sessions/<generation-id>/`, in the official project/session directory layout
+and default checksummed `.jsonl.zstd` encoding. Product metadata at
+`<runtimeHome>/persistence/coordination.sqlite` uses schema **1**, format
+`myagents-jsonl-coordination-v1`, with no `session_events` table. Exact inherited cuts stay separate
+from headers. Native decoding normalizes omitted delegation depth to zero, and locator headers
+use that same canonical value. No old SQLite Session log or development schema is read or migrated.
+
+SQLite is a Product implementation choice, not a native DSH protocol requirement. It uses Node's
+built-in SQLite without another service. A rewind's final transaction atomically archives the source,
+activates the prepared native generation, switches its locator, tombstones excluded children and
+commits the receipt. Checkpoint preimages and their records are committed together. Native JSONL and
+Workspace writes remain outside that transaction and use explicit prepare/commit recovery; SQLite
+does not make cross-file side effects atomic. Replacing this store with separate JSON files would
+require an equivalent durable transaction mechanism. An upstream implementation of these missing
+Product semantics is the removal condition, rather than retaining a parallel implementation.
 
 `storage-contract.ts` composes the official `validateStoredEvents` with the exact Product
 required-event registry and each Product owner's payload validator. Known Product events are
@@ -47,7 +56,7 @@ A read handle refuses a generation change or a shorter prefix than it previously
 
 The composition also mounts the official SQLite SessionQuery engine with a process-local
 in-memory derived index, opened on first search. It uses the same public persistence and
-Session providers; the index is disposable and never replaces the product SQLite log or
+Session providers; the index is disposable and never replaces the native JSONL log or
 its mutation locks. Cold-list/tree performance claims require a campaign against the exact installed Runtime.
 
 ```text
@@ -69,7 +78,7 @@ schema errors propagate without retry. Mutation RPCs are never replayed by this 
 
 | Operation | Durable meaning |
 | --- | --- |
-| create | Publish a fresh in-memory Session and root Agent only after workspace/config/component admission succeeds. The write handle owns the id before publication. Pending create is visible locally; first append or explicit empty flush materializes it. Closing an untouched create leaves no Session row. |
+| create | Publish a fresh in-memory Session and root Agent only after workspace/config/component admission succeeds. The write handle owns the id before publication. Pending create is visible locally; first append or explicit empty flush materializes it. Closing an untouched create removes its reservation without creating a native log. |
 | resume | Inspect active generation, validate/fold history, repair explicitly recoverable facts, restore authorities and materialize the root Agent. |
 | read | Return a bounded canonical wire projection of the raw durable DSH/Product event vocabulary, with stable cursors and exact completed-turn/genesis mutation boundaries. |
 | close | Drain owned work/persistence and retire Agent/Session without deleting history. |
@@ -134,8 +143,8 @@ Host catalogs may retain names, routing and display configuration, but they may 
 ## 7. Security, limits and failure boundary
 
 The Host supplies `runtimeHome`, Workspace and execution-environment roots during initialize. Native
-RPC canonicalizes and identity-checks them; the persistence Provider then fixes SQLite at
-`<runtimeHome>/persistence/sessions-v1.sqlite`. `persistenceRef` is a Host routing identity, not a
+RPC canonicalizes and identity-checks them; the persistence Provider then fixes product coordination at
+`<runtimeHome>/persistence/coordination.sqlite` and native generation roots under `sessions/`. `persistenceRef` is a Host routing identity, not a
 filesystem locator. Checkpoint write roots come from the validated execution environment.
 The Store compares synchronously resolved filesystem paths through the selected platform adapter.
 On Windows, Node's asynchronous `realpath` can expand an 8.3 path such as `RUNNER~1` while
@@ -144,7 +153,7 @@ letter casing is equivalent, while a directory alias or symlink that resolves el
 invalid. File identities are still checked before and after opening the database.
 
 Concurrency follows one order: kernel ownership admission, per-Session serialization, then a
-short SQLite transaction. The composition-selected ownership Provider uses nonblocking POSIX
+short product-metadata SQLite transaction. The composition-selected ownership Provider uses nonblocking POSIX
 flock or a Windows global named mutex through the already packaged Koffi dependency. A write
 handle holds ownership for its lifetime; process death releases the kernel claim. No lease timer,
 PID guessing or SQLite write transaction spans model/tool execution. POSIX ownership loss fences
@@ -156,16 +165,18 @@ checkpoint and mutation-journal metadata still serialize in the same Store. Cano
 owner/mode, symlink/hardlink, opened-inode and WAL/SHM checks protect the database authority.
 Secrets, attachment bytes and Host-local backing paths never cross into durable configuration.
 
-The Provider routes `session/event` into the active write handle's bounded batching window.
+The Provider forwards `session/event` to the official generation context's native tracker.
 Handle/session/service flush drains acknowledged events; failed background batches retain their
 order and pause automatic retries until an explicit barrier. Close drains, releases ownership and
 reports failure; service flush/disposal sweeps every handle and aggregates errors. Provider teardown
 waits for in-flight admission before closing handles and finally SQLite. No second Session log or
 recovery coordinator is installed. Full Runtime lifecycle/fault acceptance requires matching native and artifact evidence.
 
-Current hard bounds include 4,096 Sessions, 1,000,000 events per generation, 2 MiB per event,
-64 KiB header data, a 4 GiB database, JSON depth 64 / 65,536 nodes, 64 pending mutations per Session
-and 4,096 checkpoint records per generation. Exact constants remain code authority.
+Product bounds apply to coordination metadata, mutation journals, checkpoint records and RPC
+projections. Native event JSON/physical limits are owned by DSH; the removed SQLite backend's
+2 MiB event and depth bounds do not reject otherwise valid native events. The product retains
+bounded Session counts, per-generation event counts, headers, journals and checkpoint records;
+exact constants remain code authority.
 
 ## 8. Architecture-correct change path
 
@@ -182,16 +193,16 @@ contention and corrupted/unknown/ignorable input.
 | Concern | Source or evidence |
 | --- | --- |
 | Primary Session/Agent lifecycle and reads | `packages/runtime-product/src/primary-session.ts` |
-| SQLite backend, generations, journals and known events | `packages/persistence-product/src/` |
+| Official JSONL adapter, product locators, journals and known events | `packages/persistence-product/src/` |
 | Operation recovery | `packages/operation-runtime/src/` |
 | Event projection | `packages/rpc-server/src/event-projector.ts` |
 | Host replay and mutation recovery | `packages/web-host/src/reference-profile.ts`, `mutation-store.ts` |
-| Required DSH seams | candidate patches `0001`, `0004`, `0005`; retired-predicate candidate adjudication in `specs/dsh/seam-decisions-v1.json` |
+| Required DSH seams | candidate patches `0001`, `0003`, `0004`, `0005`; native JSONL hook adjudication in `specs/dsh/seam-decisions-v1.json` |
 | Persistence decisions | ADR 0003 and ADR 0004 |
 | Tests | `tests/product-session-handle.unit.test.ts`, ownership unit/native fixtures, existing persistence/mutation and primary-admission regressions; full Runtime/Host campaigns remain pending |
 
 The Primary Session admission `afterReady` hook owns the final recovery activation boundary: the exact Agent is published as ready before durable native collaboration/operation messages can wake it. The hook is awaited under the existing settlement deadline; failure retires that handle and leaves recovery required. Pre-publication reconciliation validates facts with execution deferred.
 
-Schema 10 retains nullable checkpoint directory plans from the preceding physical table layout.
-Directory prepare/cleanup/replay semantics remain owned by
+The current coordination schema includes nullable checkpoint directory plans. Directory
+prepare/cleanup/replay semantics remain owned by
 [Mutations and checkpoints](./mutations-and-checkpoints.md#8-checkpoint-coverage-and-limits).

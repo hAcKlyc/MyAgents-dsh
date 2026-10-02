@@ -11,6 +11,6 @@
     ".": "./src/index.ts"
   },
   "peerDependencies": {
-    "@deepseek-ai/dsh-llm": "0.2.0-rc.2.myagents.639ed0153972.7ac2652ae40f || 0.2.0-rc.2"
+    "@deepseek-ai/dsh-llm": "0.2.0-rc.2.myagents.639ed0153972.56bce4eb7e07 || 0.2.0-rc.2"
   }
 }

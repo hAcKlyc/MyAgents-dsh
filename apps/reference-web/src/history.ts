@@ -13,6 +13,7 @@ export type BrowserHistoryEvent = Readonly<{
 export type BrowserHistorySnapshot = Readonly<{
   webSessionId: string;
   runtimeSessionId: string;
+  inheritedEventCount: number;
   durableSequence: number;
   events: readonly BrowserHistoryEvent[];
   mutationBoundaries: readonly Readonly<{
@@ -45,6 +46,7 @@ type ChunkRecord = Readonly<{
 }>;
 type HistoryPage = Readonly<{
   runtimeSessionId: string;
+  inheritedEventCount: number;
   durableSequence: number;
   records: readonly (WholeRecord | ChunkRecord)[];
   mutationBoundaries?: BrowserHistorySnapshot["mutationBoundaries"];
@@ -115,12 +117,21 @@ const verify = async (bytes: Uint8Array, expected: string): Promise<void> => {
 const parsePage = (value: unknown): HistoryPage => {
   const page = ownRecord(value, "history page");
   exactKeys(page, [
-    "runtimeSessionId", "historyFormat", "durableHead", "records", "mutationBoundaries",
+    "runtimeSessionId", "historyFormat", "inheritedEventCount", "durableHead", "records", "mutationBoundaries", "genesisBoundary",
     "transcriptPostcondition", "nextCursor",
   ], "history page");
   if (page.historyFormat !== "dsh-session-events-v2") throw new TypeError("history format is unsupported");
   const head = ownRecord(page.durableHead, "durable head");
   exactKeys(head, ["sequence", "stableBoundaryId"], "durable head");
+  const inheritedEventCount = integer(page.inheritedEventCount, "inherited event count");
+  if (inheritedEventCount > integer(head.sequence, "durable sequence")) throw new TypeError("inherited prefix exceeds its durable head");
+  if (page.genesisBoundary !== undefined) {
+    const genesis = ownRecord(page.genesisBoundary, "genesis boundary");
+    exactKeys(genesis, ["stableBoundaryId", "sequence", "transcriptPostcondition"], "genesis boundary");
+    string(genesis.stableBoundaryId, "genesis boundary id");
+    if (integer(genesis.sequence, "genesis boundary sequence") > integer(head.sequence, "durable sequence")) throw new TypeError("genesis boundary exceeds its durable head");
+    digest(genesis.transcriptPostcondition, "genesis boundary digest");
+  }
   if (head.stableBoundaryId !== undefined) string(head.stableBoundaryId, "stable boundary id");
   if (!Array.isArray(page.records) || page.records.length > 16_384) {
     throw new TypeError("history records are not bounded");
@@ -179,6 +190,7 @@ const parsePage = (value: unknown): HistoryPage => {
   const transcriptPostcondition = page.transcriptPostcondition === undefined
     ? undefined : digest(page.transcriptPostcondition, "history transcript postcondition");
   return {
+    inheritedEventCount,
     runtimeSessionId: string(page.runtimeSessionId, "history Runtime Session id"),
     durableSequence: integer(head.sequence, "durable sequence"),
     records,
@@ -200,6 +212,7 @@ export class BrowserHistoryAssembler {
   #mutationBoundaries: BrowserHistorySnapshot["mutationBoundaries"] = [];
   #transcriptPostcondition: string | undefined;
   #complete = false;
+  #inheritedEventCount: number | undefined;
 
   constructor(webSessionId: string, maximumVisibleEvents = 2_000) {
     this.#webSessionId = webSessionId;
@@ -216,9 +229,11 @@ export class BrowserHistoryAssembler {
     if (this.#runtimeSessionId === undefined) {
       this.#runtimeSessionId = page.runtimeSessionId;
       this.#durableSequence = page.durableSequence;
+      this.#inheritedEventCount = page.inheritedEventCount;
       this.#mutationBoundaries = page.mutationBoundaries ?? [];
       this.#transcriptPostcondition = page.transcriptPostcondition;
-    } else if (page.runtimeSessionId !== this.#runtimeSessionId || page.durableSequence !== this.#durableSequence) {
+    } else if (page.runtimeSessionId !== this.#runtimeSessionId || page.durableSequence !== this.#durableSequence
+      || page.inheritedEventCount !== this.#inheritedEventCount) {
       throw new TypeError("history identity changed during pagination");
     }
     for (const record of page.records) await this.#acceptRecord(record);
@@ -232,12 +247,13 @@ export class BrowserHistoryAssembler {
   }
 
   snapshot(status: BrowserHistorySnapshot["status"] = this.#complete ? "complete" : "loading"): BrowserHistorySnapshot {
-    if (this.#runtimeSessionId === undefined || this.#durableSequence === undefined) {
+    if (this.#runtimeSessionId === undefined || this.#durableSequence === undefined || this.#inheritedEventCount === undefined) {
       throw new TypeError("history has no accepted page");
     }
     return Object.freeze({
       webSessionId: this.#webSessionId,
       runtimeSessionId: this.#runtimeSessionId,
+      inheritedEventCount: this.#inheritedEventCount,
       durableSequence: this.#durableSequence,
       events: Object.freeze([...this.#events]),
       mutationBoundaries: this.#mutationBoundaries,

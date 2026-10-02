@@ -291,13 +291,13 @@
         },
         "runtimeEngine": {
           "distribution": "myagents-dsh",
-          "distributionVersion": "0.1.13",
+          "distributionVersion": "0.1.14",
           "name": "deepseek-harness",
-          "version": "0.2.0-rc.2.myagents.639ed0153972.7ac2652ae40f"
+          "version": "0.2.0-rc.2.myagents.639ed0153972.56bce4eb7e07"
         },
         "runtimeGeneration": "generation-1",
-        "runtimeVersion": "0.1.13",
-        "schemaSha256": "32f78b25dea8f2dfa9dd8a71bc9d197b049019d8b02252ff8c2e64728abe3157",
+        "runtimeVersion": "0.1.14",
+        "schemaSha256": "dd41dc0962ef6af81d697a4509598bc9aa399b283fef36072be12f7ee16cb39b",
         "sessionFormat": "dsh-session-events-v2"
       }
     },
@@ -512,6 +512,7 @@
           "sequence": 1
         },
         "historyFormat": "dsh-session-events-v2",
+        "inheritedEventCount": 0,
         "records": [
           {
             "chunkCount": 1,
@@ -538,6 +539,7 @@
           "sequence": 1
         },
         "historyFormat": "dsh-session-events-v2",
+        "inheritedEventCount": 0,
         "records": [
           {
             "chunkCount": 1,
@@ -1227,7 +1229,7 @@
     }
   ],
   "protocolVersion": "6.0.0",
-  "schemaSha256": "32f78b25dea8f2dfa9dd8a71bc9d197b049019d8b02252ff8c2e64728abe3157",
+  "schemaSha256": "dd41dc0962ef6af81d697a4509598bc9aa399b283fef36072be12f7ee16cb39b",
   "valid": [
     {
       "frame": {
@@ -1430,13 +1432,13 @@
           },
           "runtimeEngine": {
             "distribution": "myagents-dsh",
-            "distributionVersion": "0.1.13",
+            "distributionVersion": "0.1.14",
             "name": "deepseek-harness",
-            "version": "0.2.0-rc.2.myagents.639ed0153972.7ac2652ae40f"
+            "version": "0.2.0-rc.2.myagents.639ed0153972.56bce4eb7e07"
           },
           "runtimeGeneration": "generation-1",
-          "runtimeVersion": "0.1.13",
-          "schemaSha256": "32f78b25dea8f2dfa9dd8a71bc9d197b049019d8b02252ff8c2e64728abe3157",
+          "runtimeVersion": "0.1.14",
+          "schemaSha256": "dd41dc0962ef6af81d697a4509598bc9aa399b283fef36072be12f7ee16cb39b",
           "sessionFormat": "dsh-session-events-v2"
         }
       },
@@ -1559,6 +1561,7 @@
             "stableBoundaryId": "boundary-1"
           },
           "historyFormat": "dsh-session-events-v2",
+          "inheritedEventCount": 0,
           "records": [
             {
               "data": {
