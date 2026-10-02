@@ -58,7 +58,9 @@ rewind/fork inside inherited history. Cold boundary materialization preserves on
 per turn and retains earlier inherited turns; the selected final boundary includes the complete fork
 receipt. Regression coverage includes successful inherited replies, nested/early inherited forks,
 rewound prefix ownership, owned invalid terminals, independent rules/plans and cold boundary inventory.
-Final source gates pass typecheck, lint, build and 824 tests (2 platform/capability skips).
+Cold repeated-rewind tests additionally retain file/directory checkpoints through the existing
+committed generation lineage, exclude discarded future changes, and preserve those records in a
+subsequent fork. Final source gates pass typecheck, lint, build and 825 tests (2 platform/capability skips).
 The unchanged patched upstream source suite passes 1,106 tests (3 skips); native ownership tests and
 fresh packed composition/installed-process gates additionally bind the rebuilt handoff.
 

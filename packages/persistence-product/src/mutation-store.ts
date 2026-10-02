@@ -1013,15 +1013,13 @@ export class ProductMutationStore implements ProductCheckpointStore,
     return this.#locks.run(known.runtimeSessionId as SessionId, signal, () => {
       signal?.throwIfAborted();
       this.#assertSchema();
-      const rows = this.#requireDatabase().prepare(`
-        SELECT c.* FROM checkpoint_records AS c
-          JOIN mutation_journals AS m ON m.session_id = c.session_id AND m.source_generation_id = c.generation_id
-          JOIN stable_boundaries AS b ON b.boundary_id = m.boundary_id
-         WHERE m.token = ? AND c.dsh_turn > CASE WHEN b.policy_version = 'genesis-boundary-v1' THEN 0 ELSE b.turn END
-           AND c.state = 'settled' AND c.directory_plan_json IS NOT NULL
-         ORDER BY length(c.path), c.path, c.prepared_at, c.checkpoint_id
-      `).all(token) as unknown[];
-      return Object.freeze(rows.map((row) => this.#decodeCheckpoint(row)));
+      const boundary = this.#readStableBoundary(known.boundaryId);
+      if (boundary === undefined) throw new Error("rewind directory boundary is unavailable");
+      const turn = boundary.policyVersion === "genesis-boundary-v1" ? 0 : boundary.turn;
+      return Object.freeze(this.#retainedSettledCheckpoints(known.runtimeSessionId, known.sourceGenerationId)
+        .filter((record) => record.dshTurn > turn && record.directoryPlan !== undefined)
+        .sort((left, right) => left.path.length - right.path.length || compareCodePoints(left.path, right.path)
+          || left.preparedAt - right.preparedAt || compareCodePoints(left.checkpointId, right.checkpointId)));
     });
   }
 
@@ -2653,24 +2651,39 @@ export class ProductMutationStore implements ProductCheckpointStore,
     }));
   }
 
+  /** Immutable checkpoints remain in their creation generation. Published rewind
+   * journals carry the exact retained turn cut; use that existing lineage instead
+   * of copying records or losing earlier recovery when the active locator changes. */
+  #retainedSettledCheckpoints(sessionId: string, generationId: string): ProductCheckpointRecord[] {
+    const rows = this.#requireDatabase().prepare(`
+      WITH RECURSIVE retained(generation_id, through_turn) AS (
+        SELECT ?, ?
+        UNION
+        SELECT m.source_generation_id,
+               min(r.through_turn, CASE WHEN b.policy_version = 'genesis-boundary-v1' THEN 0 ELSE b.turn END)
+          FROM retained AS r
+          JOIN mutation_journals AS m ON m.target_generation_id = r.generation_id
+           AND m.session_id = ? AND m.phase = 'committed'
+          JOIN stable_boundaries AS b ON b.boundary_id = m.boundary_id
+      )
+      SELECT DISTINCT c.* FROM checkpoint_records AS c
+        JOIN retained AS r ON r.generation_id = c.generation_id AND c.dsh_turn <= r.through_turn
+       WHERE c.session_id = ? AND c.state = 'settled' AND c.last_event_phase = 'settled'
+       ORDER BY c.path, c.dsh_turn, c.prepared_at, c.checkpoint_id
+    `).all(generationId, Number.MAX_SAFE_INTEGER, sessionId, sessionId) as unknown[];
+    return rows.map((row) => this.#decodeCheckpoint(row));
+  }
+
   #insertRewindFilePlans(
     active: ActiveSessionRow,
     boundary: StableBoundaryRow,
     token: string,
   ): void {
-    const rows = this.#requireDatabase().prepare(`
-      SELECT * FROM checkpoint_records
-       WHERE session_id = ? AND generation_id = ? AND dsh_turn > ?
-         AND state = 'settled' AND last_event_phase = 'settled'
-       ORDER BY path, dsh_turn, prepared_at, checkpoint_id
-    `).all(
-      active.sessionId,
-      active.activeGenerationId,
-      boundary.policyVersion === "genesis-boundary-v1" ? 0 : boundary.turn,
-    ) as unknown[];
+    const turn = boundary.policyVersion === "genesis-boundary-v1" ? 0 : boundary.turn;
+    const records = this.#retainedSettledCheckpoints(active.sessionId, active.activeGenerationId)
+      .filter((record) => record.dshTurn > turn);
     const byPath = new Map<string, ProductCheckpointRecord[]>();
-    for (const value of rows) {
-      const record = this.#decodeCheckpoint(value);
+    for (const record of records) {
       if (record.actualSha256 === undefined) {
         throw new Error("settled rewind checkpoint lacks actual file identity");
       }
@@ -3161,28 +3174,24 @@ export class ProductMutationStore implements ProductCheckpointStore,
     for (const event of events) {
       headHash = chainHash(headHash, canonicalJson(event as unknown as JsonValue));
     }
-    const checkpointRows = this.#requireDatabase().prepare(`
-      SELECT * FROM checkpoint_records
-       WHERE session_id = ? AND generation_id = ? AND dsh_turn <= ?
-         AND state = 'settled' AND last_event_phase = 'settled'
-       ORDER BY prepared_at, checkpoint_id
-    `).all(source.sessionId, source.activeGenerationId, boundary.turn) as unknown[];
-    const checkpoints = checkpointRows.map((value): ForkCheckpointCopy => {
-      const checkpoint = this.#decodeCheckpoint(value);
-      let priorBytes: Uint8Array | undefined;
-      if (checkpoint.priorSha256 !== null) {
-        const blob = asRecord(this.#requireDatabase().prepare(
-          "SELECT size, bytes FROM checkpoint_blobs WHERE sha256 = ?",
-        ).get(checkpoint.priorSha256), "fork checkpoint blob");
-        if (!(blob.bytes instanceof Uint8Array)
-          || blob.size !== blob.bytes.byteLength
-          || createHash("sha256").update(blob.bytes).digest("hex") !== checkpoint.priorSha256) {
-          throw new Error("fork checkpoint blob identity is invalid");
+    const checkpoints = this.#retainedSettledCheckpoints(source.sessionId, source.activeGenerationId)
+      .filter((record) => record.dshTurn <= boundary.turn)
+      .sort((left, right) => left.preparedAt - right.preparedAt || compareCodePoints(left.checkpointId, right.checkpointId))
+      .map((checkpoint): ForkCheckpointCopy => {
+        let priorBytes: Uint8Array | undefined;
+        if (checkpoint.priorSha256 !== null) {
+          const blob = asRecord(this.#requireDatabase().prepare(
+            "SELECT size, bytes FROM checkpoint_blobs WHERE sha256 = ?",
+          ).get(checkpoint.priorSha256), "fork checkpoint blob");
+          if (!(blob.bytes instanceof Uint8Array)
+            || blob.size !== blob.bytes.byteLength
+            || createHash("sha256").update(blob.bytes).digest("hex") !== checkpoint.priorSha256) {
+            throw new Error("fork checkpoint blob identity is invalid");
+          }
+          priorBytes = Uint8Array.from(blob.bytes);
         }
-        priorBytes = Uint8Array.from(blob.bytes);
-      }
-      return Object.freeze({ ...(priorBytes === undefined ? {} : { priorBytes }), record: checkpoint });
-    });
+        return Object.freeze({ ...(priorBytes === undefined ? {} : { priorBytes }), record: checkpoint });
+      });
     const targetStore = await this.#forkTargetStore(record.targetRuntimeHome);
     await targetStore.#stageForkTarget(Object.freeze({
       inheritedEventCount: boundary.seqExclusive,

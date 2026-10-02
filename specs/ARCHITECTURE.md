@@ -497,7 +497,7 @@ Rewind, fork, and delete use prepare/commit/rollback-or-abort/status protocols. 
 - persistence revisions and immutable operation tokens;
 - crash-recoverable journals.
 
-Ordinary events are append-only within an immutable storage generation. Rewind creates a new generation from an exact stable DSH event prefix, restores only governed file state, and atomically changes the active locator; it does not rewrite the old generation or synthesize a placeholder surface message. Fork publishes an independent Session generation. Delete prepare preserves the locator; delete commit removes that exact locator through a recoverable tombstone before bounded purge.
+Ordinary events are append-only within an immutable storage generation. Rewind creates a new generation from an exact stable DSH event prefix, restores only governed file state, and atomically changes the active locator; it does not rewrite the old generation or synthesize a placeholder surface message. Checkpoint records remain in their creation generation; the existing committed rewind chain and intersected boundary cuts select retained records for subsequent file/directory recovery and fork. Fork publishes an independent Session generation. Delete prepare preserves the locator; delete commit removes that exact locator through a recoverable tombstone before bounded purge.
 
 Shell, child-agent, MCP, Host-tool, and external file changes remain outside rollback coverage unless a later version explicitly adds a governed owner and acceptance suite.
 

@@ -194,6 +194,86 @@ const checkpointHarness = async (options: Readonly<{ nativeFs?: boolean; reopenR
 };
 
 describe("ProductCheckpointService", () => {
+  it("retains file and directory recovery across cold repeated rewind and subsequent fork", async () => {
+    const state = await checkpointHarness({ nativeFs: true });
+    const persistence = state.context.sessionPersistence as ProductJsonlSessionPersistence;
+    state.session.append("turn/end", { turn: 1, reason: { kind: "completed" } });
+    const path = join(state.workspace, "retained", "nested", "file.txt");
+    for (const turn of [2, 3]) {
+      state.session.append("turn/start", { turn });
+      const after = Buffer.from(turn === 2 ? "one" : "two");
+      const before = turn === 2 ? undefined : Buffer.from("one");
+      const handle = await state.context.productCheckpoint.prepare({
+        ...state.product, callId: `retained-call-${turn}`, dshTurn: turn,
+        clientOperationId: `retained-operation-${turn}`, productTurnId: `retained-turn-${turn}`,
+      }, { path, tool: "Write", afterBytes: after, afterSha256: digest(after),
+        ...(before === undefined ? {} : { beforeBytes: before, beforeSha256: digest(before) }) });
+      await handle.verify?.();
+      await writeFile(path, after);
+      await handle.commit();
+      await state.context.productCheckpoint.reconcile(state.agent);
+      state.session.append("turn/end", { turn, reason: { kind: "completed" } });
+    }
+    await state.context.sessions.flush(state.session);
+    const history = await persistence.readSession({ maxResultBytes: 65_536, runtimeGeneration: "retained-source", runtimeSessionId: String(state.session.id) });
+    const boundary = history.mutationBoundaries?.find((candidate) => candidate.turn === 2);
+    if (boundary === undefined) throw new Error("retained source lacks turn two");
+    const sourceReader = await persistence.open(state.session.id, "read");
+    const sourceEvents = (await sourceReader.read()).events;
+    await sourceReader.close();
+    const first = await persistence.prepareRewind({
+      clientMutationId: "retained-first-rewind", runtimeSessionId: String(state.session.id),
+      targetStableBoundaryId: boundary.stableBoundaryId,
+      sourceTranscriptPostcondition: productTranscriptPostcondition(sourceEvents),
+      targetTranscriptPostcondition: productTranscriptPostcondition(sourceEvents.slice(0, boundary.sequence)),
+    });
+    await state.context.productCheckpoint.prepareRewindFiles(first.token);
+    await state.context.productCheckpoint.publishRewindFiles(first.token);
+    await state.retire();
+    await persistence.commitRewind(first.token, "retained-first-rewind");
+    expect(await readFile(path, "utf8")).toBe("one");
+    await state.context.fiber.dispose();
+
+    const cold = await checkpointHarness({ nativeFs: true, reopenRuntimeHome: state.executionEnvironment.runtimeHome });
+    const store = cold.context.sessionPersistence as ProductJsonlSessionPersistence;
+    const read = await store.readSession({ maxResultBytes: 65_536, runtimeGeneration: "retained-cold", runtimeSessionId: String(cold.session.id) });
+    const late = read.mutationBoundaries?.find((candidate) => candidate.turn === 2);
+    const early = read.mutationBoundaries?.find((candidate) => candidate.turn === 1);
+    if (late === undefined || early === undefined) throw new Error("cold history lost a retained boundary");
+    const forkHome = join(dirname(state.executionEnvironment.runtimeHome), "fork-home");
+    await mkdir(forkHome);
+    const fork = await store.prepareFork({
+      clientMutationId: "retained-fork", runtimeSessionId: String(cold.session.id),
+      sourceStableBoundaryId: late.stableBoundaryId,
+      targetPersistenceRef: "retained-fork-ref", targetRuntimeHome: forkHome,
+      targetRuntimeSessionId: "retained-fork-target", targetWorkspaceIdentity: "workspace-v1",
+    });
+    await store.commitFork(fork.token, "retained-fork");
+    const db = new DatabaseSync(productCoordinationDatabasePath(selectPlatformAdapter(resolveRuntimePlatformTarget(process.platform, process.arch)), forkHome), { readOnly: true });
+    expect(db.prepare("SELECT count(*) AS count FROM checkpoint_records").get()?.count).toBe(1);
+    db.close();
+
+    const coldReader = await store.open(cold.session.id, "read");
+    const coldEvents = (await coldReader.read()).events;
+    await coldReader.close();
+    const second = await store.prepareRewind({
+      clientMutationId: "retained-second-rewind", runtimeSessionId: String(cold.session.id),
+      targetStableBoundaryId: early.stableBoundaryId,
+      sourceTranscriptPostcondition: productTranscriptPostcondition(coldEvents),
+      targetTranscriptPostcondition: productTranscriptPostcondition(coldEvents.slice(0, early.sequence)),
+    });
+    expect(await cold.store.listRewindFiles(second.token)).toHaveLength(1);
+    expect(await cold.store.listRewindDirectoryPlans(second.token)).toHaveLength(1);
+    await cold.context.productCheckpoint.prepareRewindFiles(second.token);
+    await cold.context.productCheckpoint.publishRewindFiles(second.token);
+    await expect(lstat(join(cold.workspace, "retained"))).rejects.toMatchObject({ code: "ENOENT" });
+    await cold.retire();
+    await store.commitRewind(second.token, "retained-second-rewind");
+    await cold.context.productCheckpoint.rollbackRewindFiles(second.token);
+    expect(await readFile(path, "utf8")).toBe("one");
+    await store.rollbackRewind(second.token, "retained-second-rewind");
+    await cold.context.fiber.dispose();
+  });
   it("keeps inherited checkpoint events out of a native fork's recovery authority", async () => {
     const state = await checkpointHarness();
     const prepared = await state.context.productCheckpoint.prepare(state.product, {

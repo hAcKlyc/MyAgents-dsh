@@ -76,6 +76,14 @@ File plans use only settled checkpoints after the boundary and require strict ha
 each path. Manual/untracked gaps or external drift produce conflict. Each file checkpoint is capped
 at 8 MiB. Coverage still excludes shell, child and external changes.
 
+Checkpoint records retain their immutable creation generation. The existing committed rewind
+journals and selected boundary cuts define which earlier records remain in the active history:
+each ancestor contributes only turns through the intersection of retained cuts. File plans,
+directory plans and subsequent fork copies share this selection. Discarded future records never
+re-enter history. No duplicate checkpoint rows, lineage cache or new persistence schema is needed.
+Cold repeated-rewind coverage restores an earlier file and its created directories, copies exactly
+the retained checkpoint into a fork, and verifies rollback after the next generation publication.
+
 File publication and SQLite phase updates are separate durable operations. Replay now captures each
 file and accepts only the sealed source or target hash (including recorded absence). Commit finishes
 a target already published before a crash; rollback restores an unjournaled publication even while
