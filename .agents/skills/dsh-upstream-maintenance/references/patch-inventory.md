@@ -8,7 +8,7 @@ UPG17 dispositions require the owning Product, artifact, native and Host gates b
 
 - Fixed DSH `0.2.0-rc.2`, commit `639ed015397290b3745d163aafe02ffee4aa3f84`, tree `ac66a6a3e77f6fa396509ddfecc7beacf0cf642a`.
 - Registry source association is unproven; source authority and npm resolution are separate facts.
-- Ten core patches produce 104 required DSH packages. The artifact builder compares two independent packing passes byte-for-byte; later source/lock/build-policy changes require fresh acceptance.
+- Eleven core patches produce 105 required DSH packages. The artifact builder compares two independent packing passes byte-for-byte; later source/lock/build-policy changes require fresh acceptance.
 - pi-ai `0.87.1`, commit `f07218c4d4bbc12bef056a7058c3dd49dfe41abe`, has a separately verified Provider-content patch.
 - Verify original blobs, apply only to isolated worktrees, compile and pack content-addressed artifacts. Never edit sibling upstream, registry archives or installed dependencies in place.
 
@@ -22,8 +22,8 @@ Patch filenames retain historical numbers; patch order is the registry's dense o
 | --- | --- | --- |
 | 001 / 0001 | rebase / 0001-agent-wake-pending | Wake an existing native Inbox identity with FIFO, abort latch and one claim; restart must not reinsert it. |
 | 002 / 0002 | reduce / 0002-pre-assistant-commit | Keep raw native stream evidence while committing and executing the final governed tool arguments through one synchronous waterfall. |
-| 003 / 0003 | retire / no patch | Public SessionHandle Provider composes native V4 validation with exact Product payload validators; unknown required and malformed known events refuse. |
-| 004 / 0004 | keep public composition / no patch | Product SQLite handles and mutation companion share writer ownership, revision fencing and immutable rewind generations; no PersistenceBackend shim. |
+| 003 / 0003 | reduce / 0003-jsonl-product-event-validation | Official JSONL owns storage; a protected trusted hook composes exact required Product payload validation with native validation. |
+| 004 / 0004 | keep public composition / no patch | Official JSONL handles and Product metadata coordination share locator ownership, revision fencing and immutable rewind generations; no PersistenceBackend shim. |
 | 005 / 0005 | rebase / 0004-publication-guards | Synchronous pre-publication guards reject extra root Session/Agent creation before publication. |
 | 006 / 0006 | rebase / 0005-product-owned-continuable-lifecycle | Explicit child setup, descriptors, ancestry/depth, resident quiet parent, external settlement, strict flush and failure attribution. |
 | 007 / 0007 | retire / no patch | Native DeepSeek translator preserves established tool identity across empty continuation fields. Re-run translator and Product streaming regressions. |
@@ -37,7 +37,7 @@ Patch filenames retain historical numbers; patch order is the registry's dense o
 ## Dependencies and retirement boundaries
 
 - Apply in registry order. Later Agent-loop and subagent changes can depend on earlier post-images.
-- Seam 003 retirement includes native validator plus every Product required payload, hashes, lineage, close/recovery and unknown-ignorable handling.
+- Seam 003 removal requires official trusted extension validation including native validator plus every Product required payload, hashes, lineage, close/recovery and unknown-ignorable handling.
 - Seam 004 requires cross-process ownership evidence. POSIX flock and Windows global mutex claims must match native-platform receipts.
 - Seam 006 uses native asynchronous lifecycle and Inbox projection; do not restore retired descriptor versions or a second inbox.
 - Seam 008 must retain one native request estimator. Read `specs/tech_docs/execution/compaction.md` before changing compaction. Native graph/surface operations, pressure/overflow hooks, pruner and manual lifecycle remain upstream owners.

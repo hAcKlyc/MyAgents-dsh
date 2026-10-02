@@ -19,14 +19,14 @@ export {
   type ProductConfigurationAnchorEventData,
 } from "./known-events.js";
 export {
-  ProductSqliteSessionPersistence,
-  productSessionDatabasePath,
-  type ProductSqliteSessionPersistenceConfig,
+  ProductJsonlSessionPersistence,
+  productCoordinationDatabasePath,
+  type ProductJsonlSessionPersistenceConfig,
 } from "./provider.js";
 export {
   PRODUCT_PERSISTENCE_LIMITS,
   type ProductPersistedRecoveryInspection,
-} from "./sqlite-store.js";
+} from "./mutation-store.js";
 export {
   ProductSessionReadProjector,
   type ProductSessionReadRequest,
@@ -53,22 +53,8 @@ export {
   type ProductRewindStore,
 } from "./rewind.js";
 export {
-  PRODUCT_CHECKPOINT_SCHEMA_SQL,
-  PRODUCT_DELETE_SCHEMA_SQL,
-  PRODUCT_DELETE_SCHEMA_V7_SQL,
-  PRODUCT_FORK_SCHEMA_SQL,
   PRODUCT_PERSISTENCE_APPLICATION_ID,
   PRODUCT_PERSISTENCE_FORMAT,
   PRODUCT_PERSISTENCE_SCHEMA_SQL,
   PRODUCT_PERSISTENCE_SCHEMA_VERSION,
-  PRODUCT_PERSISTENCE_SCHEMA_V1_SQL,
-  PRODUCT_PERSISTENCE_SCHEMA_V2_SQL,
-  PRODUCT_PERSISTENCE_SCHEMA_V3_SQL,
-  PRODUCT_PERSISTENCE_SCHEMA_V4_SQL,
-  PRODUCT_PERSISTENCE_SCHEMA_V5_SQL,
-  PRODUCT_PERSISTENCE_SCHEMA_V6_SQL,
-  PRODUCT_PERSISTENCE_SCHEMA_V7_SQL,
-  PRODUCT_PERSISTENCE_SCHEMA_V8_SQL,
-  PRODUCT_REWIND_CHILD_SCHEMA_SQL,
-  PRODUCT_STABLE_BOUNDARY_SCHEMA_SQL,
 } from "./schema.js";

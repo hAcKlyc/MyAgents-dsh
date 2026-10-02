@@ -183,8 +183,8 @@ const expectedWorkspaceFiles = new Map([
     "src/read.ts",
     "src/rewind.ts",
     "src/schema.ts",
-    "src/session-handle.ts", "src/session-lock.ts", "src/session-ownership.ts",
-    "src/sqlite-store.ts", "src/storage-contract.ts",
+    "src/native-jsonl.ts", "src/session-lock.ts", "src/session-ownership.ts",
+    "src/mutation-store.ts", "src/storage-contract.ts",
   ]],
   ["packages/product-profile", [
     "manifests/accepted-patched-dsh-artifact-v1.json",

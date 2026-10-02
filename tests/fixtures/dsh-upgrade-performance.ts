@@ -15,7 +15,7 @@ import SessionProjectionRegistry from "@deepseek-ai/dsh-session-projection";
 import { SystemPrompt } from "@deepseek-ai/dsh-system-prompt";
 import { ToolRuntime, defineContentToolFixture } from "@deepseek-ai/dsh-tools";
 import { TokenMeter } from "@deepseek-ai/dsh-token-meter";
-import { ProductSqliteSessionPersistence, productSessionDatabasePath } from "@myagents-dsh/persistence-product";
+import { ProductJsonlSessionPersistence, productCoordinationDatabasePath } from "@myagents-dsh/persistence-product";
 import { ACCEPTED_PATCHED_DSH_ARTIFACT, assertAcceptedDshRuntimeGraph, selectPlatformAdapter } from "@myagents-dsh/product-profile";
 import { SessionReadAssembler } from "@myagents-dsh/protocol";
 
@@ -36,7 +36,7 @@ const workspace = resolve(runtimeHome, "workspace");
 await mkdir(workspace, { recursive: true });
 const text = "s".repeat(workload.textBytes);
 const platform = selectPlatformAdapter("darwin-arm64");
-const databasePath = productSessionDatabasePath(platform, runtimeHome);
+const databasePath = productCoordinationDatabasePath(platform, runtimeHome);
 
 class BenchmarkAdapter extends LlmAdapter {
   calls = 0;
@@ -86,8 +86,8 @@ try {
   await context.plugin(ToolRuntime);
   await context.plugin(AgentRegistry);
   await context.plugin(TokenMeter);
-  await context.plugin(ProductSqliteSessionPersistence, {
-    platform, runtimeHome, durability: platform.sqliteDurabilityPlan(databasePath), writeBatchMaxDelayMs: 1,
+  await context.plugin(ProductJsonlSessionPersistence, {
+    platform, runtimeHome, durability: platform.sqliteDurabilityPlan(databasePath),
   });
   await context.plugin(AgentLoop, { agents: [] });
   context.llm.registerAdapter(["synthetic"], adapter);
@@ -97,7 +97,7 @@ try {
     execute: () => { adapter.toolExecutions += 1; return Promise.resolve([{ type: "text", text }]); },
   }));
   context.on("agent/error", ({ error }) => { errors.push(error); });
-  const persistence = context.sessionPersistence as ProductSqliteSessionPersistence;
+  const persistence = context.sessionPersistence as ProductJsonlSessionPersistence;
   const mountedAt = performance.now();
   const runTurn = async (agent: Agent, turn: number): Promise<void> => {
     agent.followup(createUserMessage({

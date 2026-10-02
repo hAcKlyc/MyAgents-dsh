@@ -77,7 +77,7 @@ export interface RuntimeArtifactSelfCheckReport {
     artifactManifestSha256: string;
     sha256SumsSha256: string;
     consumerLockSha256: string;
-    packageCount: 104;
+    packageCount: 105;
     sourceCommit: string;
     patchSeriesSha256: string;
     patches: readonly Readonly<{ order: number; path: string; sha256: string }>[];

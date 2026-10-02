@@ -9,6 +9,11 @@
     "executablePackageAssociation": "unproven",
     "files": [
       {
+        "path": "packages/session/session-persistence-jsonl/src/index.ts",
+        "blob": "1a89b76d29e920772175950e25ffe943f4014b90",
+        "sha256": "6c56c465034c7673dd167f2ad7270ad8ce9ae7536457a291dc6a7abb81328436"
+      },
+      {
         "path": ".agents/notes/implemented/architecture/2026-08-31-explicit-agent-runtime-identity.i18n.yaml",
         "blob": "c28606ddd1fb2bcdbb4773f37096581510fd4624",
         "sha256": "932b89809ac3815939880f02f41e926a44c498258f9d1d266cf173a31eedf406"
@@ -800,41 +805,46 @@
     },
     {
       "order": 3,
+      "path": "specs/dsh/patches/0003-jsonl-product-event-validation.patch",
+      "sha256": "f8d3b3a4ab8ea3c93fc62795181ae66efd2f63fcda513ccbed54105565e2decc"
+    },
+    {
+      "order": 4,
       "path": "specs/dsh/patches/0004-publication-guards.patch",
       "sha256": "9f593e9d7c5fc28e154840bc736efad37e36e10d39d86818177567f095a6349f"
     },
     {
-      "order": 4,
+      "order": 5,
       "path": "specs/dsh/patches/0005-product-owned-continuable-lifecycle.patch",
       "sha256": "18134ca5a43b9cad43b2547e033548b7d897dfc9be01a9cab45a96d2ed592b73"
     },
     {
-      "order": 5,
+      "order": 6,
       "path": "specs/dsh/patches/0007-capacity-safe-compaction.patch",
       "sha256": "08320f1f16c98c5b8f665c4bdc992e836702ca6b7a671b0e387a964535f94c39"
     },
     {
-      "order": 6,
+      "order": 7,
       "path": "specs/dsh/patches/0008-literal-prompt-contributions.patch",
       "sha256": "20bf04353000c99808e386c366abb0daf726692abd19431836b8518d8b9badd7"
     },
     {
-      "order": 7,
+      "order": 8,
       "path": "specs/dsh/patches/0009-agent-instruction-selection.patch",
       "sha256": "6130b6dc25178f650867960a505b89da2d35934b0d35d2baf9dd5d12583ae6ac"
     },
     {
-      "order": 8,
+      "order": 9,
       "path": "specs/dsh/patches/0010-pi-ai-provider-content.patch",
       "sha256": "279aff3d485ab5b9c0fb9afe2412df33c20f59053a16f49f7ad53a62daaaa40f"
     },
     {
-      "order": 9,
+      "order": 10,
       "path": "specs/dsh/patches/0011-file-tool-composition.patch",
       "sha256": "b9e4f3a709df1c0370a8d8ae4aa9a84924cea975f0ef7928c7757bd0ef07940e"
     },
     {
-      "order": 10,
+      "order": 11,
       "path": "specs/dsh/patches/0012-literal-runtime-context.patch",
       "sha256": "596774058f3c72afcd086b20450c7944406badc663399fcc9eafa0d13c86b4e7"
     }
@@ -886,18 +896,23 @@
     },
     {
       "id": "DSH-SEAM-003",
-      "upgradeDisposition": "retire",
+      "upgradeDisposition": "reduce",
       "seam": "product-required-session-event-recognition",
-      "status": "candidate_retirement_pending_product_validation",
+      "status": "candidate_patch_pending_product_validation",
       "adr": "specs/adr/0003-product-session-event-predicate.md",
-      "rejected": "mark-required-events-ignorable-or-import-private-known-event-state",
-      "selectedPublicApi": "public SessionPersistence Provider, SessionHandle, KNOWN_SESSION_EVENT_TYPES and native event admission",
+      "rejected": "mark-required-events-ignorable-or-reimplement-native-JSONL",
+      "selectedPublicApi": "JsonlSessionPersistence protected validateStoredEvents hook; all native storage remains official",
+      "patch": {
+        "order": 3,
+        "path": "specs/dsh/patches/0003-jsonl-product-event-validation.patch",
+        "sha256": "f8d3b3a4ab8ea3c93fc62795181ae66efd2f63fcda513ccbed54105565e2decc"
+      },
       "executableEvidence": [
-        "candidate public Provider must accept registered required product events across append/read/cold restore",
-        "unknown required events must remain refused through the product Provider",
-        "stock validateStoredEvents retains native refusal behavior; product extension never mutates the stock registry"
+        "official JSONL cold restore validates every declared required Product payload",
+        "unknown required and malformed known Product events remain refused",
+        "stock native validation and immutable known-event registry remain unchanged"
       ],
-      "removalCondition": "an installed DSH release exposes an equivalent tested required-event registry"
+      "removalCondition": "official JSONL exposes an equivalent tested trusted extension validation hook"
     },
     {
       "id": "DSH-SEAM-004",
@@ -906,7 +921,7 @@
       "status": "candidate_public_composition_pending_product_validation",
       "adr": "specs/adr/0004-shared-backend-lock-and-immutable-rewind-generation.md",
       "rejected": "surface-shadow-rewind-or-private-storage-import",
-      "selectedPublicApi": "product SessionPersistence/SessionHandle Provider plus mutation companion sharing one per-Session lock",
+      "selectedPublicApi": "official JSONL SessionPersistence/SessionHandle with product locator leases and mutation/checkpoint coordination",
       "executableEvidence": [
         "backend append and mutation commit serialize",
         "retirement and exact revision are commit preconditions",
@@ -915,7 +930,7 @@
         "cold rewind generation preserves immutable stable prefix, product fold, and derived history",
         "public SessionHandle Provider plus exact-revision recoverable tombstone delete must survive response loss"
       ],
-      "removalCondition": "superseding ADR after production SQLite fault evidence proves a narrower composition"
+      "removalCondition": "official public mutation APIs cover exact product generation, checkpoint and journal semantics"
     },
     {
       "id": "DSH-SEAM-005",
@@ -926,7 +941,7 @@
       "rejected": "post-publication-agent-created-veto-and-registry-snapshot-detection",
       "selectedPublicApi": "AgentRegistry.setPublicationGuard and SessionStore.setPublicationGuard",
       "patch": {
-        "order": 3,
+        "order": 4,
         "path": "specs/dsh/patches/0004-publication-guards.patch",
         "sha256": "9f593e9d7c5fc28e154840bc736efad37e36e10d39d86818177567f095a6349f"
       },
@@ -948,7 +963,7 @@
       "rejected": "allow-stock-parent-notice-or-interrupt-only-teardown-to-escape-product-work-ownership",
       "selectedPublicApi": "stock SubagentRuntime.drainContinuableChildren plus patched registerContinuableSetup, deliverContinuable, withContinuableAncestors, ContinuableStartSpec.settlementDelivery, SubagentRunEndInfo.infrastructureFailure, and resumeContinuable",
       "patch": {
-        "order": 4,
+        "order": 5,
         "path": "specs/dsh/patches/0005-product-owned-continuable-lifecycle.patch",
         "sha256": "18134ca5a43b9cad43b2547e033548b7d897dfc9be01a9cab45a96d2ed592b73"
       },
@@ -994,7 +1009,7 @@
       "rejected": "duplicate-private-DSH-range-and-transaction-logic-in-product-code",
       "selectedPublicApi": "TokenMeter.estimateRequest plus stock BasicCompactionEngine capacity fitting, structured validation/repair, safe telemetry, and direct-call count provenance",
       "patch": {
-        "order": 5,
+        "order": 6,
         "path": "specs/dsh/patches/0007-capacity-safe-compaction.patch",
         "sha256": "08320f1f16c98c5b8f665c4bdc992e836702ca6b7a671b0e387a964535f94c39"
       },
@@ -1019,7 +1034,7 @@
       "rejected": "reject-or-escape-external-markdown-and-reimplement-prompt-rendering-in-product-code",
       "selectedPublicApi": "stock PromptSection.interpolate plus patched SubagentStartRequest.personaInterpolate, persisted for continuable cold resume",
       "patch": {
-        "order": 6,
+        "order": 7,
         "path": "specs/dsh/patches/0008-literal-prompt-contributions.patch",
         "sha256": "20bf04353000c99808e386c366abb0daf726692abd19431836b8518d8b9badd7"
       },
@@ -1040,7 +1055,7 @@
       "rejected": "a-second-host-crawler-or-watcher-for-primary-workspace-instructions",
       "selectedPublicApi": "agent-instructions Config.candidateSelection and Config.fileTouchToolNames",
       "patch": {
-        "order": 7,
+        "order": 8,
         "path": "specs/dsh/patches/0009-agent-instruction-selection.patch",
         "sha256": "6130b6dc25178f650867960a505b89da2d35934b0d35d2baf9dd5d12583ae6ac"
       },
@@ -1062,7 +1077,7 @@
       "rejected": "flatten-provider-blocks-to-markdown-or-manufacture-local-tool-calls",
       "selectedPublicApi": "@deepseek-ai/dsh-llm ContentBlockMap augmentation plus stock llm-pi-ai stream/replay adapters",
       "patch": {
-        "order": 8,
+        "order": 9,
         "path": "specs/dsh/patches/0010-pi-ai-provider-content.patch",
         "sha256": "279aff3d485ab5b9c0fb9afe2412df33c20f59053a16f49f7ad53a62daaaa40f"
       },
@@ -1083,7 +1098,7 @@
       "rejected": "duplicate-file-tool-executors-or-production-use-of-test-only-fsio-internals",
       "selectedPublicApi": "tool-fs createReadTool/createReadImageTool/createWriteTool/createEditTool; fs-local prepareTextEdit and protected beforePublish",
       "patch": {
-        "order": 9,
+        "order": 10,
         "path": "specs/dsh/patches/0011-file-tool-composition.patch",
         "sha256": "b9e4f3a709df1c0370a8d8ae4aa9a84924cea975f0ef7928c7757bd0ef07940e"
       },
@@ -1103,7 +1118,7 @@
       "rejected": "escape Host text or duplicate dynamic-context projection in the product",
       "selectedPublicApi": "PromptContext.interpolate propagated through assembly and renderContextSections",
       "patch": {
-        "order": 10,
+        "order": 11,
         "path": "specs/dsh/patches/0012-literal-runtime-context.patch",
         "sha256": "596774058f3c72afcd086b20450c7944406badc663399fcc9eafa0d13c86b4e7"
       },

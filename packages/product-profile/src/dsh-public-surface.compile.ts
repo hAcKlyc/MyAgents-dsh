@@ -75,10 +75,11 @@ import type { PlanProjection } from "@deepseek-ai/dsh-plan-mode";
 import { SqliteSessionQueryEngine } from "@deepseek-ai/dsh-session-query-sqlite";
 import { SessionQueryEngine } from "@deepseek-ai/dsh-session-query";
 import { deepFreeze, snapshotJsonValue } from "@deepseek-ai/dsh-util-values";
-import { Session, SessionId, SessionStore } from "@deepseek-ai/dsh-session";
+import { Session, SessionId, SessionStore, buildForkSeed } from "@deepseek-ai/dsh-session";
 import type { SessionEvent, SessionHeader } from "@deepseek-ai/dsh-session";
 import { createScope, scopeOf } from "@deepseek-ai/dsh-scope";
 import type { Scope, ScopeKey, Scoped } from "@deepseek-ai/dsh-scope";
+import { default as JsonlSessionPersistence, type Config as JsonlConfig } from "@deepseek-ai/dsh-session-persistence-jsonl";
 import { validateStoredEvents, SessionPersistence } from "@deepseek-ai/dsh-session-persistence";
 import type { SessionHandle, SessionInspection, SessionPersistenceSnapshot } from "@deepseek-ai/dsh-session-persistence";
 import { ShellExecutor, parseExitStatus } from "@deepseek-ai/dsh-shell";
@@ -170,8 +171,10 @@ export const dshPublicSurfaceValues = Object.freeze({
   PlanModeController,
   Service,
   Session,
+  buildForkSeed,
   SessionId,
   SessionPersistence,
+  JsonlSessionPersistence,
   SessionStore,
   SessionQueryEngine,
   SqliteSessionQueryEngine,
@@ -227,6 +230,7 @@ export const dshPublicSurfaceValues = Object.freeze({
 });
 
 export interface DshPublicSurfaceTypes {
+  jsonl: JsonlConfig;
   agent: [Agent, AgentFactory, AgentHandle, CreateAgentOptions, ResumeAgentOptions];
   agentInstructions: [AgentInstructionsConfig];
   agentLoop: [AgentLoopConfig];

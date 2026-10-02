@@ -41,6 +41,7 @@ export const expectedDshDependencies = new Map([
   ["@deepseek-ai/dsh-session", "0.2.0-rc.2"],
   ["@deepseek-ai/dsh-session-checkpoint-policy", "0.2.0-rc.2"],
   ["@deepseek-ai/dsh-session-persistence", "0.2.0-rc.2"],
+  ["@deepseek-ai/dsh-session-persistence-jsonl", "0.2.0-rc.2"],
   ["@deepseek-ai/dsh-session-projection", "0.2.0-rc.2"],
   ["@deepseek-ai/dsh-session-projection-cache", "0.2.0-rc.2"],
   ["@deepseek-ai/dsh-session-query", "0.2.0-rc.2"],
@@ -126,7 +127,7 @@ export const publicSeams: PublicSeamEvidence[] = [
   { id: "util-values", package: "@deepseek-ai/dsh-util-values", importPath: "@deepseek-ai/dsh-util-values", classification: "helper", batchUse: ["B3-XR-UPG"], values: ["deepFreeze", "snapshotJsonValue"], types: [] },
   { id: "cordis", package: "@deepseek-ai/cordis", importPath: "@deepseek-ai/cordis", classification: "direct", batchUse: ["B1-W1"], values: ["Context", "Service"], types: ["Plugin"] },
   { id: "scope", package: "@deepseek-ai/dsh-scope", importPath: "@deepseek-ai/dsh-scope", classification: "direct", batchUse: ["B1-W1", "B1-W2", "B1-W3"], values: ["createScope", "scopeOf"], types: ["Scope", "ScopeKey", "Scoped"] },
-  { id: "session", package: "@deepseek-ai/dsh-session", importPath: "@deepseek-ai/dsh-session", classification: "direct", batchUse: ["B1-W1", "B1-W4"], values: ["Session", "SessionId", "SessionStore"], types: ["SessionEvent", "SessionHeader"] },
+  { id: "session", package: "@deepseek-ai/dsh-session", importPath: "@deepseek-ai/dsh-session", classification: "direct", batchUse: ["B1-W1", "B1-W4"], values: ["Session", "SessionId", "SessionStore", "buildForkSeed"], types: ["SessionEvent", "SessionHeader"] },
   { id: "session-projection", package: "@deepseek-ai/dsh-session-projection", importPath: "@deepseek-ai/dsh-session-projection", classification: "direct", batchUse: ["B3-W1"], values: ["SessionProjectionRegistry"], types: ["ProjectionSnapshot"], compileEvidence: "runtime-package-root" },
   { id: "agent", package: "@deepseek-ai/dsh-agent", importPath: "@deepseek-ai/dsh-agent", classification: "direct", batchUse: ["B1-W1"], values: ["AgentRegistry"], types: ["Agent", "AgentFactory", "AgentHandle", "CreateAgentOptions", "ResumeAgentOptions"] },
   { id: "agent-instructions", package: "@deepseek-ai/dsh-agent-instructions", importPath: "@deepseek-ai/dsh-agent-instructions", classification: "provider", batchUse: ["B3-W1"], values: ["Config", "apply", "name"], types: ["Config"] },
@@ -138,6 +139,7 @@ export const publicSeams: PublicSeamEvidence[] = [
   { id: "llm-retry", package: "@deepseek-ai/dsh-llm-retry", importPath: "@deepseek-ai/dsh-llm-retry", classification: "helper", batchUse: ["B3-XR-UPG"], values: ["RetryId"], types: [], compileEvidence: "runtime-package-root" },
   { id: "settings", package: "@deepseek-ai/dsh-settings", importPath: "@deepseek-ai/dsh-settings", classification: "provider", batchUse: ["B3-W1"], values: ["SettingsForms"], types: ["SettingsNamespace", "SettingsPathOp"] },
   { id: "system-prompt", package: "@deepseek-ai/dsh-system-prompt", importPath: "@deepseek-ai/dsh-system-prompt", classification: "direct", batchUse: ["B1-W1", "B1-W3"], values: ["SystemPrompt"], types: ["PromptAssembly", "PromptContext", "PromptSection"] },
+  { id: "persistence-jsonl", package: "@deepseek-ai/dsh-session-persistence-jsonl", importPath: "@deepseek-ai/dsh-session-persistence-jsonl", classification: "provider", batchUse: ["B1-W4"], values: ["default"], types: ["Config"] },
   { id: "persistence", package: "@deepseek-ai/dsh-session-persistence", importPath: "@deepseek-ai/dsh-session-persistence", classification: "provider", batchUse: ["B1-W1", "B1-W4"], values: ["SessionPersistence", "validateStoredEvents"], types: ["SessionHandle", "SessionInspection", "SessionPersistenceSnapshot"] },
   { id: "compaction", package: "@deepseek-ai/dsh-compaction", importPath: "@deepseek-ai/dsh-compaction", classification: "provider", batchUse: ["B1-W4"], values: ["CompactionEngine", "CompactionId"], types: ["CompactionAgentContext", "CompactionResult"] },
   { id: "compaction-basic", package: "@deepseek-ai/dsh-compaction-basic", importPath: "@deepseek-ai/dsh-compaction-basic", classification: "provider", batchUse: ["B1-W4"], values: ["BasicCompactionEngine"], types: ["BasicCompactionConfig"] },
@@ -199,7 +201,7 @@ export const knownLimitations = [
   {
     id: "downstream-known-events-not-registered",
     effect: "The native known-event registry excludes downstream declaration-merged product events; the public Provider owns admission of its stored records.",
-    decision: "Compose native admission with the exact product required-event registry in the public SQLite Provider; unknown required events fail closed and the native registry is never mutated.",
+    decision: "Compose native admission with the exact product required-event registry through the official JSONL validation hook; unknown required events fail closed and the native registry is never mutated.",
   },
   {
     id: "mcp-public-types-require-dom-library",

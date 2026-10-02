@@ -191,6 +191,11 @@
         "version": "0.2.0-rc.2"
       },
       {
+        "name": "@deepseek-ai/dsh-session-persistence-jsonl",
+        "role": "dsh-library",
+        "version": "0.2.0-rc.2"
+      },
+      {
         "name": "@deepseek-ai/dsh-session-projection",
         "role": "dsh-library",
         "version": "0.2.0-rc.2"
@@ -428,7 +433,7 @@
     ]
   },
   "dsh": {
-    "baselineSha256": "5498b31b7207e7e8999cbb383a713c5215055d0e914fafcfb00d4f8ebdb1a14c",
+    "baselineSha256": "30efd1b84e33d4ec473c81a9d179113b76852bbf85f9c67d949aa0822e894892",
     "release": "0.2.0-rc.2"
   },
   "formatVersion": 1,
@@ -443,7 +448,7 @@
   },
   "profileId": "myagents-dsh-official-v1",
   "protocol": {
-    "schemaSha256": "32f78b25dea8f2dfa9dd8a71bc9d197b049019d8b02252ff8c2e64728abe3157",
+    "schemaSha256": "f8c68d3915c35c1aa1da95f2096603928eacb9ea908e862f9a63f27236a2ad8e",
     "version": "6.0.0"
   },
   "runtimeActivation": "forbidden-until-patched-dsh-and-batch-1-gate",

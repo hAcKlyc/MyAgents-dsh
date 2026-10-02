@@ -17,8 +17,8 @@
     "registry": "https://registry.npmjs.org",
     "dshRelease": "0.2.0-rc.2",
     "sourceAssociation": "unproven",
-    "directPackageCount": 78,
-    "productionPackageCount": 304
+    "directPackageCount": 79,
+    "productionPackageCount": 305
   },
   "publicCompileFixture": "packages/product-profile/src/dsh-public-surface.compile.ts",
   "publicSeams": [
@@ -426,7 +426,8 @@
       "values": [
         "Session",
         "SessionId",
-        "SessionStore"
+        "SessionStore",
+        "buildForkSeed"
       ],
       "types": [
         "SessionEvent",
@@ -636,6 +637,21 @@
         "PromptAssembly",
         "PromptContext",
         "PromptSection"
+      ]
+    },
+    {
+      "id": "persistence-jsonl",
+      "package": "@deepseek-ai/dsh-session-persistence-jsonl",
+      "importPath": "@deepseek-ai/dsh-session-persistence-jsonl",
+      "classification": "provider",
+      "batchUse": [
+        "B1-W4"
+      ],
+      "values": [
+        "default"
+      ],
+      "types": [
+        "Config"
       ]
     },
     {
@@ -1214,7 +1230,7 @@
     {
       "id": "downstream-known-events-not-registered",
       "effect": "The native known-event registry excludes downstream declaration-merged product events; the public Provider owns admission of its stored records.",
-      "decision": "Compose native admission with the exact product required-event registry in the public SQLite Provider; unknown required events fail closed and the native registry is never mutated."
+      "decision": "Compose native admission with the exact product required-event registry through the official JSONL validation hook; unknown required events fail closed and the native registry is never mutated."
     },
     {
       "id": "mcp-public-types-require-dom-library",
@@ -1257,7 +1273,7 @@
     },
     {
       "license": "MIT",
-      "count": 214
+      "count": 215
     },
     {
       "license": "Python-2.0",
@@ -2151,6 +2167,16 @@
       "version": "0.2.0-rc.2",
       "resolved": "https://registry.npmjs.org/@deepseek-ai/dsh-session-persistence/-/dsh-session-persistence-0.2.0-rc.2.tgz",
       "integrity": "sha512-2OoRHZYWi5Vy0+1bPU37Y/NTh6uQiZ3VdpvDmW1oCgsapQr2JS/Lbody1gXOMJ1KXglCSLmePgTMC00uKw/UIg==",
+      "license": "MIT",
+      "direct": true,
+      "optional": false
+    },
+    {
+      "path": "node_modules/@deepseek-ai/dsh-session-persistence-jsonl",
+      "name": "@deepseek-ai/dsh-session-persistence-jsonl",
+      "version": "0.2.0-rc.2",
+      "resolved": "https://registry.npmjs.org/@deepseek-ai/dsh-session-persistence-jsonl/-/dsh-session-persistence-jsonl-0.2.0-rc.2.tgz",
+      "integrity": "sha512-iAzXWC8jmiLYjK+wuN/fAKXLniAfClWm0CmEIwSxZnJGVy8c0iy7j5v8UfOqUbwuGfqo5HUWfyLGgxbWH7SG3g==",
       "license": "MIT",
       "direct": true,
       "optional": false

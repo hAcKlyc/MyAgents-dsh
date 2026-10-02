@@ -73,9 +73,9 @@ import {
 import {
   PRODUCT_PERSISTENCE_FORMAT,
   PRODUCT_PERSISTENCE_SCHEMA_VERSION,
-  ProductSqliteSessionPersistence,
+  ProductJsonlSessionPersistence,
   productTranscriptPostcondition,
-  productSessionDatabasePath,
+  productCoordinationDatabasePath,
 } from "@myagents-dsh/persistence-product";
 import {
   JsonRpcPeer,
@@ -2792,7 +2792,7 @@ assert.deepEqual(await hostClient.sessionForkCommit({
   token: forkPrepared.token,
 }), forkCommitted);
 assert.deepEqual(primaryAgent.session.snapshotEvents(), rewindTargetEvents);
-const forkDatabase = new DatabaseSync(productSessionDatabasePath(
+const forkDatabase = new DatabaseSync(productCoordinationDatabasePath(
   selectPlatformAdapter(fixturePlatformTarget),
   fixtureForkRuntimeHome,
 ), { readOnly: true });
@@ -2854,14 +2854,13 @@ forkDatabase.close();
 const forkReloadContext = new Context();
 await forkReloadContext.plugin(SessionStore);
 const forkPlatform = selectPlatformAdapter(fixturePlatformTarget);
-await forkReloadContext.plugin(ProductSqliteSessionPersistence, {
-  durability: forkPlatform.sqliteDurabilityPlan(productSessionDatabasePath(
+await forkReloadContext.plugin(ProductJsonlSessionPersistence, {
+  durability: forkPlatform.sqliteDurabilityPlan(productCoordinationDatabasePath(
     forkPlatform,
     fixtureForkRuntimeHome,
   )),
   platform: forkPlatform,
   runtimeHome: fixtureForkRuntimeHome,
-  writeBatchMaxDelayMs: 1,
 });
 const forkReader = await forkReloadContext.sessionPersistence.open(SessionId("artifact-forked-session"), "read");
 const forkRestored = Session.fromRestore(forkReader.id, (await forkReader.read()).events,
@@ -2889,7 +2888,7 @@ assert.deepEqual(await hostClient.sessionForkAbort({
   clientMutationId: "artifact-fork-abort",
   token: forkAbortPrepared.token,
 }), forkAborted);
-const abortedForkDatabase = new DatabaseSync(productSessionDatabasePath(
+const abortedForkDatabase = new DatabaseSync(productCoordinationDatabasePath(
   selectPlatformAdapter(fixturePlatformTarget),
   fixtureAbortedForkRuntimeHome,
 ), { readOnly: true });
@@ -3887,7 +3886,7 @@ assert.equal(adapter.activeStreamCount, 0);
 assert.equal(nativeRpc.phase, "disposed");
 assert.equal(hostAttachmentLeases.size, 0);
 const persistencePlatform = selectPlatformAdapter(fixturePlatformTarget);
-const persistencePath = productSessionDatabasePath(persistencePlatform, fixtureRuntimeHome);
+const persistencePath = productCoordinationDatabasePath(persistencePlatform, fixtureRuntimeHome);
 const persistenceProbe = new DatabaseSync(persistencePath, { readOnly: true });
 const persistenceMeta = persistenceProbe.prepare(
   "SELECT persistence_format, schema_version FROM store_meta WHERE singleton = 1",
@@ -3911,7 +3910,7 @@ assert.ok(persistenceSession.event_count > 0);
 assert.ok(persistenceSession.revision > 0);
 const persistenceReloadContext = new Context();
 await persistenceReloadContext.plugin(SessionStore);
-await persistenceReloadContext.plugin(ProductSqliteSessionPersistence, {
+await persistenceReloadContext.plugin(ProductJsonlSessionPersistence, {
   durability: persistencePlatform.sqliteDurabilityPlan(persistencePath),
   platform: persistencePlatform,
   runtimeHome: fixtureRuntimeHome,

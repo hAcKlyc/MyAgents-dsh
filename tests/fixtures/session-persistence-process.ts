@@ -1,7 +1,7 @@
 import { Context } from "@deepseek-ai/cordis";
 import { Session, SessionId, SessionStore } from "@deepseek-ai/dsh-session";
 import { SessionAlreadyOwnedError, type SessionHandle } from "@deepseek-ai/dsh-session-persistence";
-import { ProductSqliteSessionPersistence, productSessionDatabasePath } from "@myagents-dsh/persistence-product";
+import { ProductJsonlSessionPersistence, productCoordinationDatabasePath } from "@myagents-dsh/persistence-product";
 import { resolveRuntimePlatformTarget, selectPlatformAdapter } from "@myagents-dsh/product-profile";
 import { realpath } from "node:fs/promises";
 
@@ -13,9 +13,9 @@ let writer: SessionHandle | undefined;
 try {
   const platform = selectPlatformAdapter(resolveRuntimePlatformTarget(process.platform, process.arch));
   await ctx.plugin(SessionStore);
-  await ctx.plugin(ProductSqliteSessionPersistence, {
+  await ctx.plugin(ProductJsonlSessionPersistence, {
     platform, runtimeHome: home,
-    durability: platform.sqliteDurabilityPlan(productSessionDatabasePath(platform, home)),
+    durability: platform.sqliteDurabilityPlan(productCoordinationDatabasePath(platform, home)),
   });
   const id = SessionId("native-persistence-fixture");
   if (mode === "hold") {

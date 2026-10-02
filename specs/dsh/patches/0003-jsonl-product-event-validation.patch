@@ -1,0 +1,38 @@
+diff --git a/packages/session/session-persistence-jsonl/src/index.ts b/packages/session/session-persistence-jsonl/src/index.ts
+--- a/packages/session/session-persistence-jsonl/src/index.ts
++++ b/packages/session/session-persistence-jsonl/src/index.ts
+@@ -300,6 +300,16 @@
+     return { kind: 'jsonl', path: logPath(this.root, meta.cwd, meta.id, this.compression) }
+   }
+ 
++  /**
++   * Extend stored-event validation through trusted build-time composition.
++   * The default retains the native fail-closed vocabulary and validation.
++   * Overrides must validate every native and extension event; unknown required
++   * events must never be silently admitted. This changes no physical format.
++   */
++  protected validateStoredEvents(meta: SessionHeader, events: SessionEvent[], location?: SessionLocation): SessionEvent[] {
++    return validateStoredEvents(meta, events, location)
++  }
++
+   // --- SessionPersistence service API ---
+ 
+   /**
+@@ -672,7 +682,7 @@
+     const meta = this.currentHeader(prepared.artifact.header)
+     assertStoredId(id, meta)
+     const events = prepared.artifact.events as SessionEvent[]
+-    validateStoredEvents(meta, events, { kind: 'jsonl', path: selected.sourcePath })
++    this.validateStoredEvents(meta, events, { kind: 'jsonl', path: selected.sourcePath })
+     const stored: PreparedStoredLog = {
+       status: 'prepared',
+       validateRelatedSources,
+@@ -804,7 +814,7 @@
+     signal?.throwIfAborted()
+     assertStoredId(expectedId, parsed.meta)
+     const location = this.locate(parsed.meta)
+-    validateStoredEvents(parsed.meta, parsed.events, location)
++    this.validateStoredEvents(parsed.meta, parsed.events, location)
+     const { events, ...rest } = parsed
+     const stored: CurrentStoredLog = {
+       status: 'current',

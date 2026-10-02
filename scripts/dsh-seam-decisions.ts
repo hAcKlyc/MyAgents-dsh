@@ -15,6 +15,7 @@ export const DSH_SEAM_SOURCE = Object.freeze({
   declaredRelease: "0.2.0-rc.2",
   executablePackageAssociation: "unproven",
   files: Object.freeze([
+    Object.freeze({ path: "packages/session/session-persistence-jsonl/src/index.ts", blob: "1a89b76d29e920772175950e25ffe943f4014b90", sha256: "6c56c465034c7673dd167f2ad7270ad8ce9ae7536457a291dc6a7abb81328436" }),
     Object.freeze({
       path: ".agents/notes/implemented/architecture/2026-08-31-explicit-agent-runtime-identity.i18n.yaml",
       blob: "c28606ddd1fb2bcdbb4773f37096581510fd4624",
@@ -825,6 +826,7 @@ export const PATCHED_SOURCE_TESTS = Object.freeze([
 
 const WAKE_PATCH = "specs/dsh/patches/0001-agent-wake-pending.patch";
 const PRE_ASSISTANT_COMMIT_PATCH = "specs/dsh/patches/0002-pre-assistant-commit.patch";
+const JSONL_EVENT_VALIDATION_PATCH = "specs/dsh/patches/0003-jsonl-product-event-validation.patch";
 const PUBLICATION_GUARDS_PATCH = "specs/dsh/patches/0004-publication-guards.patch";
 const PRODUCT_CONTINUABLE_LIFECYCLE_PATCH = "specs/dsh/patches/0005-product-owned-continuable-lifecycle.patch";
 const CAPACITY_SAFE_COMPACTION_PATCH = "specs/dsh/patches/0007-capacity-safe-compaction.patch";
@@ -836,6 +838,7 @@ const LITERAL_RUNTIME_CONTEXT_PATCH = "specs/dsh/patches/0012-literal-runtime-co
 export const DSH_SEAM_PATCHES = Object.freeze([
   WAKE_PATCH,
   PRE_ASSISTANT_COMMIT_PATCH,
+  JSONL_EVENT_VALIDATION_PATCH,
   PUBLICATION_GUARDS_PATCH,
   PRODUCT_CONTINUABLE_LIFECYCLE_PATCH,
   CAPACITY_SAFE_COMPACTION_PATCH,
@@ -937,18 +940,19 @@ export function buildDshSeamDecisions(): object {
       },
       {
         id: "DSH-SEAM-003",
-        upgradeDisposition: "retire",
+        upgradeDisposition: "reduce",
         seam: "product-required-session-event-recognition",
-        status: "candidate_retirement_pending_product_validation",
+        status: "candidate_patch_pending_product_validation",
         adr: "specs/adr/0003-product-session-event-predicate.md",
-        rejected: "mark-required-events-ignorable-or-import-private-known-event-state",
-        selectedPublicApi: "public SessionPersistence Provider, SessionHandle, KNOWN_SESSION_EVENT_TYPES and native event admission",
+        rejected: "mark-required-events-ignorable-or-reimplement-native-JSONL",
+        selectedPublicApi: "JsonlSessionPersistence protected validateStoredEvents hook; all native storage remains official",
+        patch: patch(JSONL_EVENT_VALIDATION_PATCH),
         executableEvidence: [
-          "candidate public Provider must accept registered required product events across append/read/cold restore",
-          "unknown required events must remain refused through the product Provider",
-          "stock validateStoredEvents retains native refusal behavior; product extension never mutates the stock registry",
+          "official JSONL cold restore validates every declared required Product payload",
+          "unknown required and malformed known Product events remain refused",
+          "stock native validation and immutable known-event registry remain unchanged",
         ],
-        removalCondition: "an installed DSH release exposes an equivalent tested required-event registry",
+        removalCondition: "official JSONL exposes an equivalent tested trusted extension validation hook",
       },
       {
         id: "DSH-SEAM-004",
@@ -957,7 +961,7 @@ export function buildDshSeamDecisions(): object {
         status: "candidate_public_composition_pending_product_validation",
         adr: "specs/adr/0004-shared-backend-lock-and-immutable-rewind-generation.md",
         rejected: "surface-shadow-rewind-or-private-storage-import",
-        selectedPublicApi: "product SessionPersistence/SessionHandle Provider plus mutation companion sharing one per-Session lock",
+        selectedPublicApi: "official JSONL SessionPersistence/SessionHandle with product locator leases and mutation/checkpoint coordination",
         executableEvidence: [
           "backend append and mutation commit serialize",
           "retirement and exact revision are commit preconditions",
@@ -966,7 +970,7 @@ export function buildDshSeamDecisions(): object {
           "cold rewind generation preserves immutable stable prefix, product fold, and derived history",
           "public SessionHandle Provider plus exact-revision recoverable tombstone delete must survive response loss",
         ],
-        removalCondition: "superseding ADR after production SQLite fault evidence proves a narrower composition",
+        removalCondition: "official public mutation APIs cover exact product generation, checkpoint and journal semantics",
       },
       {
         id: "DSH-SEAM-005",

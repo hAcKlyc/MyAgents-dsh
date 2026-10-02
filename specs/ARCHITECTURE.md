@@ -335,14 +335,22 @@ Operation birth freezes the effective model profile, optional Host-authoritative
 
 ## 9. Session and persistence model
 
-DSH append-only Session events remain the only durable model conversation. The rc.2 dev
-Provider implements the public SessionHandle contract over the same ProductSqliteStore; native
-vocabulary validation composes with exact Product payload validators, without changing the global
-native known-event set. Kernel writer ownership precedes per-Session serialization and short
-SQLite transactions. The Product mutation companion uses the same ownership for generation
-replacement and deletion. SQLite schema 10 accepts native V4 only; old unreleased data uses the
-separately governed reset workflow. See [Sessions, persistence and recovery](./tech_docs/state/sessions-persistence-and-recovery.md)
-for handle lifetime, event ownership and schema boundaries. The Host consumes an accepted handoff; native platform and release claims remain tied to its exact bytes and evidence.
+DSH append-only Session events remain the only durable model conversation. The official
+`@deepseek-ai/dsh-session-persistence-jsonl` owns V4 encoding, checksummed Zstandard frames,
+native write leases, batching, flush, close, torn-tail recovery and cold restoration. The
+`ProductJsonlSessionPersistence` adapter delegates those operations and composes exact required
+Product payload validation through a narrow protected hook; native event globals remain unchanged.
+
+The Product mutation store owns only active-generation locators, revisions, stable-boundary hashes,
+mutation journals and file checkpoint preimages at `persistence/coordination.sqlite` (schema 1).
+It stores no Session event bytes. Official native logs live under `sessions/<generation-id>/`.
+Product locator leases prevent a live writer racing a generation switch; DSH separately owns its
+physical log lease. Rewind prepares a native JSONL generation before an atomic locator transaction;
+fork uses native `buildForkSeed`; delete tombstones before idempotent physical purge. There is no
+cross-filesystem atomicity claim or development-history migration. See
+[Sessions, persistence and recovery](./tech_docs/state/sessions-persistence-and-recovery.md) and
+[Mutations and checkpoints](./tech_docs/state/mutations-and-checkpoints.md). Artifact, native and
+Host acceptance remain tied to the exact rebuilt bytes.
 
 The native RPC `session/read` projection exposes versioned, engine-neutral durable events or bounded chunks. The native protocol exposes one opaque, postcondition-bound genesis prefix before the first product operation, so an admitted first turn can use the same transactional rewind owner as later turns. It does not expose Pi native entry types or pretend that a DSH session has a Pi leaf identity.
 
@@ -359,7 +367,9 @@ The initial persistence provider must support:
 - revisions sufficient for fail-closed mutation coordination;
 - product-owned deletion and retention extensions required by the native protocol.
 
-The current public DSH persistence seam is append-only and has no delete, replace, retention, or transaction method. The project therefore provides a MyAgents SQLite provider implementing both the DSH service and a separate product mutation service over the same owned backend. It composes the public handle contract and native validation, and must not reach through package-private DSH storage internals.
+The public DSH persistence seam is append-only and has no product delete/fork/rewind transaction
+API. Product coordination retains those missing operations over official handles and a metadata
+store; it never implements a second native log, batching policy, codec or recovery engine.
 
 ## 10. Tool and policy architecture
 
@@ -477,7 +487,7 @@ Non-secret desired configuration and declarative component snapshots are stored 
 
 ## 13. Managed files and session mutations
 
-The v1 checkpoint claim covers only root-origin `Write` and `Edit` executed through the official governed definitions. Before the side effect, the checkpoint plugin persists an immutable correlation and preimage or absence fact. Write parent creation shares that journal: SQLite v9 records planned paths and created directory identities, cleanup removes only owned unchanged empty directories, and rewind rollback restores removed parents before file bytes. New-file child Write uses the same service with child-Session records for directory recovery, while remaining outside root rewind coverage. The platform filesystem Provider owns mkdir/rmdir and path identity checks. File replay adjudicates both sealed hashes across filesystem/SQLite phase gaps. See [Mutations and checkpoints](./tech_docs/state/mutations-and-checkpoints.md#8-checkpoint-coverage-and-limits) for limits and the unproven mkdir-receipt window.
+The v1 checkpoint claim covers only root-origin `Write` and `Edit` executed through the official governed definitions. Before the side effect, the checkpoint plugin persists an immutable correlation and preimage or absence fact. Write parent creation shares that journal: The coordination store records planned paths and created directory identities, cleanup removes only owned unchanged empty directories, and rewind rollback restores removed parents before file bytes. New-file child Write uses the same service with child-Session records for directory recovery, while remaining outside root rewind coverage. The platform filesystem Provider owns mkdir/rmdir and path identity checks. File replay adjudicates both sealed hashes across filesystem/SQLite phase gaps. See [Mutations and checkpoints](./tech_docs/state/mutations-and-checkpoints.md#8-checkpoint-coverage-and-limits) for limits and the unproven mkdir-receipt window.
 
 Rewind, fork, and delete use prepare/commit/rollback-or-abort/status protocols. A mutation-fenced `recovery_required` Session also accepts only an exact replay of its already prepared request so the Host can recover the durable random token after a crash between Runtime prepare and Host journal publication; store fingerprint/capacity checks reject a new mutation. They coordinate:
 
