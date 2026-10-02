@@ -50,16 +50,16 @@ PreToolUse uses the same `normalizeToolArguments` policy against the actual visi
 
 Human waiting is not execution time. For the native tools, the selected stock definitions declare timeouts, but the composition excludes those names from the outer DSH timeout policy and starts Product execution deadlines after permission. Unchanged tools retain the DSH timeout policy. Transport registration/response, network/provider calls, MCP calls, process work and cleanup retain their own bounded owners.
 
-The four permission modes, durable exact-rule lifecycle, blocking interaction path and Host-controlled Plan transition are specified in [Permissions and interactions](./permissions-interactions-and-plan.md). This guide owns their placement in the tool pipeline; that guide owns their detailed policy semantics.
+The three permission modes, durable exact-rule lifecycle, blocking interaction path and Host-controlled Plan transition are specified in [Permissions and interactions](./permissions-interactions-and-plan.md). This guide owns their placement in the tool pipeline; that guide owns their detailed policy semantics.
 
 ## 3. Canonical catalog and owners
 
 The Product contract catalog has twenty-four internal policy slots. The model catalog expands these to twenty-seven native/custom definitions; one Shell dialect is unavailable on each platform, leaving twenty-six effective tools. Uppercase policy keys such as `Read`, `Agent`, and `TaskStop` remain permission/Plan/checkpoint identifiers, not registered compatibility tools. Installed DSH definitions own their actual model schemas and renderers.
 
 ```text
-Read, Write, Edit, Glob, Grep, bash, pwsh, job_output, job_list, job_kill, ls,
-WebFetch, WebSearch, AskUserQuestion, EnterPlanMode, ExitPlanMode,
-Skill, Agent, TaskStop, SendMessage,
+read, read_image, write, edit, glob, grep, bash, pwsh, job_output, job_list, job_kill, ls,
+web_fetch, web_search, AskUserQuestion, EnterPlanMode, ExitPlanMode, Skill,
+subagent, fork_agent, interrupt_agent, send_message, list_agents,
 TaskCreate, TaskGet, TaskList, TaskUpdate
 ```
 
@@ -98,9 +98,10 @@ Operation birth freezes the catalog, permission, component, workspace, execution
 
 Grep accepts either a file or directory. Search authorization records stable filesystem identity;
 normal child creation, Edit publication, or mtime changes inside an authorized directory do not
-invalidate a parallel search, while replacement of the authorized root/file still does. Bash uses
-the explicit non-secret environment admitted at Session birth. A TaskStop signal settles a
-background Bash job as `aborted`; a natural non-zero exit settles as `failed`.
+invalidate a parallel search, while replacement of the authorized root/file still does. Shell uses
+the sealed launch environment admitted at initialize. `interrupt_agent` interrupts a child Agent
+turn; `job_kill` controls Shell Jobs through the official Jobs service. Their terminal facts are
+owned by those separate native services.
 
 `Write` creates missing parents inside the operation-frozen write roots before publishing its one
 file mutation. The checkpoint owner persists the missing-parent plan before the first mkdir and
@@ -119,7 +120,7 @@ retains its complete-current-Read precondition. Search tools accept aliases and 
 opened-root/file identity revalidation. `ls` explains whether entry count or byte output was truncated.
 
 Read/Write/Edit now invoke the official `tool-fs` executors through public definition factories.
-MyAgents retains names, permission/deadline admission, durable read receipts and checkpoint settlement.
+MyAgents retains internal policy identities, permission/deadline admission, durable read receipts and checkpoint settlement.
 There is one DSH tool execution and one filesystem provider; no internal second tool dispatch.
 The official reader owns line windows and streaming; image reads use its actual calling-model
 capability gate and return image content blocks through the existing Host attachment request scope.
@@ -133,7 +134,7 @@ checkpoint bytes, including CRLF and UTF-8 BOM decoding. Actual publication rema
 `LocalFileSystem`; the product pre-publication guard rechecks identity/version after staging. Its
 `createParents: false` setting leaves all directory creation in the checkpoint journal.
 
-The the wrappers register the official `read`, `read_image`, `write`, and `edit` schemas and renderers, then call their public executors inside the same Product path/permission/checkpoint guards. Stock `glob` and `grep` run through a Product search-root check and a sealed ripgrep subprocess authority; they cannot launch a command before approval. Stock `web_fetch` and `web_search` use the Product safe HTTP and approved Host search providers. Their interfaces intentionally differ from `WebFetch` and `WebSearch`: fetch returns page text without the utility-model `prompt` answer, while search accepts `queries` and merges official source results. The Host reverse ports and permission labels remain Product-owned.
+The wrappers register the official `read`, `read_image`, `write`, and `edit` schemas and renderers, then call their public executors inside the same Product path/permission/checkpoint guards. Stock `glob` and `grep` run through a Product search-root check and a sealed ripgrep subprocess authority; they cannot launch a command before approval. Stock `web_fetch` and `web_search` use the Product safe HTTP and approved Host search providers. Their interfaces intentionally differ from `WebFetch` and `WebSearch`: fetch returns page text without the utility-model `prompt` answer, while search accepts `queries` and merges official source results. The Host reverse ports and permission labels remain Product-owned.
 
 An out-of-root `Read` may resolve an Agent-owned retained output. The optional resolver returns
 `undefined` only for an unregistered path; the file tool then reports its ordinary allowed-root error.
@@ -152,7 +153,7 @@ Host/MCP and external changes. Directory cleanup and rewind compensation are doc
 
 ## 5. Plan, task and child work
 
-Plan mode has one product owner and contributes a monotonic guard to `ctx.tools`. TaskGraph state is durable in the DSH Session event vocabulary. Child and background work executes through DSH subagent/jobs primitives while the MyAgents WorkRegistry adds product identities, permission/origin restrictions, settlement, messaging, stop, and recovery behavior.
+Plan mode has one Product owner and contributes a monotonic guard to `ctx.tools`. TaskGraph state is durable in DSH Session events. DSH subagent/Inbox/Jobs services own child execution, messaging, interruption and recovery; MyAgents applies operation, model and tool policy through their public seams. No ProductWork registry owns native children.
 
 ### 5.1 Portable Task metadata
 

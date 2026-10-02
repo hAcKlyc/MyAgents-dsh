@@ -1,7 +1,7 @@
 ---
 type: technical-architecture
 status: implemented
-updated: 2026-09-25
+updated: 2026-10-02
 module: system-context-and-instructions
 ---
 
@@ -23,8 +23,8 @@ DSH assembles four distinct contribution planes for each model request:
 
 The Runtime does not enforce one global order across those planes or reserve Host order ranges. The
 MyAgents profile uses stable numeric conventions inside the relevant collection—for example Plan
-policy at system-section order `50`, Workspace context at `90`, Skill catalog at `105`, and child
-context at `120`—but those numbers do not move project instructions or tools into that same list.
+policy at system-section order `50`, Workspace context at `90`, Agent identity at `92`, and Skill
+catalog at `105`—but those numbers do not move project instructions or tools into that same list.
 DSH reassembles the effective request after owner changes. Stable byte prefixes may still benefit
 Provider caching, but the protocol exposes no Provider-specific cache API and the Runtime makes no
 "later changes never rebuild earlier content" guarantee. The production profile also disables the
@@ -39,9 +39,8 @@ optional generic harness-identity contribution.
 
 ## 3. Host contract and normalization
 
-The accepted protocol retains the optional `SystemContextSnapshot` introduced in
-`2.2.0` for `session/create`, `session/resume` and
-`config/apply`. A snapshot contains up to 32 ordered sections and 32 ordered contexts. Every entry
+The current protocol accepts an optional `SystemContextSnapshot` for `session/create`,
+`session/resume` and `config/apply`. A snapshot contains up to 32 ordered sections and 32 ordered contexts. Every entry
 has a Host id, numeric order, `global` or `root` scope, and literal UTF-8 Markdown text. Context text
 has a 512 KiB aggregate Runtime bound in addition to the generated per-field bounds.
 
@@ -104,7 +103,7 @@ AGENTS.md
 This three-file choice is mutual exclusion at each project root or nested directory, not one
 repository-wide winner and not an exclusion of the user-global instruction. DSH
 owns baseline discovery, durable replacement/tombstone events, resume and compaction replay. A
-successful native `read`, `write` or `edit` carrying `file_path` triggers its existing nested
+successful native `read`, `read_image`, `write` or `edit` carrying `file_path` triggers its existing nested
 reconciliation. A transiently unavailable higher-priority candidate preserves the last-known-good
 winner; confirmed change or removal produces one atomic DSH change batch.
 
@@ -133,7 +132,7 @@ and load `references/`, `scripts/`, `assets/` or other relative resources only a
 ordinary governed tools. Full directories and absolute package paths do not enter the stable
 system prefix.
 
-Workspace capability authority is deliberately repository-scoped in this workstream. Native
+Workspace capability authority is deliberately repository-scoped in the current profile. Native
 user/admin/system Skill roots retained by a compatibility Runtime are not projected into this DSH
 context and are not treated as repository winners.
 
@@ -143,13 +142,16 @@ tests use public DSH assembly to assert literal rendering, ordering, inheritance
 
 ## 8. DSH seam boundary
 
-Two narrow pinned-source seams are carried as patches 0008 and 0009:
+The pinned patches retain three missing semantics:
 
-- optional literal section/context and durable child-persona rendering;
-- first-candidate Agent Instructions selection plus configurable filesystem-touch tool names.
+- `0008`: literal child persona across continuation and cold resume;
+- `0009`: first-candidate Agent Instructions selection and configurable filesystem-touch names;
+- `0012`: literal Runtime context registration.
+
+Literal system sections are already supported by the pinned DSH API and need no Product copy.
 
 Defaults preserve upstream behavior. The patch inventory, exact blobs, tests and retirement rules
-remain governed by `specs/dsh/seam-decisions-v1.json` and ADRs 0009/0010. Credential-backed
+remain governed by `specs/dsh/seam-decisions-v1.json` and the relevant ADRs. Credential-backed
 campaigns observe Provider cache behavior externally; their exact scenario/call counts belong to
 their sealed evidence and release ledger rather than this module guide. Current evidence does not
 justify a Provider-specific cache seam. A future seam requires new evidence of a material gap.
@@ -162,6 +164,6 @@ justify a Provider-specific cache seam. A future seam requires new evidence of a
 - official stable sections and instruction plugin: `packages/runtime-product/src/composition.ts`;
 - Skill context: `packages/tools-agent/src/skill-runtime.ts`;
 - child literal persona: DSH subagent descriptor and `packages/runtime-product/src/composition.ts`;
-- DSH seams: `specs/dsh/patches/0008-*`, `0009-*`.
+- DSH seams: `specs/dsh/patches/0008-*`, `0009-*`, `0012-*`.
 
-Product-managed child scopes contribute `product:child-identity` through the public SystemPrompt context registry. Frozen birth facts own model, Provider, role and tree position; current effective execution limits own remaining delegation depth. Literal interpolation prevents model IDs from becoming template variables. See [child work](./child-agents-and-background-work.md) for recovery and completion delivery.
+The composition contributes `runtime:agent-identity` as literal context for each live Agent, distinguishing its DSH id from MyAgents workspace Agent ids. Native child descriptors and parent catalogs own child identity and lineage; admitted profiles and execution limits govern model selection and delegation depth. See [child work](./child-agents-and-background-work.md) for recovery and completion delivery.

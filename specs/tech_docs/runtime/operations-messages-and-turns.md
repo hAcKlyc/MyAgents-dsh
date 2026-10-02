@@ -11,7 +11,7 @@ updated: 2026-10-02
 
 This guide explains the product operation envelope that maps Host queries, queued input, steering, follow-up, interruption and limits onto DSH messages and turns. DSH AgentLoop remains the only loop and the DSH Session event stream remains durable truth. Exact RPC shapes live in the protocol source; operation behavior lives in `packages/operation-runtime/src/`.
 
-The rc.2 dev adaptation reads usage from `assistant/message` and `assistant/attempt` embedded
+The native V4 integration reads usage from `assistant/message` and `assistant/attempt` embedded
 streams. Completed-turn accounting remains the official TokenMeter fold; Product's pre-request
 budget observation reads settled attempts without adding durable chunk events. The same
 operation payload validators are exposed to the Product persistence admission boundary, while

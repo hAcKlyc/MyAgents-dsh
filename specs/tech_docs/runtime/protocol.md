@@ -3,17 +3,14 @@ type: protocol-specification
 status: implemented
 module: runtime-protocol
 version: 6.0.0
-updated: 2026-09-25
-supersedes_for_dsh: myagents-runtime protocol 1.1.0
+updated: 2026-10-02
 ---
 
 # Runtime protocol intent and ownership
 
 ## 1. Scope and status
 
-This document defines the native MyAgents Host ↔ `MyAgents-dsh` runtime protocol. It preserves the proven operation, transaction, reverse-port, event, and transport model from `myagents-runtime` protocol 1.1.0 while replacing Pi-specific engine and session representations with DSH-native durable Session semantics.
-
-This document owns only this distribution's wire semantics. The fixed migration inventory records the earlier Pi source snapshot; the legacy Runtime and its frozen artifacts are separate.
+This guide explains the intent and ownership of the native Host ↔ MyAgents-dsh contract. `packages/protocol/src/contract-source.ts` owns exact wire shapes; generated schemas, types, fixtures and metadata are its deterministic projections. This guide does not define a second schema or implementation status source.
 
 The accepted protocol `6.0.0` transports native V4
 Session history and separates live assistant observations from durable assistant messages.
@@ -29,8 +26,7 @@ successful turns still reconcile from `session/read` plus independent `turn/get`
 blocks remain observations, separate from canonical tool execution.
 
 The model profile can explicitly declare native `in-history` system-prompt updates and
-`addition-only` or `in-history` tool updates. Omission does not infer either capability from a Provider brand. Session grants retain protocol 4.0.0's Session-lifetime
-semantics. The MyAgents Host lock at `src/shared/integrated-runtimes/dsh-lock.json` identifies the accepted handoff; old Runtime/handoff bytes do not establish acceptance for current source.
+`addition-only` or `in-history` tool updates. Omission does not infer either capability from a Provider brand. Exact grants last for the root Session tree. The MyAgents Host lock at `src/shared/integrated-runtimes/dsh-lock.json` identifies the accepted handoff; old Runtime/handoff bytes do not establish acceptance for current source.
 
 ### 1.1 Compatibility versioning
 
@@ -38,7 +34,7 @@ The active source implements exactly `6.0.0`. Initialization accepts a Host rang
 contains this version; it does not emulate a predecessor. The changed native history and required
 stream identity fields require matching generated Host contracts. The TypeBox source, generated
 digests and executable tests own exact wire shapes; a version increment is not artifact acceptance.
-Historical 2.x, 3.x and 4.0.0 records retain their original byte identities.
+Previous protocol deliveries remain evidence for their original bytes only.
 
 This wire is independent of `@deepseek-ai/dsh-sdk-protocol`. The DSH SDK protocol's three request methods and four notifications are not a base version of this contract, and its JSON-RPC server is not loaded in the official profile. Both protocols may use NDJSON JSON-RPC and DSH event values without sharing method or lifecycle authority.
 
@@ -72,40 +68,7 @@ The key words MUST, MUST NOT, SHOULD, SHOULD NOT, and MAY are normative.
 
 ### 3.2 Frame types
 
-```ts
-type Request = {
-  jsonrpc: "2.0"
-  id: string | number
-  method: string
-  params: object
-}
-
-type Notification = {
-  jsonrpc: "2.0"
-  method: string
-  params: object
-}
-
-type Success = {
-  jsonrpc: "2.0"
-  id: string | number
-  result: unknown
-}
-
-type Failure = {
-  jsonrpc: "2.0"
-  id: string | number
-  error: {
-    code: number
-    message: string
-    data?: {
-      code: string
-      retryable: boolean
-      detail?: unknown
-    }
-  }
-}
-```
+A request has a JSON-RPC ID, method and schema-validated params; a notification has no ID. Success responses carry the declared result, and failures carry a bounded error with stable domain code and retryability. Consume the generated peer types rather than duplicate these envelopes.
 
 Unknown properties in normative request, result, and notification objects MUST be rejected unless a schema explicitly declares an extensible record.
 
@@ -123,15 +86,7 @@ Unknown properties in normative request, result, and notification objects MUST b
 
 The Host proposes limits in `initialize`; Runtime returns the effective minimum of Host, Runtime, and artifact bounds.
 
-```ts
-type ProtocolLimits = {
-  maxFrameBytes: number              // 4 KiB minimum; 1 MiB reference maximum
-  maxPendingRequests: number         // 1..1024
-  maxConcurrentReverseRequests: number // 1..128
-  maxAttachmentLeases: number        // 1..1024
-  eventQueueHighWatermark: number    // 1..100000
-}
-```
+The negotiated limits bound frames, pending requests, concurrent reverse requests, attachment leases and the event queue. Exact ranges/defaults come from `ProtocolLimitsSchema` and `REFERENCE_PROTOCOL_LIMITS`.
 
 The transport MUST implement write backpressure. It MUST reserve bounded capacity for cancellation/control frames and one authoritative turn-terminal event so ordinary stream deltas cannot permanently block terminal delivery.
 
@@ -157,37 +112,14 @@ Rules:
 - The Host MUST send `initialized` after validating the negotiated response and schema digest.
 - Session and operation methods are rejected before that confirmation.
 - One official runtime generation owns at most one primary root session.
-- Retiring that primary session does not authorize an unrelated second primary session in the same v2 generation.
+- Retiring that primary session does not authorize an unrelated second primary session in the same Runtime generation.
 - `runtime/shutdown` acknowledges only after shutdown is committed; the process then performs bounded quiescent disposal.
 
 ## 6. Initialization
 
 ### 6.1 `initialize` request
 
-```ts
-type InitializeParams = {
-  protocol: {
-    minVersion: string
-    maxVersion: string
-  }
-  host: {
-    name: string
-    version: string
-    platform: string
-    arch: string
-    nodeVersion: string
-  }
-  productSessionId: string
-  runtimeHome: AbsolutePath
-  workspace: {
-    path: AbsolutePath
-    identity: string
-  }
-  executionEnvironment: ExecutionEnvironmentProfile
-  hostCapabilities: HostCapabilityProfile
-  limits: ProtocolLimits
-}
-```
+Initialize supplies a protocol range, Host/toolchain identity, Product Session ID, Runtime home, Workspace identity, execution environment, Host capabilities and proposed limits. It does not create the primary Session.
 
 The execution environment freezes:
 
@@ -203,34 +135,16 @@ Secret values MUST be represented only by reverse-port references.
 
 ### 6.2 `initialize` result
 
-```ts
-type InitializeResult = {
-  protocolVersion: "2.4.0"
-  runtimeVersion: string
-  runtimeGeneration: string
-  runtimeEngine: {
-    name: "deepseek-harness"
-    version: string
-    distribution: "myagents-dsh"
-    distributionVersion: string
-    buildRevision?: string
-  }
-  sessionFormat: "dsh-session-events-v1"
-  runtimeCapabilities: RuntimeCapabilityProfile
-  limits: ProtocolLimits
-  schemaSha256: Sha256
-  profileDigest: Sha256
-}
-```
+The result returns the negotiated protocol, distribution/engine versions, Runtime generation, history format, capabilities, effective limits and schema/profile digests. The current history identifier is `dsh-session-events-v2`; consume exact literals from generated metadata.
 
 `runtimeEngine` replaces the Pi-specific `piVersion` field. `profileDigest` is the exact
 `BATCH1_CANDIDATE_PROFILE_SHA256`, not the foundation profile digest.
 
 ## 7. Method inventory
 
-The contract exposes 51 request methods: 44 Host-to-Runtime methods and seven Runtime-to-Host reverse methods. Together with four notifications, the complete RPC vocabulary has 55 names. Draft.2 added `session/delete/purge`; draft.3 added `plan/apply` plus `permission/rules/list`, `permission/rules/add`, and `permission/rules/revoke`; `2.0.0` froze that vocabulary and `2.1.0` through `2.4.0` leave it unchanged.
+Generated metadata lists 55 request names: 48 Host-to-Runtime and seven reverse methods, plus four notifications (59 RPC names). Four Host names are reserved legacy `work/*` methods that return `method_unavailable`; the remaining 44 are the available native surface. Counts and membership are derived from `RPC_METHODS` and `RPC_NOTIFICATIONS`.
 
-### 7.1 Host-to-Runtime methods: 44
+### 7.1 Host-to-Runtime methods
 
 | Domain | Methods |
 | --- | --- |
@@ -299,30 +213,18 @@ Accepts an optional reason. Once committed, new work is rejected, active work is
 - permission mode and tool visibility policy;
 - interaction scenario.
 
-The model execution profile may also carry one exact Host-authoritative USD rate card with disjoint per-million-token rates for uncached input, output, cache reads, and cache writes. Runtime freezes that card into every operation birth that uses it. A request containing `limits.maxCostUsd` is rejected before durable turn admission when the selected profile has no rate card; Runtime never guesses prices from provider names or mutable external metadata.
+The model execution profile and optional collaboration config admit a primary route plus a bounded child model set. The profile may also carry one exact Host-authoritative USD rate card with disjoint per-million-token rates for uncached input, output, cache reads, and cache writes. Runtime freezes that card into every operation birth that uses it. A request containing `limits.maxCostUsd` is rejected before durable turn admission when the selected profile has no rate card; Runtime never guesses prices from provider names or mutable external metadata.
 
-Protocol `2.2.0` and later define the optional structured input as:
+Session admission and configuration apply accept structured system context:
 
-```ts
-type HostPromptContribution = {
-  id: string
-  order: number
-  scope: "global" | "root"
-  text: string
-}
-
-type SystemContextSnapshot = {
-  sections: HostPromptContribution[]
-  contexts?: HostPromptContribution[]
-}
-```
+A `SystemContextSnapshot` carries ordered literal Markdown sections and optional contexts. Each entry has a Host ID, numeric order and `global` or `root` scope. The generated contract owns entry types and bounds.
 
 The generated schemas own the exact identifier, array and byte bounds. Bodies are literal Markdown;
 the Host cannot select DSH variables, Providers, completion replacement, cache controls, tools or
 raw Cordis scopes. Runtime registers names as `host:<id>`. `global` contributions apply to the root
 and fresh child scopes; `root` contributions apply only to the primary root Agent.
 
-For wire migration, a request without `systemContext` normalizes non-empty `systemPrompt` into one
+A request without `systemContext` normalizes non-empty `systemPrompt` into one
 root-scoped legacy section. A request containing `systemContext` must send an empty `systemPrompt`.
 Ambiguous input, duplicate ids within one contribution kind across scopes, or aggregate context
 overflow rejects before Session/config mutation. `utility/run` keeps its own isolated
@@ -330,30 +232,10 @@ overflow rejects before Session/config mutation. `utility/run` keeps its own iso
 
 The result is a discriminated union. A ready binding carries history/head/config/catalog state; a recovery binding carries the exact recovery generation and unsettled mutation state instead of pretending those ready fields exist:
 
-```ts
-type SessionBindingResult =
-  | {
-      state: "ready"
-      runtimeSessionId: string
-      historyFormat: "dsh-session-events-v1"
-      durableHead: { sequence: number; stableBoundaryId?: string }
-      effectiveConfigRevision: string
-      toolCatalog: ToolCatalog
-      extensionCatalog: ExtensionCatalog
-    }
-  | {
-      state: "recovery_required"
-      runtimeSessionId: string
-      persistenceRef: string
-      reason: string
-      retryable: boolean
-      generation: unknown
-      unsettledMutations: unknown[]
-  }
-```
+A ready binding includes Runtime Session identity, durable head, effective configuration and tool/extension catalogs. A `recovery_required` binding instead exposes its reason, routing identity, optional storage generation and unsettled mutation kinds. These are a generated discriminated union; Hosts must not read ready-only fields from recovery.
 
-`durableHead` replaces Pi `nativeLeafId`. A stable boundary identifies a completed DSH turn/session prefix suitable for fork or rewind; it is opaque to Host.
-`recovery_required` is a binding outcome and permits only its exact recovery workflow until a later resume reaches `ready`.
+`durableHead` identifies the native Session head. A stable boundary identifies a completed DSH turn/session prefix suitable for fork or rewind; it is opaque to Host.
+`recovery_required` fences normal work until recovery succeeds. Mutation prepare currently has the kind-only admission limit described below; not every recovery fence exposes structured recovery data.
 
 ### 9.2 `session/read`
 
@@ -363,54 +245,11 @@ Hosts retain inherited Product history but reconcile and query execution only fo
 that native prefix. The cut comes from native persistence metadata; Hosts must not infer it from
 markers or receipts that can legitimately be outside a rewound prefix.
 
-```ts
-type SessionReadRecord =
-  | {
-      kind: "event"
-      sequence: number
-      eventType: string
-      eventSha256: Sha256
-      data: unknown
-    }
-  | {
-      kind: "event_chunk"
-      sequence: number
-      eventType: string
-      eventSha256: Sha256
-      chunkIndex: number
-      chunkCount: number
-      offsetBytes: number
-      totalBytes: number
-      dataBase64: string
-    }
-
-type SessionReadResult = {
-  runtimeSessionId: string
-  historyFormat: "dsh-session-events-v1"
-  durableHead: {
-    sequence: number
-    stableBoundaryId?: string
-  }
-  records: SessionReadRecord[]
-  genesisBoundary?: {
-    stableBoundaryId: string
-    sequence: number
-    transcriptPostcondition: Sha256
-  }
-  mutationBoundaries?: Array<{
-    stableBoundaryId: string
-    sequence: number
-    turn: number
-    transcriptPostcondition: Sha256
-  }>
-  transcriptPostcondition?: Sha256
-  nextCursor?: string
-}
-```
+A page carries the Runtime Session ID, history format, durable head, `inheritedEventCount`, bounded event/chunk records and optional genesis/completed-turn mutation boundaries, postcondition and continuation cursor. Event records expose sequence/type/hash and data; chunk records expose deterministic byte offsets, count and base64 bytes under one event hash.
 
 Event payloads are current-format DSH durable values validated by the runtime's event registry before exposure. Large serialized events are chunked with one immutable SHA-256 and deterministic byte offsets. Host MUST verify complete chunk hashes before parsing the reconstructed event.
 
-`genesisBoundary`, when present, identifies the exact durable prefix after Session/config initialization and before the first product operation. Its sequence may be zero or greater and Host MUST treat its ID as opaque. It is distinct from ordinary `mutationBoundaries`, which require a completed turn. Both kinds carry the native transcript postcondition used to revalidate a delayed mutation target.
+`genesisBoundary`, when present, identifies the exact durable prefix after Session/config initialization and before the first product operation. Host MUST treat its ID as opaque. The current projector emits it only when there is a stable nonempty prefix before the first operation/turn; empty history alone is not a genesis proof. It is distinct from ordinary `mutationBoundaries`, which require a completed turn. Both kinds carry the native transcript postcondition used to revalidate a delayed mutation target.
 
 ### 9.3 `session/compact`
 
@@ -424,91 +263,37 @@ Stops and drains the primary agent, settles interactions and leases, flushes dur
 
 Delete, fork, and rewind use explicit transaction tokens and immutable operation identities.
 
-```ts
-type MutationState =
-  | "prepared"
-  | "committed"
-  | "rolled_back"
-  | "aborted"
-  | "purged"
-  | "recovery_required"
-
-type MutationResult = {
-  token: string
-  state: MutationState
-  receipt?: Record<string, unknown>
-}
-```
+Prepare and settlement return operation-specific generated unions with an immutable token and durable transaction state. Internal committing/rollback/abort phases may project into the public status vocabulary; do not treat every mutation as one shared state machine.
 
 Rules:
 
 - Prepare changes no active locator, source generation, workspace, or published target identity. It freezes exact preconditions and may persist only the idempotency journal and hidden unadopted staging needed for durable preparation.
-- If that journal makes resume return `recovery_required`, the Runtime MUST still accept an exact replay of the same prepare request and return its existing token/result. This closes the crash gap between Runtime prepare durability and Host token persistence; a different mutation identity or fingerprint still fails closed.
+- Exact prepare retries recover their existing journal/token. In `recovery_required`, the current admission gate matches only an unsettled mutation kind; a new ID of that kind may create another journal. A reused ID with a different fingerprint conflicts. Hosts retain one exact intent/token for recovery; the Runtime does not yet enforce exact-journal-only prepare admission. See [Mutations/checkpoints](../state/mutations-and-checkpoints.md#9-recovery-behavior).
 - Commit, rollback, or abort MUST be idempotent for the same token and immutable request.
 - Status performs no mutation and reports durable truth.
 - Reusing a client mutation ID with different immutable input is a conflict.
 - A non-terminal transaction may place the session in `recovery_required` and fence normal turns/configuration.
 - Host retains its product-side intent until Runtime reports a compatible terminal transaction state.
 
-Fork accepts a DSH stable-boundary ID rather than a Pi native anchor. Rewind accepts a target stable-boundary ID plus source and target product-transcript postcondition digests. In `2.1.0`, that target may be an ordinary completed-turn boundary or the `session/read` genesis boundary; the persistence owner revalidates the exact sequence and transcript postcondition before preparing or committing. Delete owns a recoverable tombstone before irreversible purge.
+Fork accepts an opaque DSH stable-boundary ID. Rewind accepts a target stable-boundary ID plus source and target product-transcript postcondition digests. The target may be an ordinary completed-turn boundary or the `session/read` genesis boundary; the persistence owner revalidates the exact sequence and transcript postcondition before preparing or committing. Delete owns a recoverable tombstone before irreversible purge.
 
 ## 11. Turn methods
 
 ### 11.1 Canonical input
 
-```ts
-type CanonicalUserInput = {
-  parts: Array<
-    | { kind: "text"; text: string }
-    | {
-        kind: "image_ref"
-        attachmentId: string
-        name: string
-        mimeType: "image/jpeg" | "image/png" | "image/gif" | "image/webp"
-        sizeBytes: number
-        sha256: Sha256
-      }
-  >
-}
-```
+Canonical input is an ordered array of text or `image_ref` parts. Image parts carry attachment identity, display name, MIME, byte size and digest; they do not carry a Host backing path.
 
 Images are Host-owned attachment references. Runtime acquires and releases verified leases through reverse ports.
 
 ### 11.2 `turn/start`
 
-```ts
-type TurnStartParams = {
-  clientOperationId: string
-  clientUserMessageId: string
-  input: CanonicalUserInput
-  configRevision: string
-  extensionDigest: Sha256
-  executionEnvironmentRevision: string
-  executionEnvironmentDigest: Sha256
-  limits: {
-    maxTurns?: number
-    maxCostUsd?: number
-    maxDurationMs?: number
-  }
-  origin:
-    | { kind: "desktop" }
-    | { kind: "headless"; scenario: string }
-}
-```
+Start supplies operation/user-message IDs, canonical input, configuration/extension/environment identities, optional limits and desktop or headless origin. These immutable fields form retry identity.
 
-`turn/start` is a Host-to-root admission method, so Host cannot claim `child` origin. Runtime child/subagent operations receive an internal derived `ChildOrigin` from their parent Work/Agent owner and never enter through this wire field.
+`turn/start` is a Host-to-root admission method, so Host cannot claim `child` origin. Runtime child/subagent operations receive an internal derived `ChildOrigin` from native parent Agent and Product operation authority and never enter through this wire field.
 
 The immediate result is:
 
-```ts
-type TurnStartResult =
-  | { state: "accepted"; clientOperationId: string }
-  | {
-      state: "already_known"
-      admission?: { turnId: string; admittedAt: string }
-      terminal?: TurnTerminal
-    }
-```
+The immediate result is `accepted` or `already_known`. The latter may expose the recorded admission and/or terminal. Neither transport acknowledgement nor admission alone is execution success.
 
 `accepted` is not success. Admission and terminal are durable facts projected through `runtime/event` and queryable through `turn/get`.
 
@@ -520,24 +305,14 @@ Limit arbitration appends one durable first-limit fact to the same DSH Session l
 
 ### 11.3 Turn terminal
 
-```ts
-type TurnTerminal =
-  | { kind: "succeeded"; assistantEventId: string; usage?: UsageSummary }
-  | { kind: "failed"; code: string; message: string; retryable: boolean; usage?: UsageSummary }
-  | { kind: "aborted"; reason: "user" | "host_shutdown" | "session_replaced"; usage?: UsageSummary }
-  | { kind: "context_exhausted"; message?: string; usage?: UsageSummary }
-  | { kind: "max_output_tokens"; message?: string; usage?: UsageSummary }
-  | { kind: "max_turns"; limit: number; usage?: UsageSummary }
-  | { kind: "max_budget"; limitUsd: number; usage?: UsageSummary }
-  | { kind: "transport_lost"; recovery: "exhausted" | "durable_state_unknown"; usage?: UsageSummary }
-```
+The terminal union distinguishes succeeded, failed, aborted, context exhausted, output limited, turn limited, budget limited and transport lost. Success names the final owned durable assistant event; failure/limit variants retain their corresponding codes, retryability or exact limit. Usage is optional and cannot manufacture completion.
 
-`assistantEventId` is the durable DSH assistant completion anchor from the final successful engine turn, replacing Pi `assistantEntryId`.
+`assistantEventId` is the durable DSH assistant completion anchor from the final successful engine turn.
 
 ### 11.4 Steering and queued input
 
 - `turn/steer` injects input into the active DSH turn at the next accepted step boundary.
-- `turn/followUp` queues one identified input for a later turn.
+- `turn/followUp` queues identified input: omitted/`realtime` timing delivers at the next DSH step boundary; explicit `turn` delivers at the next turn. Timing is frozen in retry identity.
 - `turn/message/cancel` cancels a queued message that has not reached a non-cancellable delivered state.
 - `turn/interrupt` cancels the active operation and optionally queued follow-ups.
 
@@ -559,14 +334,7 @@ Commands share turn admission and terminal semantics. Command definitions are de
 
 Applies a desired configuration containing model profile, permission mode, tool visibility, interaction scenario, system prompt, and execution-environment identities.
 
-```ts
-type ApplyResult = {
-  desiredRevision: string
-  effectiveRevision: string
-  state: "applied" | "queued" | "restart_when_idle" | "failed"
-  components: ComponentStatus[]
-}
-```
+The result reports desired/effective revisions, apply state and current component status. Configuration apply and component replacement have separate owners; config/apply does not install a component generation.
 
 Configuration becomes effective according to the negotiated capability profile and never changes an admitted operation's frozen birth snapshot.
 
@@ -576,7 +344,7 @@ The initialize-frozen execution environment is immutable for the entire process 
 
 `plan/apply` changes the single durable `ProductPlanService` state at an exact expected revision and quiescent operation boundary. It returns `applied` or retry-safe `already_effective`; entering Plan prepares the same managed artifact used by `EnterPlanMode`. Host exit is an explicit product decision, while Agent-initiated exit retains inline plan approval.
 
-`permission/rules/list` returns the effective mode, tool-level auto-allow list, latest policy revision and unexpired exact rules. `permission/rules/add` pre-authorizes one exact tool/class/target tuple; `permission/rules/revoke` appends a durable revocation. Mutations require the expected revision, flush through the Session durability Provider before success, and return retry-safe `already_effective` or `already_absent` where the requested end state already holds. These methods manage the same rules created by `always_allow`; they do not create a Host policy database.
+`permission/rules/list` returns the effective mode, tool-level auto-allow list, latest policy revision and active exact rules. `permission/rules/add` pre-authorizes one exact tool/class/target tuple; `permission/rules/revoke` appends a durable revocation. Mutations require the expected revision, flush through the Session durability Provider before success, and return retry-safe `already_effective` or `already_absent` where the requested end state already holds. These methods manage the same rules created by `always_allow`; they do not create a Host policy database.
 
 The complete semantics and security boundary are in [Permissions and interactions](../execution/permissions-interactions-and-plan.md).
 
@@ -585,19 +353,19 @@ The complete semantics and security boundary are in [Permissions and interaction
 `extension/replace` accepts a complete declarative snapshot with:
 
 - format version, revision, and digest;
-- agent, command, Hook, MCP, and Host-tool components with required enabled state, optional bounded metadata, and exact kind-specific descriptors;
+- Skill, Command, Hook, MCP and Host Tool components (Agent descriptor shapes remain reserved without a current compiler) with required enabled state, optional bounded metadata, and exact kind-specific descriptors;
 - bounded command-template, Agent-prompt, and Skill-document resources with non-executable media types;
 - governed Skill source roots and explicit bounded relative enabled paths without traversal or glob syntax.
 - an optional bounded stdio MCP launch policy containing opaque reference, argv, and absolute cwd
   only.
 
 The MCP descriptor selects either a trusted stdio launch-profile reference or a bounded non-secret
-HTTP(S) endpoint plus an opaque credential reference. An stdio reference must resolve exactly once
+HTTP(S) endpoint plus an opaque credential reference. A stdio reference must resolve exactly once
 inside the same frozen snapshot before connection preparation. Absence of `mcpLaunchPolicy`
 normalizes to an empty policy, which is valid when no stdio component requires it. Environment
 material never enters this policy; it uses the existing connection-scoped
-`host/credential/resolve` reverse port with `materialSlot: "env"`. Host-tool input schemas use the
-protocol's closed declarative JSON Schema subset. Component, descriptor, annotation,
+`host/credential/resolve` reverse port with `materialSlot: "env"`. Host Tool and MCP inputs use bounded object-rooted foreign JSON Schema. The selected executor
+owns its semantics; the protocol does not impose the native structured-output subset. Component, descriptor, annotation,
 credential-reference, resource, launch-profile, and path objects all reject unknown fields.
 
 The snapshot MUST NOT contain executable JavaScript, credentials, or unbounded filesystem discovery instructions.
@@ -696,32 +464,20 @@ Runtime MUST reject symlink/path substitution or metadata mismatch and MUST rele
 
 ### 15.1 Event envelope
 
-```ts
-type RuntimeEventEnvelope = {
-  runtimeGeneration: string
-  productSessionId: string
-  runtimeSessionId: string
-  sequence: number
-  emittedAt: string
-  event: RuntimeEvent
-  turnId?: string
-  itemId?: string
-  toolCallId?: string
-  parentItemId?: string
-}
-```
+Each envelope carries Runtime generation, Product/Runtime Session IDs, observation sequence, emission time and event, plus any correlated turn/item/tool/parent identities. Exact required fields belong to `RuntimeEventEnvelopeSchema`.
 
 Sequence is strictly increasing within one generation. It is an observation order, not the durable Session event sequence. Durable product effects use stable item/operation identities and are deduplicated across generations by Host.
 
 ### 15.2 Event vocabulary
 
-The initial event kinds remain:
+The schema event kinds include:
 
 ```text
 session
 turn_admitted
 turn_started
 turn_terminal
+assistant_stream
 assistant_delta
 thinking_delta
 message_event
@@ -742,17 +498,9 @@ retry
 warning
 ```
 
-`message_event` replaces Pi-oriented `message_entry`; it references the durable DSH event/message identity and may carry the originating queued-message ID.
+`message_event` references the durable DSH event/message identity and may carry the originating queued-message ID.
 
-Protocol `2.4.0` tightened the canonical observation shapes and `2.4.1` retained them unchanged.
-Protocol `2.5.0` additionally defines:
-
-- `provider_tool/start` with exact Provider route, Provider call identity, raw Provider block type,
-  Provider tool name and bounded JSON-object input;
-- `provider_tool/end` with the same route/call identity, result block type, correlated tool name and
-  bounded result content/state; and
-- no canonical permission, Hook or execution claim. A Provider observation never substitutes for
-  `tool/start|end` and does not drive root terminal, queue or loading state.
+`provider_tool/start|end` carries exact Provider route/call identity, raw block type, tool name and bounded input or correlated result. These observations make no canonical permission, Hook or execution claim and never drive root terminal, queue or loading state. `assistant_stream` independently brackets live native attempts; final history remains durable Session content.
 
 The retained canonical shapes are:
 
@@ -768,7 +516,7 @@ The retained canonical shapes are:
 When a root Session reaches ready, Runtime sends a bounded baseline in the order
 `context? -> task_graph -> work* -> plan` before returning the create/resume result. Subsequent
 status changes are incremental snapshots. The baseline is not transcript replay and its Runtime
-sequence is not a durable DSH sequence. Exact mapping, currently missing runtime evidence and known
+sequence is not a durable DSH sequence. Exact mapping and known
 implementation bounds are documented in
 [Event projection and Host reconciliation](./event-projection-and-reconciliation.md).
 
@@ -809,11 +557,11 @@ host_*              reverse-port unavailable/stale/failure
 
 This list is non-exhaustive and is not an executable error registry. The wire accepts a bounded identifier, and current owners also emit credential, interaction, Plan, operation, Provider, utility, attachment, network, primary-Session and other focused codes. A future exact taxonomy would need a generated source rather than an expanded prose list.
 
-Unknown internal exceptions MUST be normalized without stack traces, paths outside the authorized workspace/runtime roots, request bodies, environment values, or credentials.
+Owned Provider and reverse-port failures are normalized into stable errors. Other domain messages are bounded but have no universal content sanitizer; concrete owners must exclude secrets, request bodies and private diagnostics. See [Security boundaries](../assurance/security-and-trust-boundaries.md).
 
 ## 18. Capability profile
 
-Initialization returns exact machine-readable capability literals. The v2 profile MUST describe at least:
+Initialization returns exact machine-readable capability literals. The capability profile describes:
 
 - DSH runtime/profile revision;
 - session create/resume/read/compact and event format;
@@ -835,7 +583,7 @@ Host MUST branch on negotiated capability values, not runtime name or version gu
 - Paths are canonicalized and revalidated immediately before side effects.
 - Runtime home, workspace roots, attachment staging, and persistence paths have non-overlapping explicit authorities.
 - Environment inheritance is sealed by allowlist.
-- Network providers enforce scheme, DNS/IP/private-range, redirect, response-size, timeout, and cancellation policy. Remote MCP HTTP/SSE uses a trusted composition-injected capability rather than ambient `fetch`: every request resolves and validates all address-family answers, rejects the whole result if any answer is non-public, and pins the selected public address through transport dispatch while preserving the declared Host name for HTTP/TLS.
+- Runtime safe HTTP and managed remote MCP use composition-owned URL, redirect, byte, timeout and cancellation policy. Direct routes resolve/reject non-public DNS answers and pin an approved address; an explicit proxy owns remote name resolution and never falls back to direct. Host-backed search and model transports have their own network owners. See [Web/network](../boundaries/web-and-network.md).
 - Provider and MCP credentials are reverse-port-only and request/connection scoped. The App-owned internal CLI capability is admitted only as the exact `MYAGENTS_INTERNAL_CLI_TOKEN` process-environment key for an internal Agent Shell; its value is never carried in protocol snapshots, events, diagnostics, or persistence. External CLI tokens are not admitted.
 - Every Host response is fenced by generation and current operation/component revision.
 - Model-visible and event-visible text is bounded before serialization.
@@ -876,13 +624,13 @@ composition gate verify the source and patched DSH/pi-ai dependency graph. Relea
 still requires a commit-bound Runtime artifact, platform evidence, immutable handoff and exact
 Host ingestion for those bytes.
 
-### Current collaboration semantics
+### Native collaboration controls
 
-Runtime defaults identified follow-up delivery to realtime at a DSH model/tool step boundary; explicit turn delivery remains selectable and frozen per accepted message. Autonomous collaboration root admissions carry a distinct origin. Work controls act only on the published primary root tree and carry stable message/resume identities or the exact handle revision; model tools cannot implicitly reopen closed nodes. Work list cursors stay within that tree, obey negotiated frame limits and expose bounded previews. The Host can read native usage/context projections without waking Agent execution. Exact client, artifact and platform acceptance belongs to the corresponding generated contracts and handoff evidence.
+`subagent/list` reads the primary root's persisted native catalog; `subagent/tasks` reads personal/shared Task state. Prompt and interrupt address exact continuable children through DSH public control services. A turn interrupt is not subtree disposal. Native catalog/Inbox provenance owns collaboration reports; the Product operation service correlates them before the next model step. Reserved `work/*` ports do not run a legacy lifecycle. See [Child agents/background work](../execution/child-agents-and-background-work.md).
 
 ### Official Shell contract
 
-Initialize executable authority uses `shellRef` and `shellDialect` (`bash` or `pwsh`). The generated canonical catalog contains both official Shell definitions and the three Jobs definitions, while each platform exposes its selected Shell. Foreground timeout ends execution; explicit background output and cancellation use Jobs. Tool schemas and descriptions come directly from the pinned official plugins. Legacy `Bash` records remain history, not active tool aliases. Exact shapes remain in `packages/protocol/src/contract-source.ts`.
+Initialize executable authority uses `shellRef` and `shellDialect` (`bash` or `pwsh`). The generated policy catalog contains both official Shell definitions and the three Jobs definitions, while each platform exposes its selected Shell. Foreground timeout ends execution; explicit background output and cancellation use Jobs. Tool schemas and descriptions come directly from the pinned official plugins. Legacy `Bash` records remain history, not active tool aliases. Exact shapes remain in `packages/protocol/src/contract-source.ts`.
 
 ### Runtime/Host contract projection
 
@@ -890,4 +638,4 @@ The canonical generator emits a dependency-free `public-contract.generated.ts` a
 
 ### Session-lifetime permissions
 
-The nullable `expiresAt` on permission rules and `lifetimeMs` on interaction review scope express Session-lifetime grants with `null`. Numeric historical projections remain structurally valid, but the official Runtime emits `null` for both new grants and validated surviving legacy grants. Host and Runtime must use generated contracts from the same handoff. Attachment expiry and interaction registration/execution deadlines are unchanged. See [Permissions and interactions](../execution/permissions-interactions-and-plan.md#4-durable-exact-rules) for durable recovery and revocation ownership.
+The nullable `expiresAt` on permission rules and `lifetimeMs` on interaction review scope express Session-lifetime grants with `null`. Numeric historical projections remain structurally valid, but the official Runtime emits `null` for both new grants and validated surviving legacy grants. Host and Runtime must use generated contracts from the same handoff. Attachment lease expiry, transport deadlines and authorized executor deadlines remain separately bounded; established human review has no elapsed decision timeout. See [Permissions and interactions](../execution/permissions-interactions-and-plan.md#4-durable-exact-rules) for durable recovery and revocation ownership.

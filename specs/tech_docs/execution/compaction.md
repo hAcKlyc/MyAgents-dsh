@@ -2,7 +2,7 @@
 type: technical-architecture
 status: implemented
 module: compaction
-updated: 2026-09-25
+updated: 2026-10-02
 upstream_seam: DSH-SEAM-008
 ---
 
@@ -280,7 +280,7 @@ Current executable coverage includes:
 - credential-backed native continuity journeys whose exact counts and identities are owned by
   their trusted release records and immutable evidence.
 
-Windows and Linux remain `implementation-complete_pending-native-validation` until their exact native artifact campaigns pass.
+A target without matching native evidence carries `implementation-complete_pending-native-validation`. Published target claims require the deterministic native gate; live continuity evidence is a separate claim.
 
 ## 13. Deliberate limits and future work
 
@@ -326,8 +326,8 @@ The official `ToolResultPruner`, the Session append-only replacement model, auto
 
 The patch file is source-controlled in this repository. Build tooling verifies the exact official commit/tree and original file blobs, freezes the ordered patch bytes, applies them to an isolated temporary source worktree, compiles the required upstream package graph, and packs content-addressed installable packages. It does not modify the sibling official checkout, registry tarballs, or `node_modules` in place.
 
-The Runtime consumes only the recorded patched artifact. The complete ten-patch inventory and per-patch retirement rules live in [`seam-decisions-v1.json`](../../dsh/seam-decisions-v1.json) and the upstream-maintenance skill's [patch inventory](../../../.agents/skills/dsh-upstream-maintenance/references/patch-inventory.md). Compaction maintainers must review patch 0007 in the context of that complete ordered series because any patch change also changes the executable artifact identity.
+The Runtime consumes only the recorded patched artifact. The complete ordered patch inventory and per-patch retirement rules live in [`seam-decisions-v1.json`](../../dsh/seam-decisions-v1.json) and the upstream-maintenance skill's [patch inventory](../../../.agents/skills/dsh-upstream-maintenance/references/patch-inventory.md). Compaction maintainers must review patch 0007 in the context of that complete ordered series because any patch change also changes the executable artifact identity.
 
 ### Source identity
 
-The current DSH source and patch 0007 identity come from the [source baseline](../../dsh/dsh-baseline-v1.json) and [seam registry](../../dsh/seam-decisions-v1.json). The [0.2.0 source review](../../dsh/upstream-refresh-2026-09-30.md) records the latest semantic decision; exact artifact evidence certifies the installed bytes.
+The current DSH source and patch 0007 identity come from the [source baseline](../../dsh/dsh-baseline-v1.json) and [seam registry](../../dsh/seam-decisions-v1.json). The [JSONL integration review](../../dsh/upstream-refresh-2026-10-02.md) records the persistence follow-up to the [rc.2 review](../../dsh/upstream-refresh-2026-09-30.md); exact artifact evidence certifies the installed bytes.

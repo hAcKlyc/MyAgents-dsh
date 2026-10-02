@@ -2,7 +2,7 @@
 type: technical-architecture
 status: implemented
 module: security-and-trust-boundaries
-updated: 2026-09-02
+updated: 2026-10-02
 ---
 
 # Security and trust boundaries
@@ -29,13 +29,15 @@ This guide states the current security model and prevents policy controls from b
 | MCP stdio launch policy | Trusted Host authorization to launch declared local code during component prepare; not ordinary untrusted text and not gated by later `mcp.call` permission. |
 | Remote Provider/MCP/web service | Untrusted external service; result structure/size is bounded, but content can remain adversarial or prompt-injecting. |
 
-The negotiated contract says `execution: trusted-local-user-process` and `osSandbox: false`. The Runtime provides policy and resource ownership, not kernel isolation from the local user or a malicious command.
+The current capability literal remains `execution: trusted-local-user-process` with `osSandbox: false`. That fixed wire field is not a per-Session sandbox status report. Current composition does install upstream sandbox services for governed file and Shell execution. The Runtime process itself, trusted plugins, MCP/Host tools and internal CLI effects are not all contained by that sandbox; do not infer either universal isolation or absence of tool-level restrictions from this literal.
 
-## 4. Permission is not a sandbox
+## 4. Permission and sandbox policy
 
-Tool visibility, hard guards, Hooks, safe classes, permission modes and exact allow rules decide whether a model-visible call may enter an executor. They do not remove the OS authority of Bash or a subprocess after launch. Product execution fixes the outer Bash binary identity, then runs `<bash> -c <model command>`; commands that shell resolves through `PATH` are not individually digest-pinned or argument-filtered. `bypassPermissions` bypasses prompting only; hard workspace/generation/origin/Plan policy still applies.
+The three Session modes configure separate approval and sandbox owners. `approval-required` asks for effectful tools and permits an explicit one-operation sandbox escalation. `workspace-autonomous` skips ordinary cards but keeps workspace-write restrictions; `full-autonomous` uses danger-full-access under the current OS user. Exact Always Allow grants authorize one tool/class/target tuple throughout the root Session tree; they do not widen a sandbox by themselves.
 
-Explore child read-only behavior combines a narrowed catalog and literal instructions while retaining Bash for inspection. Without argument-level command enforcement or OS containment, it is a product behavior constraint, not a hostile-code read-only guarantee. Documentation and UI must use that precise claim.
+`LocalSandboxProvider`, `SandboxPolicyService`, `SandboxBashExecutor`/`SandboxPwshExecutor` and `SandboxedFileSystem` own upstream enforcement. Restricted Shell execution fails when its platform sandbox is unavailable. Reads follow local-user permissions; restricted writes include workspace and upstream sandbox temporary roots. MCP stdio, remote/Host tools and Host CLI actions remain separate trust boundaries.
+
+The selected outer Shell identity is verified. Commands it resolves through `PATH` are not individually digest-pinned or parsed into a product allowlist. Plan's read-only instructions do not add a stricter command sandbox: its Shell follows the ordinary Session policy. Native children inherit approval/sandbox policy at publication and synchronize it before subsequent steps.
 
 ## 5. Secrets and sensitive data
 
@@ -51,8 +53,9 @@ generically redacted; MCP performs only exact known-material replacement on sele
 
 ## 6. Filesystem, process and network boundaries
 
-Canonical file tools resolve path identity and enforce frozen roots. Bash uses a verified outer shell
-and explicit environment but still runs commands as the local user. `ProductSafeHttpClient` rejects
+Canonical file tools resolve path identity and enforce operation policy plus upstream file sandbox
+checks. Shell uses a verified executable and sealed environment under the selected upstream sandbox;
+full-autonomous execution retains local-user authority. `ProductSafeHttpClient` rejects
 private/special destinations, revalidates redirects/DNS and bounds traffic only for Runtime-owned
 Web routes and managed remote MCP. It is not a process-level egress firewall: Bash and stdio MCP can
 network with local-user authority, and trusted Host Provider `baseUrl` admission requires canonical
@@ -68,13 +71,16 @@ Checkpoint rollback covers root-origin governed `Write` and `Edit` only. It is r
 
 ## 7. Data at rest
 
-Runtime persistence is an unencrypted SQLite database. Session envelopes contain transcript,
-reasoning/tool results and Product permission/Plan/task/work/mutation history as JSON; checkpoint
-blobs can contain prior bytes of governed `Write`/`Edit` files. There is no application-layer
-at-rest encryption. On POSIX, the database is created mode `0600` with current-user,
-non-symlink/single-hardlink and private-directory checks, and WAL/SHM modes are checked. Windows has
-no equivalent explicit ACL/owner verifier in current code. Confidentiality therefore depends on
-the Host selecting a private Runtime home and the OS user/account/storage boundary.
+Runtime state is not application-layer encrypted:
+
+| Data | Storage owner |
+| --- | --- |
+| Transcript, reasoning, tool results and declared Product operation/permission/Plan/task facts | Official DSH JSONL generation logs under `<runtimeHome>/sessions/`; compression is not encryption |
+| Generation locators, mutation journals, boundaries and checkpoint preimages | Product `persistence/coordination.sqlite` |
+| Session search index | Official in-memory SQLite query engine; disposable |
+| Product routing/configuration and presentation state | Host, under its own storage policy |
+
+POSIX product coordination storage uses private directories and a `0600` database with owner, symlink, hardlink and WAL/SHM checks. Windows has no equivalent explicit database ACL/owner verifier in Product code. Native log layout, modes and physical leases belong to the official JSONL provider. Confidentiality depends on a private Runtime home and the OS account/storage boundary. Checkpoint preimages can contain prior user-file bytes and must receive the same protection as the conversation.
 
 ## 8. Failure isolation
 
@@ -100,5 +106,5 @@ For a new external capability, name the trust zone and owners of credentials, id
 | Permission/tool enforcement | `packages/tool-runtime-product/`, canonical executor packages |
 | Secret/attachment boundary | `packages/host-ports/` |
 | Network boundary | `packages/tools-web/src/safe-http.ts`, managed MCP transport |
-| Plaintext persistence boundary | `packages/persistence-product/src/schema.ts`, `sqlite-store.ts` |
+| Plaintext persistence boundary | `packages/persistence-product/src/native-jsonl.ts`, `schema.ts`, `mutation-store.ts` |
 | Adversarial tests | unit/fault tests and `packages/dynamic-e2e/scenarios/adversarial-boundaries.md` |

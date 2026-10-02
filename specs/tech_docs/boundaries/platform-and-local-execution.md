@@ -2,7 +2,7 @@
 type: technical-architecture
 status: implemented
 module: platform-and-local-execution
-updated: 2026-10-01
+updated: 2026-10-02
 ---
 
 # Platform and local execution
@@ -16,21 +16,23 @@ This guide explains the composition-selected platform adapters and the local fil
 - **Owns:** platform target selection, path flavor, explicit roots, platform Shell selection, sealed executable/environment identity and filesystem canonicalization.
 - **Depends on:** Host-launched process environment, verified bundled/system executables, platform artifact inventory and operation-frozen workspace policy.
 - **Consumed by:** official `bash`/`pwsh`/Jobs, Glob/Grep/Read/Write/Edit/ls, MCP stdio, attachments, SQLite publication, Plan/checkpoint storage and process cleanup.
-- **Does not own:** an OS sandbox, user shell startup files, Host secrets, network policy, tool permission or platform release claims.
+- **Does not own:** sandbox semantics (owned by upstream DSH), user shell startup files, Host secrets, network policy, tool permission or platform release claims.
 
 ## 3. Target adapters
 
 | Target | Paths/archive | Process tree | Shell contract |
 | --- | --- | --- | --- |
-| macOS arm64 | POSIX / `tar.gz` | process group, `SIGTERM` then `SIGKILL` | composition-sealed, `PATH`-resolved bash |
+| macOS arm64/x64 | POSIX / `tar.gz` | process group, `SIGTERM` then `SIGKILL` | composition-sealed, `PATH`-resolved bash |
 | Linux x64 | POSIX / `tar.gz` | process group, `SIGTERM` then `SIGKILL` | composition-sealed, `PATH`-resolved bash |
 | Windows x64 | Win32 / `zip` | official DSH tree termination through `taskkill` | official `pwsh`; PowerShell 7 preferred, Windows PowerShell 5.1 fallback |
 
-`PlatformAdapterContract` selects the platform and records its path/archive/process facts. `ProductSubprocessRuntime` only applies product spawn policy and delegates to the official `LocalSubprocessRuntime` on all platforms. The former Shell launch/cleanup plan methods, custom Bash executor, Windows Job Object Provider and PowerShell supervisor script are removed. SQLite and MCP keep their existing composition-selected consumers.
+`PlatformAdapterContract` selects the platform and records its path/archive/process facts. The
+Batch 3 Release packager emits `tar.gz` for all four targets; the Windows adapter's `zip` declaration
+is a separate platform contract. `ProductSubprocessRuntime` only applies product spawn policy and delegates to the official `LocalSubprocessRuntime` on all platforms. The former Shell launch/cleanup plan methods, custom Bash executor, Windows Job Object Provider and PowerShell supervisor script are removed. SQLite and MCP keep their existing composition-selected consumers.
 
-Platform implementation and native validation are separate. A support claim comes from the exact Runtime's platform evidence; a previous macOS pass cannot be inherited by new bytes. Windows/Linux remain `implementation-complete_pending-native-validation` until their native campaigns pass.
+Platform implementation and native validation are separate. A support claim comes from the exact Runtime's platform evidence; a previous macOS pass cannot be inherited by new bytes. Release target claims require that target's deterministic native gate; local Dev input without a campaign remains `implementation-complete_pending-native-validation`.
 
-`LocalWorkspaceFileSystem` extends official `LocalFileSystem`. Official code owns text streaming,
+`LocalWorkspaceFileSystem` extends official `SandboxedFileSystem`, which delegates publication to `LocalFileSystem`. Official code owns text streaming,
 CRLF-aware literal edits, per-target mutation serialization, private staging and native atomic
 publication (including Windows DACL preservation). Product code owns path capabilities and the
 checkpoint/plan/attachment/retained-output I/O bridges. A pre-publication policy hook rechecks the
@@ -51,7 +53,7 @@ new agent-written content from other local users.
 
 Tools reuse the admitted environment by revision/digest. After permission waits, Shell checks the current operation and workspace, then verifies only the executable it will launch once. Search verifies ripgrep when used. A Shell command does not rehash Node or ripgrep, and array order does not change an executable-reference set. These checks preserve mutable execution boundaries without treating a frozen configuration as new input on every call.
 
-Official `LocalBashExecutor`/`PwshLocalExecutor` own command argv, encoding, deadlines, collection and cancellation. The selected official `tool-bash` or `tool-pwsh` definition is mounted unchanged. Only one Shell is visible on a platform. The product guard checks permission, Plan/origin/catalog and operation revision, captures the requested workspace before permission, and revalidates its identity and executable before admission. A thin subprocess policy supplies the verified executable, governed cwd and sealed environment to the stock Provider; it does not implement another executor.
+Official `SandboxBashExecutor`/`SandboxPwshExecutor` apply the Session sandbox and delegate command argv, encoding, deadlines, collection and cancellation to upstream execution. The selected official `tool-bash` or `tool-pwsh` definition is mounted unchanged. Only one Shell is visible on a platform. The product guard checks permission, Plan/origin/catalog and operation revision, captures the requested workspace before permission, and revalidates its identity and executable before admission. A thin subprocess policy supplies the verified executable, governed cwd and sealed environment to the stock Provider; it does not implement another executor.
 
 The official `shell-env` registry owns trusted `DSH_*` injection. Initialization reconfigures its stock `DSH_HOME` to the admitted Runtime home; its session facts and product platform/dialect/executable contributor are per-call facts. System context names the actual platform and Shell. Host launch supplies `PATH`, home, locale and installed CLI paths; a model command or prompt is not environment authority.
 
@@ -69,15 +71,11 @@ Glob/Grep retain their sealed search policy over the same subprocess seam. The H
 
 `LocalWorkspaceFileSystem` resolves canonical existing paths, validates parent identity for creation, rejects alias/symlink escapes and rechecks identity around mutation. Initialize rejects read/write roots that contain or are contained by runtime home or attachment staging. The actual canonical-tool temporary root is separately canonicalized but is not currently proven non-overlapping with Workspace roots. This explains the two-stage `/tmp` behavior on macOS: `/tmp` is an alias for `/private/tmp`, so canonical-path validation may fail before the later workspace/root authorization check.
 
-Filesystem policy is strong path and time-of-check protection inside a trusted local process; it is not kernel containment. Shell commands and external programs retain the local user's OS authority.
+Product path identity checks complement upstream file/Shell sandbox enforcement. Restricted modes use workspace-write; full-autonomous uses local-user access. Trusted plugins, MCP/Host tools and Host CLI effects are not automatically covered. See [Permissions and interactions](../execution/permissions-interactions-and-plan.md#8-security-and-platform-boundary).
 
 ## 6. Durability and cleanup
 
-The declared platform publication plan calls for same-directory exclusive staging, file flush,
-atomic replacement, parent-directory durability and a bounded Windows retry, but that plan is not
-yet wired as one universal production writer. `LocalWorkspaceFileSystem` actually creates a
-same-directory temporary file, flushes it, then uses `link` plus unlink for create or one `rename`
-for update; it does not sync the parent directory or consume the declared Windows retry.
+Official `LocalFileSystem` stages bytes in a private same-directory subdirectory, flushes the file and invokes the Product pre-publication identity/version guard. Create-if-absent uses a hard link; updates use POSIX rename or native Windows replacement with existing DACL preservation. Staging cleanup follows publication. It does not fsync the parent directory or consume the platform contract's declared bounded retry as a universal writer policy. Product checkpoint/Plan I/O has its own explicit recovery owner; no cross-filesystem atomicity is claimed.
 
 SQLite uses WAL and `synchronous=FULL`. POSIX flushes the parent directory during database
 initialization. The Windows adapter declares parent-directory flush `record-unavailable`; the
@@ -105,7 +103,7 @@ cancellation and native process-tree cleanup on the target OS before promoting s
 | Execution on all platforms and MCP stdio | pinned official DSH local subprocess package, `packages/components-mcp/src/managed-transport.ts` |
 | Official tool definitions and drift check | `scripts/official-shell-tool-contracts.ts`, `packages/tool-contracts/generated/official-shell-tools-v1.json` |
 | Canonical filesystem | `packages/tools-fs/src/local-filesystem.ts` |
-| SQLite path/durability | `packages/persistence-product/src/provider.ts`, `sqlite-store.ts` |
+| SQLite path/durability | `packages/persistence-product/src/provider.ts`, `mutation-store.ts` |
 | Native claims | artifact-bound platform reports and `packages/artifact-verifier/` |
 
 The current protocol uses `shellRef`/`shellDialect`; Hosts must use the generated matching contract. Historic `Bash` transcript records remain readable, but the old executor is not installed. The [protocol source](../../../packages/protocol/src/contract-source.ts) owns the exact current version and shapes.

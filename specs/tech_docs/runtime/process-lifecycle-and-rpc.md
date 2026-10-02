@@ -2,7 +2,7 @@
 type: technical-architecture
 status: implemented
 module: process-lifecycle-and-rpc
-updated: 2026-09-06
+updated: 2026-10-02
 protocol: ./protocol.md
 ---
 
@@ -60,9 +60,9 @@ The exact native phases are `await_initialize`, `initialize_response_pending`, `
 
 Shutdown closes admission, cancels or settles owned work according to the protocol, drains reverse requests and persistence, retires the root Agent/Session, disposes the Cordis scope, and exits. Persistence initialization failure, transport/event-projection/Session-settlement fatal, or failure to start native RPC commits process termination; lifecycle starts a bounded forced-exit deadline and cleans up an already built composition. EOF, browser disconnect, or transport loss is never interpreted as Turn success. Normal shutdown exits `0`, SIGINT `130`, SIGTERM `143`, and other fatal termination `1`.
 
-Fatal cleanup also retires Product work and drains native projection before disposing the
-composition scope. Session and persistence services remain available to retirement guards;
-their Cordis removal cannot race the child ledger's final durable settlements.
+Fatal cleanup drains native child/Job execution, operation settlement and event projection before
+disposing the composition. Session and persistence services remain available to retirement guards
+until durable settlements complete; no ProductWork lifecycle or child ledger is installed.
 
 ## 5. Product operation over DSH turns
 

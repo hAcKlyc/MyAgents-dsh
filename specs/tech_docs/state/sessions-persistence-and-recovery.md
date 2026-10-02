@@ -173,8 +173,8 @@ waits for in-flight admission before closing handles and finally SQLite. No seco
 recovery coordinator is installed. Full Runtime lifecycle/fault acceptance requires matching native and artifact evidence.
 
 Product bounds apply to coordination metadata, mutation journals, checkpoint records and RPC
-projections. Native event JSON/physical limits are owned by DSH; the removed SQLite backend's
-2 MiB event and depth bounds do not reject otherwise valid native events. The product retains
+projections. Native event JSON/physical limits are owned by DSH, not by Product coordination
+metadata bounds. The product retains
 bounded Session counts, per-generation event counts, headers, journals and checkpoint records;
 exact constants remain code authority.
 
@@ -197,9 +197,9 @@ contention and corrupted/unknown/ignorable input.
 | Operation recovery | `packages/operation-runtime/src/` |
 | Event projection | `packages/rpc-server/src/event-projector.ts` |
 | Host replay and mutation recovery | `packages/web-host/src/reference-profile.ts`, `mutation-store.ts` |
-| Required DSH seams | candidate patches `0001`, `0003`, `0004`, `0005`; native JSONL hook adjudication in `specs/dsh/seam-decisions-v1.json` |
+| Required DSH seams | patches `0001`, `0003`, `0004`, `0005`; native JSONL hook adjudication in `specs/dsh/seam-decisions-v1.json` |
 | Persistence decisions | ADR 0003 and ADR 0004 |
-| Tests | `tests/product-session-handle.unit.test.ts`, ownership unit/native fixtures, existing persistence/mutation and primary-admission regressions; full Runtime/Host campaigns remain pending |
+| Tests | `tests/product-session-handle.unit.test.ts`, ownership unit/native fixtures, existing persistence/mutation and primary-admission regressions; packed/native and Host acceptance must match the tested artifact |
 
 The Primary Session admission `afterReady` hook owns the final recovery activation boundary: the exact Agent is published as ready before durable native collaboration/operation messages can wake it. The hook is awaited under the existing settlement deadline; failure retires that handle and leaves recovery required. Pre-publication reconciliation validates facts with execution deferred.
 
