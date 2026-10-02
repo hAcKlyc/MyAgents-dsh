@@ -186,6 +186,7 @@ describe("candidate-v2 protocol authority", () => {
     const data = { turn: 1 };
     expect(() => validateMethodResult("session/read", {
       runtimeSessionId: "session-read-hash",
+      inheritedEventCount: 0,
       historyFormat: "dsh-session-events-v2",
       durableHead: { sequence: 1 },
       records: [{
@@ -198,6 +199,7 @@ describe("candidate-v2 protocol authority", () => {
     })).not.toThrow();
     expect(() => validateMethodResult("session/read", {
       runtimeSessionId: "session-read-hash",
+      inheritedEventCount: 0,
       historyFormat: "dsh-session-events-v2",
       durableHead: { sequence: 1 },
       records: [{
@@ -214,6 +216,7 @@ describe("candidate-v2 protocol authority", () => {
     const assembler = new SessionReadAssembler();
     assembler.accept({
       runtimeSessionId: "session-read-chunks",
+      inheritedEventCount: 0,
       historyFormat: "dsh-session-events-v2",
       durableHead: { sequence: 1 },
       records: [{
@@ -231,6 +234,7 @@ describe("candidate-v2 protocol authority", () => {
     });
     expect(() => assembler.accept({
       runtimeSessionId: "session-read-chunks",
+      inheritedEventCount: 0,
       historyFormat: "dsh-session-events-v2",
       durableHead: { sequence: 1 },
       records: [{
@@ -248,6 +252,7 @@ describe("candidate-v2 protocol authority", () => {
 
     expect(() => validateMethodResult("session/read", {
       runtimeSessionId: "session-read-stalled",
+      inheritedEventCount: 0,
       historyFormat: "dsh-session-events-v2",
       durableHead: { sequence: 1 },
       records: [],
@@ -256,6 +261,7 @@ describe("candidate-v2 protocol authority", () => {
     const repeatedCursorAssembler = new SessionReadAssembler();
     repeatedCursorAssembler.accept({
       runtimeSessionId: "session-read-repeat",
+      inheritedEventCount: 0,
       historyFormat: "dsh-session-events-v2",
       durableHead: { sequence: 2 },
       records: [{
@@ -269,6 +275,7 @@ describe("candidate-v2 protocol authority", () => {
     });
     expect(() => repeatedCursorAssembler.accept({
       runtimeSessionId: "session-read-repeat",
+      inheritedEventCount: 0,
       historyFormat: "dsh-session-events-v2",
       durableHead: { sequence: 2 },
       records: [{

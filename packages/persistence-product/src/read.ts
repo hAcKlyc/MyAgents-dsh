@@ -10,6 +10,7 @@ import {
 } from "@myagents-dsh/protocol";
 
 export interface ProductSessionReadSnapshot {
+  readonly inheritedEventCount: number;
   readonly durableSequence: number;
   readonly header: SessionHeader;
   readonly revision: SessionPersistenceRevision;
@@ -118,6 +119,7 @@ const snapshotMatches = (
   left: ProductSessionReadSnapshot,
   right: ProductSessionReadSnapshot,
 ): boolean => left.header.id === right.header.id
+  && left.inheritedEventCount === right.inheritedEventCount
   && left.durableSequence === right.durableSequence
   && left.revision === right.revision
   && left.stableBoundaryId === right.stableBoundaryId;
@@ -125,6 +127,7 @@ const snapshotMatches = (
 const resultByteLength = (
   runtimeSessionId: string,
   durableSequence: number,
+  inheritedEventCount: number,
   stableBoundaryId: string | undefined,
   records: readonly ReadRecord[],
   includeCursor: boolean,
@@ -132,6 +135,7 @@ const resultByteLength = (
 ): number => Buffer.byteLength(JSON.stringify({
   runtimeSessionId,
   historyFormat: SESSION_FORMAT,
+  inheritedEventCount,
   durableHead: {
     sequence: durableSequence,
     ...(stableBoundaryId === undefined ? {} : { stableBoundaryId }),
@@ -150,6 +154,7 @@ const resultByteLength = (
 const maxChunkBytes = (
   runtimeSessionId: string,
   durableSequence: number,
+  inheritedEventCount: number,
   stableBoundaryId: string | undefined,
   maxResultBytes: number,
   mutationAuthority?: Awaited<ReturnType<ProductSessionReadSource["mutationBoundaries"]>>,
@@ -166,7 +171,7 @@ const maxChunkBytes = (
     dataBase64: "",
   };
   const overhead = resultByteLength(
-    runtimeSessionId, durableSequence, stableBoundaryId, [record], true, mutationAuthority,
+    runtimeSessionId, durableSequence, inheritedEventCount, stableBoundaryId, [record], true, mutationAuthority,
   );
   // Base64 is unescaped ASCII: 4 * ceil(bytes / 3). Measure the fixed
   // envelope once instead of allocating megabyte buffers during binary search.
@@ -330,6 +335,7 @@ export class ProductSessionReadProjector {
     const chunkBytes = maxChunkBytes(
       request.runtimeSessionId,
       durableSequence,
+      stable.snapshot.inheritedEventCount,
       stable.snapshot.stableBoundaryId,
       request.maxResultBytes,
       stable.mutationAuthority,
@@ -343,7 +349,7 @@ export class ProductSessionReadProjector {
     // The envelope is stable across the page. Account for each record once;
     // serializing every growing prefix produces quadratic transient allocation.
     const emptyBytes = (includeCursor: boolean): number => resultByteLength(
-      request.runtimeSessionId, durableSequence, stable.snapshot.stableBoundaryId,
+      request.runtimeSessionId, durableSequence, stable.snapshot.inheritedEventCount, stable.snapshot.stableBoundaryId,
       [], includeCursor, stable.mutationAuthority,
     );
     const completeEnvelopeBytes = emptyBytes(false);
@@ -429,6 +435,7 @@ export class ProductSessionReadProjector {
     const result: ReadResult = {
       runtimeSessionId: request.runtimeSessionId,
       historyFormat: SESSION_FORMAT,
+      inheritedEventCount: stable.snapshot.inheritedEventCount,
       durableHead: {
         sequence: durableSequence,
         ...(stable.snapshot.stableBoundaryId === undefined

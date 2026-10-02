@@ -170,6 +170,7 @@ describe("Reference Web React shell", () => {
     const loading: BrowserHistorySnapshot = {
       webSessionId: "web-session-1",
       runtimeSessionId: "runtime-session-1",
+      inheritedEventCount: 0,
       durableSequence: 0,
       events: [],
       mutationBoundaries: [],
@@ -258,6 +259,7 @@ describe("Reference Web React shell", () => {
     const history: BrowserHistorySnapshot = {
       webSessionId: "web-session-1",
       runtimeSessionId: "runtime-session-1",
+      inheritedEventCount: 0,
       durableSequence: 1,
       events: [],
       mutationBoundaries: [{

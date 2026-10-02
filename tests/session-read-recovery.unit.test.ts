@@ -3,13 +3,23 @@ import { ProtocolError, canonicalSessionReadData, readSessionSnapshot, type Meth
 
 type Page = MethodResult<"session/read">;
 const page = (text: string, nextCursor?: string): Page => ({
-  runtimeSessionId: "synthetic-session", historyFormat: "dsh-session-events-v2",
+  runtimeSessionId: "synthetic-session", inheritedEventCount: 0, historyFormat: "dsh-session-events-v2",
   durableHead: { sequence: nextCursor === undefined ? 1 : 2 },
   records: [{ kind: "event", sequence: 0, eventType: "synthetic", data: { text }, eventSha256: canonicalSessionReadData({ text }).sha256 }],
   ...(nextCursor === undefined ? {} : { nextCursor }),
 });
 
 describe("complete Session snapshot recovery", () => {
+  it("rejects an inherited cut outside the durable head or changed across pages", async () => {
+    await expect(readSessionSnapshot(() => Promise.resolve({ ...page("invalid"), inheritedEventCount: 2 })))
+      .rejects.toThrow("inherited prefix exceeds");
+    const first = page("first", "next");
+    const second = { ...page("second"), inheritedEventCount: 1, durableHead: first.durableHead,
+      records: page("second").records.map(record => ({ ...record, sequence: 1 })) };
+    const read = vi.fn<() => Promise<Page>>().mockResolvedValueOnce(first).mockResolvedValueOnce(second);
+    await expect(readSessionSnapshot(read)).rejects.toThrow("identity or durable head changed");
+  });
+
   it("discards stale pages and returns only the restarted snapshot", async () => {
     const read = vi.fn<(cursor: string | undefined) => Promise<Page>>()
       .mockResolvedValueOnce(page("discard", "old-cursor"))

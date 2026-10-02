@@ -48,6 +48,9 @@ const canonicalBase64Bytes = (record: Extract<SessionReadRecord, { kind: "event_
 };
 
 export const validateSessionReadResultSemantics = (value: SessionReadPage): void => {
+  if (value.inheritedEventCount > value.durableHead.sequence) {
+    throw new ProtocolError("protocol_invalid_result", "Session inherited prefix exceeds its durable head");
+  }
   if (value.nextCursor !== undefined && value.records.length === 0) {
     throw new ProtocolError(
       "protocol_invalid_result",
@@ -83,6 +86,7 @@ export class SessionReadAssembler {
   readonly #events: VerifiedSessionReadEvent[] = [];
   #complete = false;
   #durableHead: SessionReadPage["durableHead"] | undefined;
+  #inheritedEventCount: number | undefined;
   #expectedCursor: string | undefined;
   #historyFormat: SessionReadPage["historyFormat"] | undefined;
   #nextSequence = 0;
@@ -100,8 +104,10 @@ export class SessionReadAssembler {
     if (this.#runtimeSessionId === undefined) {
       this.#runtimeSessionId = page.runtimeSessionId;
       this.#historyFormat = page.historyFormat;
+      this.#inheritedEventCount = page.inheritedEventCount;
       this.#durableHead = page.durableHead;
     } else if (page.runtimeSessionId !== this.#runtimeSessionId
+      || page.inheritedEventCount !== this.#inheritedEventCount
       || page.historyFormat !== this.#historyFormat
       || JSON.stringify(page.durableHead) !== JSON.stringify(this.#durableHead)) {
       throw new ProtocolError("session_read_chain_invalid", "Session read page identity or durable head changed");

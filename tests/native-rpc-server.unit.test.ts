@@ -320,6 +320,7 @@ const createRoot = (
       const data = Object.freeze({ turn: 1 });
       return Promise.resolve(Object.freeze({
         runtimeSessionId: sessionSnapshot.runtimeSessionId,
+        inheritedEventCount: 0,
         historyFormat: SESSION_FORMAT,
         durableHead: Object.freeze({ sequence: 1 }),
         records: Object.freeze([Object.freeze({
@@ -850,6 +851,7 @@ describe("native RPC Cordis service", () => {
         effectiveConfigRevision: "config-v1",
       });
       await expect(createdHarness.client.sessionRead({})).resolves.toEqual({
+        inheritedEventCount: 0,
         runtimeSessionId: "native-created-session",
         historyFormat: SESSION_FORMAT,
         durableHead: { sequence: 1 },

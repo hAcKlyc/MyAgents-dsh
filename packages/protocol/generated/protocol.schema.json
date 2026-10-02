@@ -13165,6 +13165,10 @@
             "const": "dsh-session-events-v2",
             "type": "string"
           },
+          "inheritedEventCount": {
+            "minimum": 0,
+            "type": "integer"
+          },
           "mutationBoundaries": {
             "items": {
               "additionalProperties": false,
@@ -13314,6 +13318,7 @@
           }
         },
         "required": [
+          "inheritedEventCount",
           "runtimeSessionId",
           "historyFormat",
           "durableHead",

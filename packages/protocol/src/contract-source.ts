@@ -480,6 +480,7 @@ const sessionGenesisBoundary = strictObject({
   transcriptPostcondition: sha256,
 });
 export const SessionReadResultSchema = strictObject({
+  inheritedEventCount: nonNegativeInteger,
   runtimeSessionId: identifier,
   historyFormat: Type.Literal(SESSION_FORMAT),
   durableHead,

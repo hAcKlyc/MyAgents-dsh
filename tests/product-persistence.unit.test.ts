@@ -943,6 +943,7 @@ describe("ProductJsonlSessionPersistence", () => {
     const targetRead = await forkPersistence.readSession({
       maxResultBytes: 65_536, runtimeGeneration: "fork-cold-read", runtimeSessionId: targetId,
     });
+    expect(targetRead.inheritedEventCount).toBe(firstTurn.length);
     expect(targetRead.mutationBoundaries).toHaveLength(1);
     expect(targetRead.mutationBoundaries?.[0]).toMatchObject({ sequence: 4, turn: 1 });
     const forkBoundaryId = targetRead.mutationBoundaries?.[0]?.stableBoundaryId;

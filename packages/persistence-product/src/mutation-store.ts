@@ -117,6 +117,7 @@ interface ActiveSessionRow {
 }
 
 export interface ProductNativeReadSnapshot {
+  readonly inheritedEventCount: number;
   readonly durableSequence: number;
   readonly header: SessionHeader;
   readonly revision: PersistenceRevision;
@@ -583,6 +584,7 @@ export class ProductMutationStore implements ProductCheckpointStore,
       const stableBoundaryId = await this.#latestStableBoundaryId(row);
       return Object.freeze({
         durableSequence: row.eventCount,
+        inheritedEventCount: row.inheritedEventCount,
         header: this.#decodeHeader(row),
         revision: this.#revision(row),
         ...(stableBoundaryId === undefined ? {} : { stableBoundaryId }),
