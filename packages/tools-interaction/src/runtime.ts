@@ -631,7 +631,7 @@ export class ProductPlanService extends Service {
     const sessionId = boundedIdentifier(String(agent.session.id), "plan Session id");
     const path = this.configValue.io.pathFor(planRoot, sessionId);
     try {
-      return foldProductPlan(agent.session.snapshotEvents(), sessionId, this.configValue.revision, path);
+      return foldProductPlan(agent.session.snapshotEvents().filter((event) => agent.session.isOwnSeq(event.seq)), sessionId, this.configValue.revision, path);
     } catch (error) {
       this.failure ??= error;
       throw new ProductToolError(
@@ -652,7 +652,7 @@ export class ProductPlanService extends Service {
     const path = this.configValue.io.pathFor(planRoot, sessionId);
     try {
       return foldProductPlanWithPermit(
-        agent.session.snapshotEvents(),
+        agent.session.snapshotEvents().filter((event) => agent.session.isOwnSeq(event.seq)),
         sessionId,
         this.configValue.revision,
         path,

@@ -599,6 +599,23 @@ describe("product permission policy and local interaction provider", () => {
     expect(local.permissionRequests).toEqual([]);
   });
 
+  it("uses the native owned suffix when restoring a fork without adopting parent approval rules", async () => {
+    const local = provider("scenario-fork-approval", (pending, settlement) => response(pending, "deny", settlement));
+    const state = await mounted(local.provider);
+    const initial = state.permissionController.snapshot(state.agent);
+    await state.permissionController.grantRule(state.agent, {
+      expectedRevision: initial.revision, tool: "bash", permissionClass: "process.execute", target: "parent-only-command",
+    });
+    state.session.append("turn/end", { turn: 1, reason: { kind: "completed" } });
+    const fork = state.context.sessions.fork(state.session, undefined, SessionId("permission-fork"));
+    const forkAgent = { ...state.agent, id: fork.id, session: fork } as Agent;
+    expect(() => state.permissionController.restoreConfiguration(forkAgent, {
+      mode: "approval-required", autoAllowTools: [], interaction: local.provider,
+    })).not.toThrow();
+    expect(state.permissionController.snapshot(forkAgent).rules).toEqual([]);
+    expect(state.permissionController.snapshot(state.agent).rules).toHaveLength(1);
+  });
+
   it("lets a Host pre-authorize and revoke exact approval rules durably", async () => {
     const local = provider("scenario-managed-rules", (pending, settlement) =>
       response(pending, "deny", settlement));

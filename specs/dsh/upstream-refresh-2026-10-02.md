@@ -50,3 +50,14 @@ Default tests use isolated fake Sessions and temporary homes. They verify live b
 closed-handle refusal, immutable input, native fork markers, retained rewind source, file recovery,
 unknown required refusal without changing bytes, and corrupted native prefix rejection. Native
 platform claims remain pending unless the corresponding campaign actually runs.
+
+## Product branch acceptance
+
+Live operation, permission and plan folds use the official `Session.isOwnSeq` scope, including
+rewind/fork inside inherited history. Cold boundary materialization preserves one canonical boundary
+per turn and retains earlier inherited turns; the selected final boundary includes the complete fork
+receipt. Regression coverage includes successful inherited replies, nested/early inherited forks,
+rewound prefix ownership, owned invalid terminals, independent rules/plans and cold boundary inventory.
+Final source gates pass typecheck, lint, build and 823 tests (2 platform/capability skips).
+The unchanged patched upstream source suite passes 1,106 tests (3 skips); native ownership tests and
+fresh packed composition/installed-process gates additionally bind the rebuilt handoff.

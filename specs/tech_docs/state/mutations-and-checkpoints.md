@@ -89,6 +89,11 @@ one `myagents/session/fork` receipt, and only settled checkpoint rows/blobs insi
 does not copy the child Session graph or Workspace files, and both Sessions still point at the same
 Workspace. The source Agent is not retired; commit waits only for root idle. Native `buildForkSeed` appends the inherited marker and any required native closers before the product receipt. The exact inherited cut excludes those native suffix facts.
 
+The target's initial stable boundary includes its complete seed and fork receipt, preserving the
+lineage when it is forked again. Cold boundary materialization keeps that canonical boundary for its
+turn and materializes earlier inherited turns normally. Each turn has one stable boundary, so all
+retained history remains available for rewind and fork without duplicate target boundaries.
+
 Fork is a recoverable phased cross-Store commit, not one atomic SQLite transaction: the source
 journal reaches `committing`, target activation is idempotent, then the source journal becomes
 `committed`. The Host owns target process/catalog orchestration around that durable convergence.

@@ -1343,7 +1343,7 @@ export class ProductPermissionService extends Service {
     });
     try {
       foldProductPermissions(
-        agent.session.snapshotEvents(),
+        agent.session.snapshotEvents().filter((event) => agent.session.isOwnSeq(event.seq)),
         String(agent.session.id),
         permissionBaseRevision(candidate, String(agent.session.id)),
         candidate.maxRules,
@@ -1372,7 +1372,7 @@ export class ProductPermissionService extends Service {
   private foldInternal(session: Session): ProductPermissionFold {
     try {
       return foldProductPermissions(
-        session.snapshotEvents(),
+        session.snapshotEvents().filter((event) => session.isOwnSeq(event.seq)),
         String(session.id),
         permissionBaseRevision(this.configValue, String(session.id)),
         this.configValue.maxRules,

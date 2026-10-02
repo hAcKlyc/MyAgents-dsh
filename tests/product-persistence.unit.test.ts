@@ -734,6 +734,41 @@ describe("ProductJsonlSessionPersistence", () => {
     await context.fiber.dispose();
   });
 
+  it("keeps every inherited turn available with one canonical fork boundary per turn", async () => {
+    const sourceHome = await makeRuntimeHome();
+    const targetHome = await makeRuntimeHome();
+    const sourceContext = await mount(sourceHome);
+    const source = sourceContext.sessionPersistence;
+    if (!(source instanceof ProductJsonlSessionPersistence)) throw new Error("source persistence is unavailable");
+    const id = SessionId("multi-turn-fork-source");
+    await createFixtureSession(source, header(id));
+    await appendFixtureEvents(source, id, [...turn(0, 1), ...turn(2, 2)]);
+    const sourceRead = await source.readSession({ maxResultBytes: 65_536, runtimeGeneration: "source", runtimeSessionId: id });
+    const boundary = sourceRead.durableHead.stableBoundaryId;
+    if (boundary === undefined) throw new Error("source boundary is unavailable");
+    const fork = await source.prepareFork({
+      clientMutationId: "multi-turn-fork", runtimeSessionId: id, sourceStableBoundaryId: boundary,
+      targetPersistenceRef: "multi-turn-target", targetRuntimeHome: targetHome,
+      targetRuntimeSessionId: "multi-turn-fork-target", targetWorkspaceIdentity: "multi-turn-workspace",
+    });
+    await source.commitFork(fork.token, "multi-turn-fork");
+    const targetContext = await mount(targetHome);
+    const target = targetContext.sessionPersistence;
+    if (!(target instanceof ProductJsonlSessionPersistence)) throw new Error("target persistence is unavailable");
+    const read = await target.readSession({ maxResultBytes: 65_536, runtimeGeneration: "cold-target", runtimeSessionId: fork.targetRuntimeSessionId });
+    expect(read.mutationBoundaries?.map(({ sequence, turn }) => ({ sequence, turn }))).toEqual([
+      { sequence: 2, turn: 1 }, { sequence: 6, turn: 2 },
+    ]);
+    const earlier = read.mutationBoundaries?.[0]?.stableBoundaryId;
+    if (earlier === undefined) throw new Error("earlier inherited boundary is unavailable");
+    const nested = await target.prepareFork({
+      clientMutationId: "early-inherited-fork", runtimeSessionId: fork.targetRuntimeSessionId, sourceStableBoundaryId: earlier,
+      targetPersistenceRef: "early-inherited-target", targetRuntimeHome: await makeRuntimeHome(),
+      targetRuntimeSessionId: "early-inherited-fork-target", targetWorkspaceIdentity: "multi-turn-workspace",
+    });
+    expect((await target.commitFork(nested.token, "early-inherited-fork")).phase).toBe("committed");
+  });
+
   it("stages, commits, retries, and aborts an independent stable-prefix fork", async () => {
     const sourceRuntimeHome = await makeRuntimeHome();
     const committedTargetHome = await makeRuntimeHome();
@@ -900,6 +935,27 @@ describe("ProductJsonlSessionPersistence", () => {
     expect(scalar(probe, "SELECT count(*) AS value FROM checkpoint_records")).toBe(1);
     expect(scalar(probe, "SELECT count(*) AS value FROM checkpoint_blobs")).toBe(1);
     probe.close();
+
+    const forkContext = await mount(committedTargetHome);
+    const forkPersistence = forkContext.sessionPersistence;
+    if (!(forkPersistence instanceof ProductJsonlSessionPersistence)) throw new Error("fork persistence is unavailable");
+    const targetId = SessionId(prepared.targetRuntimeSessionId);
+    const targetRead = await forkPersistence.readSession({
+      maxResultBytes: 65_536, runtimeGeneration: "fork-cold-read", runtimeSessionId: targetId,
+    });
+    expect(targetRead.mutationBoundaries).toHaveLength(1);
+    expect(targetRead.mutationBoundaries?.[0]).toMatchObject({ sequence: 4, turn: 1 });
+    const forkBoundaryId = targetRead.mutationBoundaries?.[0]?.stableBoundaryId;
+    if (forkBoundaryId === undefined) throw new Error("fork target boundary is unavailable");
+    const nestedHome = await makeRuntimeHome();
+    const nested = await forkPersistence.prepareFork({
+      clientMutationId: "nested-fork-client", runtimeSessionId: targetId, sourceStableBoundaryId: forkBoundaryId,
+      targetPersistenceRef: "nested-persistence", targetRuntimeHome: nestedHome,
+      targetRuntimeSessionId: "nested-fork-target", targetWorkspaceIdentity: "fork-target-workspace-1",
+    });
+    await forkPersistence.commitFork(nested.token, "nested-fork-client");
+    const nestedNative = await inspectGeneration(nestedHome, nested.targetGenerationId, SessionId(nested.targetRuntimeSessionId));
+    expect(nestedNative?.events.filter(event => event.type === "myagents/session/fork")).toHaveLength(2);
 
     const stalePrepared = await persistence.prepareFork({
       clientMutationId: "fork-client-stale-source",

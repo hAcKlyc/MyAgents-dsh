@@ -2419,6 +2419,11 @@ export class ProductMutationStore implements ProductCheckpointStore,
       head = chainHash(head, canonicalJson(event as unknown as JsonValue));
       if (event.type === "turn/end") turn = event.data.turn;
       if ((event.type !== "myagents/operation/terminal" && (event.type !== "turn/end" || productOperations)) || turn < 1) continue;
+      // Fork staging already publishes the canonical boundary through its complete receipt.
+      // Preserve that boundary while materializing earlier inherited turns normally.
+      const existing = database.prepare(`SELECT 1 FROM stable_boundaries WHERE session_id = ? AND generation_id = ?
+        AND turn = ? AND policy_version = 'stable-boundary-v1' LIMIT 1`).get(row.sessionId, row.activeGenerationId, turn);
+      if (existing !== undefined) continue;
       const unsettled = database.prepare(`SELECT 1 FROM checkpoint_records WHERE session_id = ? AND generation_id = ? AND dsh_turn <= ?
         AND (state NOT IN ('settled', 'aborted') OR last_event_phase IS NULL OR last_event_phase <> state) LIMIT 1`).get(row.sessionId, row.activeGenerationId, turn);
       if (unsettled === undefined) insert.run(`b_${randomUUID()}`, row.sessionId, row.activeGenerationId, event.seq + 1, turn, head, "stable-boundary-v1", Date.now());
@@ -3240,7 +3245,7 @@ export class ProductMutationStore implements ProductCheckpointStore,
             revision, event_count, head_hash, created_at, inherited_event_count
           ) VALUES (?, ?, ?, 'fork', 'staging', 0, ?, ?, ?, ?)
         `).run(stage.sessionId, stage.generationId, headerJson, stage.events.length, stage.headHash, stage.createdAt, stage.inheritedEventCount);
-        const boundarySeq = stage.events.length - 1;
+        const boundarySeq = stage.events.length;
         const prefixHash = this.#eventHead(stage.events.slice(0, boundarySeq));
         database.prepare(`
           INSERT INTO stable_boundaries(

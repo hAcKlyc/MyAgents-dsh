@@ -60,6 +60,12 @@ Each card records its own expected revision. Out-of-order answers remain valid o
 
 ## 4. Durable exact rules
 
+Permission and Product Plan restoration fold only the native Session-owned event suffix, using
+`Session.isOwnSeq`. A fork retains parent facts as inherited conversation without adopting parent
+allow rules or the parent-specific plan path/revision. The source keeps its own effective state;
+the target starts independent permission and Plan state and validates subsequent owned facts
+normally. This uses DSH's exact inherited cut rather than a Product-maintained ownership flag.
+
 An exact rule is owned by the primary root DSH Session and matches the tuple:
 
 ```text

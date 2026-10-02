@@ -440,7 +440,8 @@ export class SdkOperationService extends Service {
             messageId: message.id,
             dshTurn: turn,
           }, agent.id, (candidateSource, messageId) =>
-            this.configValue.ownsRootContextMessage(agent, candidateSource, messageId));
+            this.configValue.ownsRootContextMessage(agent, candidateSource, messageId),
+            (sequence) => agent.session.isOwnSeq(sequence));
           source ??= contextMessageCorrelation(fold, message.id);
           if (source === undefined) {
             if (this.configValue.ownsRootContextMessage(agent, message.source, message.id)) return;
@@ -503,7 +504,8 @@ export class SdkOperationService extends Service {
           const fold = foldProductOperationsForLiveDiscard(agent.session.snapshotEvents(), {
             messageId: message.id,
           }, agent.id, (candidateSource, messageId) =>
-            this.configValue.ownsRootContextMessage(agent, candidateSource, messageId));
+            this.configValue.ownsRootContextMessage(agent, candidateSource, messageId),
+            (sequence) => agent.session.isOwnSeq(sequence));
           source ??= contextMessageCorrelation(fold, message.id);
           if (source === undefined) {
             if (this.configValue.ownsRootContextMessage(agent, message.source, message.id)) return;
@@ -1626,6 +1628,7 @@ export class SdkOperationService extends Service {
             agent.id,
             (source, messageId) =>
               this.configValue.ownsRootContextMessage(agent, source, messageId),
+            (sequence) => agent.session.isOwnSeq(sequence),
           ),
           operation.clientOperationId,
         )?.messages.find(({ messageId }) => messageId === message.messageId);
@@ -1960,11 +1963,13 @@ export class SdkOperationService extends Service {
         events: Parameters<typeof foldProductOperations>[0],
         id: Parameters<typeof foldProductOperations>[1],
         owns: Parameters<typeof foldProductOperations>[2],
-      ) => foldProductOperationsForLiveClaim(events, claim, id, owns);
+        ownsSequence: Parameters<typeof foldProductOperations>[3],
+      ) => foldProductOperationsForLiveClaim(events, claim, id, owns, ownsSequence);
       return fold(
         agent.session.snapshotEvents(),
         agent.id,
         (source, messageId) => this.configValue.ownsRootContextMessage(agent, source, messageId),
+        (sequence) => agent.session.isOwnSeq(sequence),
       );
     } catch (error) {
       throw this.fence(error);

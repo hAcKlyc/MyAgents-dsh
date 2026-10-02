@@ -3,7 +3,7 @@ import { installNativeRootContext } from "@myagents-dsh/runtime-product";
 import { installProductContextProjection, ownsRootContextMessage } from "@myagents-dsh/tools-agent";
 import { SessionProjectionRegistry } from "@deepseek-ai/dsh-session-projection";
 import { FixtureInbox as Inbox } from "./fixtures/inbox-events.js";
-import { SessionSeq } from "@deepseek-ai/dsh-session";
+import { Session, SessionLogOffset, SessionSeq } from "@deepseek-ai/dsh-session";
 import { Context } from "@deepseek-ai/cordis";
 import { type Agent } from "@deepseek-ai/dsh-agent";
 import { ToolCallId, freezeMessage, MessageId, type MessageSource } from "@deepseek-ai/dsh-llm";
@@ -448,6 +448,24 @@ describe("durable product-operation fold", () => {
     expect(foldProductOperations(nested, "nested-fork").operations).toEqual([]);
     expect(() => foldProductOperations(nested, "unrelated-session"))
       .toThrow("fork receipt differs from the folded Session identity");
+    // Rewinding or forking before a parent's receipt retains its conversation,
+    // but no parent Product operation belongs to the resulting native scope.
+    const early = fork(inherited, "first-fork", "early-fork");
+    const nativeEarly = Session.create(SessionId("early-fork"), early, { ...fixture.agent.session.header, id: SessionId("early-fork"), parentSession: SessionId("first-fork"), isSeeded: true }, SessionLogOffset(inherited.length));
+    expect(foldProductOperations(early, nativeEarly.id, undefined, seq => nativeEarly.isOwnSeq(seq)).operations).toEqual([]);
+    const rewound = Session.create(SessionId("first-fork"), inherited, { ...fixture.agent.session.header, id: SessionId("first-fork"), parentSession: fixture.agent.id, isSeeded: true }, SessionLogOffset(inherited.length));
+    expect(foldProductOperations(inherited, rewound.id, undefined, seq => rewound.isOwnSeq(seq)).operations).toEqual([]);
+    const accepted = inherited.find(event => event.type === "myagents/operation/accepted");
+    if (accepted?.type !== "myagents/operation/accepted") throw new Error("inherited acceptance is unavailable");
+    const admission = nativeEarly.append("myagents/operation/accepted", accepted.data);
+    const owned = [...early, admission];
+    expect(foldProductOperations(owned, nativeEarly.id, undefined, seq => nativeEarly.isOwnSeq(seq)).operations[0]?.state)
+      .toBe("accepted_undelivered");
+    const terminal = inherited.find(event => event.type === "myagents/operation/terminal");
+    if (terminal?.type !== "myagents/operation/terminal") throw new Error("inherited terminal is unavailable");
+    const invalid = nativeEarly.append("myagents/operation/terminal", terminal.data);
+    expect(() => foldProductOperations([...owned, invalid], nativeEarly.id, undefined, seq => nativeEarly.isOwnSeq(seq)))
+      .toThrow("operation terminal precedes queued-message settlement");
     const forged = first.map(event => event.type === "myagents/session/fork"
       ? { ...event, data: { ...event.data, sourceRuntimeSessionId: "forged-source" } } : event);
     expect(() => foldProductOperations(forged, "first-fork"))
