@@ -1530,7 +1530,7 @@ const main = (): void => {
       || (deletePurgeEvidence.collectedCheckpointBlobs as number) < 0
       || deletePurgeEvidence.sessionRowsAfterPurge !== 0
       || deletePurgeEvidence.generationRowsAfterPurge !== 0
-      || deletePurgeEvidence.eventRowsAfterPurge !== 0) {
+      || deletePurgeEvidence.nativeLogsAfterPurge !== 0) {
       throw new Error("irreversible Session purge evidence differs from the exact W4-A10 contract");
     }
     const forkEvidence = exactObject(

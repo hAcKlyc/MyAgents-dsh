@@ -9,12 +9,13 @@ declare module "@deepseek-ai/dsh-session/types" {
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
 import { writeSync } from "node:fs";
-import { chmod, copyFile, mkdir, mkdtemp, readFile, readdir, realpath, rm, unlink, writeFile } from "node:fs/promises";
+import { chmod, copyFile, glob, mkdir, mkdtemp, readFile, readdir, realpath, rm, unlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, sep } from "node:path";
 import { PassThrough } from "node:stream";
 import { setImmediate as yieldImmediate, setTimeout as delay } from "node:timers/promises";
 import { DatabaseSync } from "node:sqlite";
+import { constants as zstdConstants, zstdCompressSync, zstdDecompressSync } from "node:zlib";
 
 import { Context } from "@deepseek-ai/cordis";
 import { BasicCompactionEngine } from "@deepseek-ai/dsh-compaction-basic";
@@ -2814,7 +2815,7 @@ assert.deepEqual({
   origin: forkSession.origin,
   state: forkSession.state,
 }, {
-  eventCount: rewindTargetEvents.length + 1,
+  eventCount: rewindTargetEvents.length + 2,
   generationState: "active",
   origin: "fork",
   state: "active",
@@ -2829,27 +2830,6 @@ assert.equal(forkHeaderRecord.isSeeded, true);
 assert.equal((forkDatabase.prepare(`
   SELECT inherited_event_count FROM session_generations WHERE session_id = ? AND state = 'active'
 `).get("artifact-forked-session") as { inherited_event_count: number }).inherited_event_count, rewindTargetEvents.length);
-const forkTail = forkDatabase.prepare(`
-  SELECT envelope_json FROM session_events WHERE session_id = ? ORDER BY seq DESC LIMIT 1
-`).get("artifact-forked-session") as { envelope_json: string };
-const forkTailEvent: unknown = JSON.parse(forkTail.envelope_json);
-assert.ok(forkTailEvent !== null && typeof forkTailEvent === "object" && !Array.isArray(forkTailEvent));
-assert.deepEqual(forkTailEvent, {
-  data: {
-    clientMutationId: "artifact-fork-1",
-    sourceGenerationId: forkCommitted.receipt?.sourceGenerationId,
-    sourceRuntimeSessionId: "dsh-artifact-primary",
-    sourceStableBoundaryId: rewindTargetStableBoundaryId,
-    targetGenerationId: forkCommitted.receipt?.targetGenerationId,
-    targetPersistenceRef: "artifact-fork-persistence",
-    targetRuntimeSessionId: "artifact-forked-session",
-    targetWorkspaceIdentity: initializeRequest.workspace.identity,
-    token: forkPrepared.token,
-  },
-  seq: rewindTargetEvents.length,
-  time: (forkTailEvent as Record<string, unknown>).time,
-  type: "myagents/session/fork",
-});
 forkDatabase.close();
 const forkReloadContext = new Context();
 await forkReloadContext.plugin(SessionStore);
@@ -2863,7 +2843,28 @@ await forkReloadContext.plugin(ProductJsonlSessionPersistence, {
   runtimeHome: fixtureForkRuntimeHome,
 });
 const forkReader = await forkReloadContext.sessionPersistence.open(SessionId("artifact-forked-session"), "read");
-const forkRestored = Session.fromRestore(forkReader.id, (await forkReader.read()).events,
+const forkNativeEvents = (await forkReader.read()).events;
+assert.deepEqual(forkNativeEvents.slice(0, rewindTargetEvents.length), rewindTargetEvents);
+assert.equal(forkNativeEvents.at(-2)?.type, "session/end-seed");
+assert.deepEqual(forkNativeEvents.at(-2)?.data, { inherited: true });
+const forkTailEvent = forkNativeEvents.at(-1);
+assert.deepEqual(forkTailEvent, {
+  data: {
+    clientMutationId: "artifact-fork-1",
+    sourceGenerationId: forkCommitted.receipt?.sourceGenerationId,
+    sourceRuntimeSessionId: "dsh-artifact-primary",
+    sourceStableBoundaryId: rewindTargetStableBoundaryId,
+    targetGenerationId: forkCommitted.receipt?.targetGenerationId,
+    targetPersistenceRef: "artifact-fork-persistence",
+    targetRuntimeSessionId: "artifact-forked-session",
+    targetWorkspaceIdentity: initializeRequest.workspace.identity,
+    token: forkPrepared.token,
+  },
+  seq: rewindTargetEvents.length + 1,
+  time: forkTailEvent?.time,
+  type: "myagents/session/fork",
+});
+const forkRestored = Session.fromRestore(forkReader.id, forkNativeEvents,
   forkReader.header, forkReader.inheritedEventCount, "shared-frozen");
 assert.deepEqual(forkRestored.deriveMessages(), rewindTargetDerivedMessages);
 assert.equal(forkRestored.snapshotEvents().some((event) => event.type === "myagents/session/fork"), true);
@@ -3928,16 +3929,38 @@ const unknownEvent = { data: { required: true }, seq: 0, time: 1,
   type: "myagents/unknown-required-resume-fixture", ignorable: true } as unknown as SessionEvent;
 await invalidWriter.append([unknownEvent]);
 await invalidWriter.close();
-// Corrupt only this isolated synthetic fixture into a correctly hashed log from
-// an unknown required writer; the current Provider itself refuses such writes.
-const invalidProbe = new DatabaseSync(persistencePath);
-const requiredEnvelope = canonicalSessionReadData({ data: unknownEvent.data, seq: 0, time: 1, type: unknownEvent.type }).bytes.toString("utf8");
-const requiredHead = createHash("sha256").update(Buffer.from(createHash("sha256").digest("hex"), "hex")).update(requiredEnvelope).digest("hex");
-invalidProbe.prepare("UPDATE session_events SET envelope_json = ?, chain_hash = ? WHERE session_id = ?").run(requiredEnvelope, requiredHead, invalidResumeSessionId);
-invalidProbe.prepare("UPDATE sessions SET head_hash = ? WHERE id = ?").run(requiredHead, invalidResumeSessionId);
-invalidProbe.prepare("UPDATE session_generations SET head_hash = ? WHERE session_id = ?").run(requiredHead, invalidResumeSessionId);
-invalidProbe.close();
 await persistenceReloadContext.fiber.dispose();
+// Change only isolated fixture bytes into an unknown required native event.
+// Production IO and codecs remain entirely upstream.
+const invalidProbe = new DatabaseSync(persistencePath, { readOnly: true });
+const invalidGeneration = invalidProbe.prepare("SELECT active_generation_id FROM sessions WHERE id = ?")
+  .get(invalidResumeSessionId) as { active_generation_id: string };
+invalidProbe.close();
+const invalidLogs: string[] = [];
+for await (const path of glob(join(fixtureRuntimeHome, "sessions", invalidGeneration.active_generation_id, "**", "*.jsonl.zstd"))) invalidLogs.push(path);
+assert.equal(invalidLogs.length, 1);
+const invalidLogPath = invalidLogs[0];
+assert.ok(invalidLogPath !== undefined);
+const invalidLogBytes = await readFile(invalidLogPath);
+const nativeFrames: Buffer[] = [];
+for (let offset = 0; offset < invalidLogBytes.length;) {
+  const decoded = zstdDecompressSync(invalidLogBytes.subarray(offset), { info: true }) as unknown as { buffer: Buffer; engine: { bytesWritten: number } };
+  assert.ok(decoded.engine.bytesWritten > 0);
+  nativeFrames.push(decoded.buffer);
+  offset += decoded.engine.bytesWritten;
+}
+const nativeRows = Buffer.concat(nativeFrames).toString("utf8").trimEnd().split("\n");
+assert.ok(nativeRows[0] !== undefined);
+assert.ok(nativeRows[1] !== undefined);
+const requiredNativeEvent = JSON.parse(nativeRows[1]) as Record<string, unknown>;
+delete requiredNativeEvent.ignorable;
+nativeRows[1] = JSON.stringify(requiredNativeEvent);
+const nativeCompression = { params: { [zstdConstants.ZSTD_c_checksumFlag]: 1 } };
+await writeFile(invalidLogPath, Buffer.concat([
+  zstdCompressSync(nativeRows[0] + "\n", nativeCompression),
+  zstdCompressSync(nativeRows.slice(1).join("\n") + "\n", nativeCompression),
+]));
+const requiredNativeLogBytes = await readFile(invalidLogPath);
 const persistedPrimaryBytes = JSON.stringify(persistedPrimary.events);
 
 const failedResumeComposition = await composeDshRootServices({
@@ -4041,6 +4064,7 @@ await failedResumeHostClient.runtimeShutdown({ reason: "artifact-failed-resume-p
 const failedResumeStopped = await failedResumeLifecycle.whenStopped();
 assert.equal(failedResumeStopped.disposed, true);
 assert.equal(failedResumeStopped.exit.kind, "shutdown");
+assert.deepEqual(await readFile(invalidLogPath), requiredNativeLogBytes);
 failedResumeHostPeer.close();
 failedResumeInput.destroy();
 failedResumeOutput.destroy();
@@ -4613,19 +4637,21 @@ const purgedSessionCount = purgeProbe.prepare(
 const purgedGenerationCount = purgeProbe.prepare(
   "SELECT count(*) AS count FROM session_generations WHERE session_id = ?",
 ).get(purgeRuntimeSessionId) as { count: number };
-const purgedEventCount = purgeProbe.prepare(
-  "SELECT count(*) AS count FROM session_events WHERE session_id = ?",
-).get(purgeRuntimeSessionId) as { count: number };
 const purgedJournal = purgeProbe.prepare(
   "SELECT phase, receipt_json FROM delete_journals WHERE token = ?",
 ).get(purgePrepared.token) as { phase: string; receipt_json: string };
+assert.equal(purgeProbe.prepare("SELECT count(*) AS count FROM sqlite_schema WHERE name = 'session_events'").get()?.count, 0);
 purgeProbe.close();
 assert.equal(purgedSessionCount.count, 0);
 assert.equal(purgedGenerationCount.count, 0);
-assert.equal(purgedEventCount.count, 0);
 assert.equal(purgedJournal.phase, "purged");
 const purgedReceipt = JSON.parse(purgedJournal.receipt_json) as Record<string, unknown>;
 assert.equal(purgedReceipt.purged, true);
+assert.ok(Array.isArray(purgedReceipt.nativeGenerationIds));
+for (const generation of purgedReceipt.nativeGenerationIds) {
+  assert.equal(typeof generation, "string");
+  await assert.rejects(readdir(join(fixtureRuntimeHome, "sessions", generation as string)), { code: "ENOENT" });
+}
 assert.equal(Number.isSafeInteger(purgedReceipt.collectedCheckpointBlobs), true);
 await purgeHostClient.runtimeShutdown({ reason: "artifact-purge-proof-complete" });
 const purgeStopped = await purgeLifecycle.whenStopped();
@@ -4722,7 +4748,7 @@ writeSync(1, `${JSON.stringify({
   deletePurgeEvidence: {
     committedState: purgeCommitted.state,
     collectedCheckpointBlobs: purgedReceipt.collectedCheckpointBlobs,
-    eventRowsAfterPurge: purgedEventCount.count,
+    nativeLogsAfterPurge: 0,
     generationRowsAfterPurge: purgedGenerationCount.count,
     journalState: purgedJournal.phase,
     purged: purgedReceipt.purged,
