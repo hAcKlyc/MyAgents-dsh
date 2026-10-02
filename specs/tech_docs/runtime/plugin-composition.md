@@ -29,20 +29,11 @@ The current [source baseline](../../dsh/dsh-baseline-v1.json) is official DeepSe
 - **Consumed by:** maintainers changing plugins, upgrading DSH, building a managed plugin UI or locating a capability owner.
 - **Does not own:** executable installation, per-Session declarative components, compatibility promotion or exact artifact identity.
 
-## 2. Counting rules
+## 2. Inventory scope
 
-The count in this document means **live Cordis plugin instances installed by the official production composition after a successful `initialize`**.
+The tables map installed capability owners, not live plugin-instance counts. One row may describe a platform alternative, middleware or a group of stock plugins. Each native storage generation also creates its own scoped JSONL context. The complete executable graph and order come from `packages/runtime-product/src/composition.ts`, lifecycle and the packed composition fixture.
 
-The following rules keep that count distinct from adjacent inventories:
-
-1. Count each selected `Context.plugin(...)` installation once.
-2. Count the platform subprocess implementation once: all platforms use the stock `LocalSubprocessRuntime` mechanics through the thin `ProductSubprocessRuntime` policy Provider.
-3. Count `NativeRpcServer` after process lifecycle installation and `ProductJsonlSessionPersistence` after initialization installs the production persistence plane.
-4. Do not count model-visible tool definitions separately. Their owning plugins register them through the single DSH `ctx.tools` pipeline.
-5. Do not count MCP, Skill, Agent, Command, Hook or Host Tool descriptors as executable Cordis plugins. They are declarative components compiled inside one `ProductComponentService` generation.
-6. Do not count ordinary helper objects, Provider profiles, generated contracts, package dependencies or the DSH artifact package inventory as plugin instances.
-
-Exact plugin installation order and counts come from `packages/runtime-product/src/composition.ts` and the packed composition fixture. The role inventory below is a maintenance map, not an alternative numeric composition authority. The current composition installs the stock Shell executor, Shell tool, `shell-env` and `tool-jobs`; it does not install the former custom executor or Windows supervisor. Declarative tools are not plugin instances.
+Model-visible tool definitions and Host MCP/Skill/Command/Hook/Host Tool descriptors are separate inventories. Ordinary helpers, model profiles, generated contracts and dependency packages are not Cordis plugin instances.
 
 ## 3. Relationship vocabulary
 
@@ -58,68 +49,70 @@ The inventory uses five relationship terms:
 
 ## 4. Root Session, model and product coordination plane
 
-| # | Plugin | Responsibility | Source | Relationship | DSH patch impact |
-| ---: | --- | --- | --- | --- | --- |
-| 1 | `@deepseek-ai/dsh-session:SessionStore` | Register and own DSH Session lifecycle | DSH official | Retain | Direct: 0004 publication guards |
-| 2 | `@deepseek-ai/dsh-session-projection:SessionProjectionRegistry` | Own in-memory per-Session projection cells, consistent cuts and change feed | DSH official | Enable | No; official TokenMeter publishes projection units through it |
-| 3 | `@deepseek-ai/dsh-agent:AgentRegistry` | Register Agent identities and scopes | DSH official | Retain | Direct: 0001/0002 Agent public types; 0004 publication guards |
-| 4 | `@deepseek-ai/dsh-llm:LlmRuntime` | Route adapters and stream model requests through `ctx.llm` | DSH official | Retain | No |
-| 5 | `@deepseek-ai/dsh-system-prompt:SystemPrompt` | Assemble Runtime, Host, project, Skill and child prompt contributions | DSH official | Retain | Direct: 0012 literal Runtime context; section interpolation is stock |
-| 6 | `@deepseek-ai/dsh-tools:ToolRuntime` | Own the sole tool registry, validation and dispatch pipeline | DSH official | Retain | No |
-| 7 | `@deepseek-ai/dsh-token-meter:TokenMeter` | Record usage and estimate complete model requests | DSH official | Enable | Direct: 0007 capacity-safe compaction |
-| 8 | `@deepseek-ai/dsh-compaction-tool-result-pruner:ToolResultPruner` | Prune oversized old tool results before semantic compaction | DSH official | Enable | No; consumes the patched meter |
-| 9 | `@deepseek-ai/dsh-compaction-basic:BasicCompactionEngine` | Perform automatic and explicit durable context compaction | DSH official | Enable | Direct: 0007 capacity-safe compaction |
-| 10 | `@deepseek-ai/dsh-agent-loop:AgentLoop` | Own the only model/turn/tool Agent loop | DSH official | Retain | Direct: 0001 pending wake; 0002 pre-assistant commit |
-| 11 | `@myagents-dsh/host-ports:HostPortService` | Own Runtime-to-Host reverse RPC admission and settlement | MyAgents | Add product capability | No |
-| 12 | `@myagents-dsh/runtime-product:ProductSessionService` | Enforce one primary root Session and bind product workspace/configuration/mutations | MyAgents | Extend SessionStore and AgentRegistry | Indirect: 0004 publication guards; 0012 literal Host Runtime context |
-| 13 | `@myagents-dsh/operation-runtime:SdkOperationService` | Own durable operation admission, queueing, steering, follow-up and terminal settlement | MyAgents | Add product capability | Indirect: 0001 |
-| 14 | `@myagents-dsh/component-runtime:ProductComponentService` | Prepare, atomically promote, drain and report declarative component generations | MyAgents | Add product capability | No |
-| 15 | `@myagents-dsh/host-ports:HostCredentialProvider` | Resolve secrets from the Host only inside a request or connection scope | MyAgents | Replace a Runtime-local credential owner | No |
-| 16 | `@myagents-dsh/runtime-product:HostSettingsProvider` | Project the admitted non-secret Host model route into in-memory DSH Settings | MyAgents | Replace a file-backed/local Settings owner | No |
-| 17 | `@deepseek-ai/dsh-llm-pi-ai:llm-pi-ai` | Implement Anthropic Messages, OpenAI Chat Completions and OpenAI Responses routes while retaining Provider-owned content | DSH official | Enable at its exact patched-artifact version with separately pinned pi-ai core | Direct: 0010 Provider content |
-| 18 | `@myagents-dsh/runtime-product:adapterRegistration` (`HostDeepSeekLlmAdapter`) | Bind the Host profile and credentials to the official native DeepSeek adapter | MyAgents | Replace stock static DeepSeek composition, while retaining the official adapter implementation | No; native rc.2 stream identity replaces the retired 0006 patch |
-| 19 | `@myagents-dsh/runtime-product:ProductUtilityService` | Execute bounded idempotent non-conversation model utility requests | MyAgents | Add product capability | No |
+| Plugin | Responsibility | Source | Relationship | DSH patch impact |
+| --- | --- | --- | --- | --- |
+| `@deepseek-ai/dsh-session:SessionStore` | Register and own DSH Session lifecycle | DSH official | Retain | Direct: 0004 publication guards |
+| `@deepseek-ai/dsh-session-projection:SessionProjectionRegistry` | Own in-memory per-Session projection cells, consistent cuts and change feed | DSH official | Enable | No; official TokenMeter publishes projection units through it |
+| `@deepseek-ai/dsh-agent:AgentRegistry` | Register Agent identities and scopes | DSH official | Retain | Direct: 0001/0002 Agent public types; 0004 publication guards |
+| `@deepseek-ai/dsh-llm:LlmRuntime` | Route adapters and stream model requests through `ctx.llm` | DSH official | Retain | No |
+| `@deepseek-ai/dsh-system-prompt:SystemPrompt` | Assemble Runtime, Host, project, Skill and child prompt contributions | DSH official | Retain | Direct: 0012 literal Runtime context; section interpolation is stock |
+| `@deepseek-ai/dsh-tools:ToolRuntime` | Own the sole tool registry, validation and dispatch pipeline | DSH official | Retain | No |
+| `@deepseek-ai/dsh-token-meter:TokenMeter` | Record usage and estimate complete model requests | DSH official | Enable | Direct: 0007 capacity-safe compaction |
+| `@deepseek-ai/dsh-compaction-tool-result-pruner:ToolResultPruner` | Prune oversized old tool results before semantic compaction | DSH official | Enable | No; consumes the patched meter |
+| `@deepseek-ai/dsh-compaction-basic:BasicCompactionEngine` | Perform automatic and explicit durable context compaction | DSH official | Enable | Direct: 0007 capacity-safe compaction |
+| `@deepseek-ai/dsh-agent-loop:AgentLoop` | Own the only model/turn/tool Agent loop | DSH official | Retain | Direct: 0001 pending wake; 0002 pre-assistant commit |
+| `@myagents-dsh/host-ports:HostPortService` | Own Runtime-to-Host reverse RPC admission and settlement | MyAgents | Add product capability | No |
+| `@myagents-dsh/runtime-product:ProductSessionService` | Enforce one primary root Session and bind product workspace/configuration/mutations | MyAgents | Extend SessionStore and AgentRegistry | Indirect: 0004 publication guards; 0012 literal Host Runtime context |
+| `@myagents-dsh/operation-runtime:SdkOperationService` | Own durable operation admission, queueing, steering, follow-up and terminal settlement | MyAgents | Add product capability | Indirect: 0001 |
+| `@myagents-dsh/component-runtime:ProductComponentService` | Prepare, atomically promote, drain and report declarative component generations | MyAgents | Add product capability | No |
+| `@myagents-dsh/host-ports:HostCredentialProvider` | Resolve secrets from the Host only inside a request or connection scope | MyAgents | Replace a Runtime-local credential owner | No |
+| `@myagents-dsh/runtime-product:HostSettingsProvider` | Project the admitted non-secret Host model route into in-memory DSH Settings | MyAgents | Replace a file-backed/local Settings owner | No |
+| `@deepseek-ai/dsh-llm-pi-ai:llm-pi-ai` | Implement Anthropic Messages, OpenAI Chat Completions and OpenAI Responses routes while retaining Provider-owned content | DSH official | Enable at its exact patched-artifact version with separately pinned pi-ai core | Direct: 0010 Provider content |
+| `@myagents-dsh/runtime-product:adapterRegistration` (`HostDeepSeekLlmAdapter`) | Bind the Host profile and credentials to the official native DeepSeek adapter | MyAgents | Replace stock static DeepSeek composition, while retaining the official adapter implementation | No; native rc.2 stream identity replaces the retired 0006 patch |
+| `@myagents-dsh/runtime-product:ProductUtilityService` | Execute bounded idempotent non-conversation model utility requests | MyAgents | Add product capability | No |
+
+The tool plane also mounts official `SandboxPolicyService`, `LocalSandboxProvider`, `LocalSpillStore` and `SubagentForkInProcess`. Sandbox mode/approval are bound to each Session and inherited by children.
 
 The current root composition also mounts official `SessionStats`, `SessionTurnOutline`, `TimeContext`, `RepeatToolReminder` and `SessionCheckpointPolicy`. `DSH_ROOT_SERVICE_ORDER` in `packages/runtime-product/src/composition.ts` owns their executable order; the allowlist records their identities but remains a partial inventory of the full graph.
 
 ## 5. Canonical tool plane
 
-| # | Plugin | Responsibility | Source | Relationship | DSH patch impact |
-| ---: | --- | --- | --- | --- | --- |
-| 20 | `@myagents-dsh/tools-process:ProductSubprocessRuntime` | Apply product spawn policy, delegate execution and tree cleanup to official LocalSubprocessRuntime | MyAgents policy / DSH execution | Retain official execution on all platforms | No |
-| 21 | `@deepseek-ai/dsh-jobs-local:LocalJobRegistry` | Own bounded background job identities and state | DSH official | Retain | No |
-| 22 | `@myagents-dsh/tools-fs:LocalWorkspaceFileSystem` | Enforce canonical workspace, root and filesystem identity policy | MyAgents | Replace the stock local filesystem Provider | No |
-| 23 | `@deepseek-ai/dsh-agent-instructions:AgentInstructions` | Discover and durably reconcile project instruction files | DSH official | Enable with MyAgents candidate order and tool names | Direct: 0009 instruction selection |
-| 24 | `@myagents-dsh/host-ports:HostAttachmentStore` | Acquire, verify, stage and release Host-owned attachments | MyAgents | Replace the stock local attachment Provider | No |
-| 25 | `@deepseek-ai/dsh-tool-call-timeout-policy:ToolCallTimeoutPolicy` | Apply bounded timeout and cancellation to tool calls | DSH official | Enable | No |
-| 26 | `@deepseek-ai/dsh-subagent:SubagentRuntime` | Own continuable child Agent creation, recovery and retirement | DSH official | Retain | Direct: 0005 lifecycle; 0008 literal child persona |
-| 27 | `@deepseek-ai/dsh-subagent-spawn-in-process:SubagentSpawnInProcess` | Materialize child Agent scopes in the current Runtime process | DSH official | Retain | Indirect: its in-process driver is changed by 0008 |
-| 28 | `@deepseek-ai/dsh-skill:SkillRegistry` | Own layered Skill registration and discovery | DSH official | Retain | No |
-| 29 | `@deepseek-ai/dsh-user-approval:ApprovalService` | Provide the base approval service | DSH official | Retain | No |
-| 30 | `@deepseek-ai/dsh-user-questions:UserQuestionService` | Provide the base structured question service | DSH official | Retain | No |
-| 31 | `@myagents-dsh/tool-runtime-product:ProductPermissionService` | Enforce product permission modes, exact durable rules and Host decisions | MyAgents | Extend the official approval primitives | No |
-| 32 | `@myagents-dsh/checkpoint:ProductCheckpointService` | Preserve governed root `Write`/`Edit` preimages for bounded rollback | MyAgents | Add product capability | No |
-| 33 | `@myagents-dsh/tool-runtime-product:ProductToolRuntime` | Bind every canonical call to operation, workspace, Plan, origin and permission authority | MyAgents | Extend ToolRuntime; no second tool engine | No |
-| 34 | `@myagents-dsh/components-hooks:ProductHookRuntime` | Execute governed PreToolUse, PostToolUse and Permission Hooks | MyAgents | Add Host Hook capability | Indirect: 0002 authoritative tool-input transform |
-| 35 | `@myagents-dsh/tools-interaction:ProductPlanService` | Own durable normal/plan state, managed plan artifact and tool guard | MyAgents | Replace a stock Plan contribution with the product owner | No |
-| 36 | `@myagents-dsh/task-graph:ProductTaskGraphService` | Own durable TaskCreate/Get/List/Update state and definitions | MyAgents | Add product capability | No |
-| 37 | `@myagents-dsh/tools-agent:ProductSkillService` | Register the canonical `Skill` tool and dynamic Skill catalog | MyAgents | Extend SkillRegistry | No; literal Skill sections are stock |
-| 38 | `@deepseek-ai/dsh-commands:CommandRuntime` | Own Command registration and dispatch primitives | DSH official | Retain | No |
-| 39 | `@myagents-dsh/components-commands:ProductCommandService` | Bind declarative Commands to Host operations and RPC invocation | MyAgents | Extend CommandRuntime | No |
-| 40 | official `LocalBashExecutor` or `PwshLocalExecutor`, `tool-bash` or `tool-pwsh`, `shell-env`, `tool-jobs` | Own selected Shell execution, tool definitions, output and Jobs | DSH official | Enable directly | No |
-| 41 | `@myagents-dsh/tools-process:ProductProcessRuntime` | Authorize official Shell/Jobs calls and derived Host/spill-read presentation | MyAgents | Extend public tool/subprocess seams | No |
-| 43 | `@myagents-dsh/tools-fs:CanonicalFileTools` | Govern native read/read_image/write/edit/glob/grep and register `ls` | MyAgents | Wrap public native executors with Host policy | No |
-| 44 | `@deepseek-ai/dsh-web:WebRuntime` | Own WebSearch/WebFetch Provider routing | DSH official | Retain | No |
-| 45 | `@myagents-dsh/tools-web:CanonicalWebTools` | Install native web_fetch/web_search and govern HTTP/Host search providers | MyAgents | Retain native definitions with Host providers | No |
+| Plugin | Responsibility | Source | Relationship | DSH patch impact |
+| --- | --- | --- | --- | --- |
+| `@myagents-dsh/tools-process:ProductSubprocessRuntime` | Apply product spawn policy, delegate execution and tree cleanup to official LocalSubprocessRuntime | MyAgents policy / DSH execution | Retain official execution on all platforms | No |
+| `@deepseek-ai/dsh-jobs-local:LocalJobRegistry` | Own bounded background job identities and state | DSH official | Retain | No |
+| `@myagents-dsh/tools-fs:LocalWorkspaceFileSystem` | Apply Product identity/checkpoint policy over SandboxedFileSystem | MyAgents / DSH enforcement | Extend the official sandboxed filesystem Provider | Indirect: 0011 executor/publication seams |
+| `@deepseek-ai/dsh-agent-instructions:AgentInstructions` | Discover and durably reconcile project instruction files | DSH official | Enable with MyAgents candidate order and tool names | Direct: 0009 instruction selection |
+| `@myagents-dsh/host-ports:HostAttachmentStore` | Acquire, verify, stage and release Host-owned attachments | MyAgents | Replace the stock local attachment Provider | No |
+| Tool timeout middleware | Retain DSH timeout behavior for unchanged tools; Product-native tools start deadlines after authorization | MyAgents composition / public DSH timeout primitives | Extend | No |
+| `@deepseek-ai/dsh-subagent:SubagentRuntime` | Own continuable child Agent creation, recovery and retirement | DSH official | Retain | Direct: 0005 lifecycle; 0008 literal child persona |
+| `@deepseek-ai/dsh-subagent-spawn-in-process:SubagentSpawnInProcess` | Materialize child Agent scopes in the current Runtime process | DSH official | Retain | Indirect: its in-process driver is changed by 0008 |
+| `@deepseek-ai/dsh-skill:SkillRegistry` | Own layered Skill registration and discovery | DSH official | Retain | No |
+| `@deepseek-ai/dsh-user-approval:ApprovalService` | Provide the base approval service | DSH official | Retain | No |
+| `@deepseek-ai/dsh-user-questions:UserQuestionService` | Provide the base structured question service | DSH official | Retain | No |
+| `@myagents-dsh/tool-runtime-product:ProductPermissionService` | Enforce product permission modes, exact durable rules and Host decisions | MyAgents | Extend the official approval primitives | No |
+| `@myagents-dsh/checkpoint:ProductCheckpointService` | Preserve governed root `Write`/`Edit` preimages for bounded rollback | MyAgents | Add product capability | No |
+| `@myagents-dsh/tool-runtime-product:ProductToolRuntime` | Bind every canonical call to operation, workspace, Plan, origin and permission authority | MyAgents | Extend ToolRuntime; no second tool engine | No |
+| `@myagents-dsh/components-hooks:ProductHookRuntime` | Execute governed PreToolUse, PostToolUse and Permission Hooks | MyAgents | Add Host Hook capability | Indirect: 0002 authoritative tool-input transform |
+| `@myagents-dsh/tools-interaction:ProductPlanService` | Own durable normal/plan state, managed plan artifact and tool guard | MyAgents | Replace a stock Plan contribution with the product owner | No |
+| `@myagents-dsh/task-graph:ProductTaskGraphService` | Own durable TaskCreate/Get/List/Update state and definitions | MyAgents | Add product capability | No |
+| `@myagents-dsh/tools-agent:ProductSkillService` | Register the canonical `Skill` tool and dynamic Skill catalog | MyAgents | Extend SkillRegistry | No; literal Skill sections are stock |
+| `@deepseek-ai/dsh-commands:CommandRuntime` | Own Command registration and dispatch primitives | DSH official | Retain | No |
+| `@myagents-dsh/components-commands:ProductCommandService` | Bind declarative Commands to Host operations and RPC invocation | MyAgents | Extend CommandRuntime | No |
+| official `SandboxBashExecutor` or `SandboxPwshExecutor`, `tool-bash` or `tool-pwsh`, `shell-env`, `tool-jobs` | Own selected Shell execution, tool definitions, output and Jobs | DSH official | Enable directly | No |
+| `@myagents-dsh/tools-process:ProductProcessRuntime` | Authorize official Shell/Jobs calls and derived Host/spill-read presentation | MyAgents | Extend public tool/subprocess seams | No |
+| `@myagents-dsh/tools-fs:CanonicalFileTools` | Govern native read/read_image/write/edit/glob/grep and register `ls` | MyAgents | Wrap public native executors with Host policy | Indirect: 0011 |
+| `@deepseek-ai/dsh-web:WebRuntime` | Own WebSearch/WebFetch Provider routing | DSH official | Retain | No |
+| `@myagents-dsh/tools-web:CanonicalWebTools` | Install native web_fetch/web_search and govern HTTP/Host search providers | MyAgents | Retain native definitions with Host providers | No |
 
 Windows mounts official PowerShell instead of Bash. The same policy Provider delegates to official subprocess execution on every platform; the custom Job Object Provider and `.ps1` supervisor no longer exist. See [Platform and local execution](../boundaries/platform-and-local-execution.md).
 
 ## 6. Process lifecycle and persistence plane
 
-| # | Plugin | Responsibility | Source | Relationship | DSH patch impact |
-| ---: | --- | --- | --- | --- | --- |
-| 46 | `@myagents-dsh/rpc-server:NativeRpcServer` | Serve bidirectional stdio RPC and carry validated DSH/Product projections onto `runtime/event` | MyAgents | Replace the stock DSH SDK RPC server | No |
-| 47 | `@myagents-dsh/persistence-product:ProductJsonlSessionPersistence` | Coordinate product locators, fork/rewind/delete journals and checkpoints over official native logs | MyAgents | Extend the official JSONL persistence through public handles | Indirect: 0003 Product event validation; seam 004 remains public composition |
+| Plugin | Responsibility | Source | Relationship | DSH patch impact |
+| --- | --- | --- | --- | --- |
+| `@myagents-dsh/rpc-server:NativeRpcServer` | Serve bidirectional stdio RPC and carry validated DSH/Product projections onto `runtime/event` | MyAgents | Replace the stock DSH SDK RPC server | No |
+| `@myagents-dsh/persistence-product:ProductJsonlSessionPersistence` | Coordinate product locators, fork/rewind/delete journals and checkpoints over official native logs | MyAgents | Extend the official JSONL persistence through public handles | Indirect: 0003 Product event validation; seam 004 remains public composition |
 
 Each used native generation mounts official `@deepseek-ai/dsh-session-persistence-jsonl` in its own Cordis context. Those scoped persistence instances own native handles, physical leases, buffers and codecs; they are not a fixed root-plugin count. The Product Provider supplies only the event validation policy and locator coordination.
 
@@ -143,7 +136,7 @@ The stock DSH MCP plugin is intentionally not mounted. MyAgents uses the MCP SDK
 
 ## 8. The profile allowlist is not the complete graph
 
-`BATCH1_INSTALLED_PLUGIN_ALLOWLIST` contains a partial release identity set. It includes selected root, model, RPC, persistence and checkpoint identities, but omits most installed canonical tool-plane plugins. The tables above map maintained capability owners; the query engine and composition-selected providers are also part of the executable graph. Table row numbers are not a verified live-instance count.
+`BATCH1_INSTALLED_PLUGIN_ALLOWLIST` contains a partial release identity set. It includes selected root, model, RPC, persistence and checkpoint identities, but omits most installed canonical tool-plane plugins. The tables above map maintained capability owners; the query engine and composition-selected providers are also part of the executable graph. These role tables are not a verified live-instance count.
 
 Therefore:
 
@@ -152,7 +145,7 @@ Therefore:
 - a future maintenance change must either make the allowlist exhaustive or rename and define it as a deliberately partial release-identity set;
 - a plugin-management feature must distinguish immutable build-time services from declarative Session components instead of presenting these owners as user-swappable.
 
-The allowlist remains partial. Current source and exact packed composition, rather than historical plugin counts or old artifact reports, own the installed graph. The MyAgents Host lock at `src/shared/integrated-runtimes/dsh-lock.json` owns accepted installed-byte identity.
+The allowlist remains partial. Current source and exact packed composition, rather than historical plugin counts or old artifact reports, own the installed graph. The MyAgents Host build derives an effective lock from the selected Release archive or local handoff; that lock owns accepted installed-byte identity. `src/shared/integrated-runtimes/dsh-lock.json` is the source-mode development fallback.
 
 ## 9. Current patch relationship
 
@@ -193,7 +186,7 @@ Any future plugin-management product must define a new trusted installation, com
 
 When the production composition changes:
 
-1. Recount the successful post-`initialize` `Context.plugin(...)` graph, including platform alternatives and lifecycle-installed Providers.
+1. Review the successful post-`initialize` graph, including platform alternatives, middleware and lifecycle/scoped Providers.
 2. Update this inventory, `specs/ARCHITECTURE.md`, and `specs/tech_docs/README.md` in the same change.
 3. Reconcile `BATCH1_INSTALLED_PLUGIN_ALLOWLIST` according to its eventual explicit semantics.
 4. If an official DSH package or patch relationship changes, follow the DSH upstream-maintenance workflow and update the authoritative seam registry first.

@@ -2,7 +2,7 @@
 type: technical-architecture
 status: implemented
 module: compatibility-and-capability-truth
-updated: 2026-09-04
+updated: 2026-10-02
 ---
 
 # Compatibility and capability truth
@@ -53,8 +53,10 @@ requires:
 
 The installed adapter catalog is advisory. Native cloud/OAuth/subscription routes remain
 unadvertised unless separately implemented and assigned an execution owner. Host UI aliases do not
-cross the Runtime wire. Child Agents inherit the exact parent Provider/model; an optional requested
-model must equal the parent and `modelProfileRef` must equal its birth revision.
+cross the Runtime wire. Child models follow the admitted Host collaboration policy: inherit the parent, use a fixed
+profile or permit selection from the bounded admitted model set. Native child publication binds
+the selected profile; continuations capture the sending operation and revalidate current Host
+authorization. Model names alone do not identify a Provider route.
 
 The Batch 3 integration manifest declares the three supported API families and the family-level
 deterministic evidence categories. Those labels establish adapter conformance, while representative
@@ -63,10 +65,12 @@ must never be used to populate a Product selector.
 
 ## 5. Tools, components and platform claims
 
-The integration manifest contains the fixed 20 canonical Tool names. `availability: runtime` does
+The integration manifest lists the 24 internal Product tool-policy names. The model catalog maps
+them to native/custom definitions through `modelToolNames`; it is a separate inventory. `availability: runtime` does
 not mean a Tool is visible or permitted in the current operation; `WebSearch`/`WebFetch` are also
 route-dependent. The Session-bound effective extension catalog separately combines effective Tool
-names with Agents, Commands, Skills and MCP, plus component generation statuses. Host selectors
+names with Commands, Skills, MCP and Host Tools, alongside component generation status. Agent
+descriptors have no current compiler. Host selectors
 must combine artifact canonical truth, current extension catalog/status and route/tool policy.
 
 Platform truth has three different vocabularies: the static adapter manifest includes

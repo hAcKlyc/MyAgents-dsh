@@ -66,9 +66,10 @@ The Runtime never persists the API key. `HostSettingsProvider` contains non-secr
 ## 5. Route-dependent web behavior
 
 All canonical web definitions enter the canonical `ctx.tools` pipeline. When the Host canonical-web
-capability is present, both tools use `host/tool/execute`, including native DeepSeek search at the
-fixed official Anthropic endpoint and its no-tools utility call. The explicit standalone direct profile
-retains Runtime-owned DeepSeek WebSearch/WebFetch. The Host selects canonical Search by API family:
+capability is present, native `web_search` uses `host/tool/execute`, including DeepSeek server search at the fixed
+official Anthropic endpoint. Without it, the explicit direct profile retains Runtime-owned
+DeepSeek search. Native `web_fetch` always uses the Runtime safe-HTTP content converter and
+does not invoke the legacy Host utility-model summary. The Host selects canonical Search by API family:
 `anthropic-messages` uses the nested Messages request with `web_search_20250305`; a standalone
 Provider Search endpoint is used only when an explicit backend exists. The full compatibility,
 uncertainty and network ownership rules live in [Web/network](../boundaries/web-and-network.md).
@@ -83,8 +84,8 @@ drive root loading or terminal truth.
 The paired pi-ai seam preserves generic `tool_result` when its ID matches an observed server/MCP
 call in that response. It retains opaque raw content and exact matching-route replay; it does not
 interpret provider text as a local Tool result or normalize it into canonical WebSearch citations.
-Client/unrelated results remain outside this Provider observation path. The 2026-09-05 isolated
-source/build/SSE gate passes; installed Runtime bytes change only through the artifact builder.
+Client/unrelated results remain outside this Provider observation path. Deterministic source/build/SSE fixtures cover that boundary; installed Runtime bytes change
+only through the artifact builder.
 
 ## 6. Current capabilities and limits
 

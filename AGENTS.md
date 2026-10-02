@@ -15,13 +15,13 @@ Documentation governance starts at `specs/README.md`. That index owns document p
 
 ## Architecture invariants
 
-- DSH is the only AgentLoop and durable model-conversation authority. Do not add Pi, a second transcript, or an outer compatibility kernel.
+- DSH owns the only AgentLoop and durable model conversation. Official JSONL stores Session events; Product SQLite stores locators, mutation journals and checkpoint preimages only. Do not add a second transcript or persistence codec.
 - Runtime-side behavior is implemented through DSH/Cordis services, plugins, scopes, and event seams. The runtime binary is only a composition and lifecycle entry point.
 - The official production profile owns one runtime generation and at most one primary root session. No daemon, TCP listener, or implicit multi-session process.
 - MyAgents and the standalone Agent SDK are Hosts of the same runtime and protocol. The SDK is not a second runtime.
 - The native RPC protocol is bidirectional. Host-owned credentials, interaction, Host tools, Hooks, and attachment bytes cross only explicit reverse ports.
-- Model-visible tools execute through the single DSH `ctx.tools` pipeline. Use DSH's native definitions for file/search/Web/subagent tools. Add MyAgents definitions only for required product capabilities; Host policy adapters stay in the same tool pipeline. There is no alternate tool strategy.
-- Visibility and permission are separate. Workspace, revision, mode, origin, and hard-policy checks fail closed at execution time.
+- Model-visible tools execute through the single DSH `ctx.tools` pipeline. Use DSH's native file, search, Web, Shell, Jobs and subagent definitions. Add MyAgents definitions only for required product capabilities; Host policy adapters stay in the same tool pipeline. There is no alternate tool strategy.
+- Visibility, permission and sandbox policy are separate. The three Session modes configure DSH approval and file/Shell sandbox owners; MCP/Host tools remain outside that local sandbox. Revalidate workspace, revision, mode, origin and hard policy at execution.
 - Extension input from an SDK or Host is declarative. Arbitrary plugin JavaScript is installed only by trusted runtime builders at build/composition time.
 - Provider and MCP secrets are request- or connection-scoped and are never persisted, logged, emitted, or placed in declarative snapshots. The App-owned internal CLI capability is the sole process-environment exception for the internal Agent Shell; external CLI tokens remain forbidden.
 - File rollback claims must state their exact coverage. The initial target is root-origin governed `Write` and `Edit`, not shell, child-agent, or external changes.
@@ -34,15 +34,15 @@ Documentation governance starts at `specs/README.md`. That index owns document p
 
 ## Development workflow
 
-- Work on `dev` or a feature branch; do not commit implementation directly to `main` after repository bootstrap.
-- Read the relevant Architecture and module-guide sections before changing code. Local planning drafts may inform the work, but the tracked guides and exact code must stand on their own.
+- Work on `dev` or a feature branch; do not commit implementation directly to `main`.
+- Read `specs/README.md`, then the relevant Architecture and module-guide sections. Code, contracts and tests decide executable facts; repair conflicting prose rather than preserve a second authority. Local planning drafts are optional.
 - When implemented module behavior changes, update the corresponding `specs/tech_docs/` guide and the module link in `specs/ARCHITECTURE.md` in the same change.
 - Read the relevant architecture section before changing an owner, process, Session, lifecycle, persistence, security, or protocol boundary.
 - Pin the exact DSH version/commit. Imports from package-private `src/*` or `dist/*` paths are forbidden.
 - Before auditing or integrating an official DSH update, use `.agents/skills/dsh-upstream-maintenance/SKILL.md`; read its complete patch inventory and every affected ADR/module guide.
 - Repository skills live in `.agents/skills/`; `.claude/skills` points to that directory. For merge or versioned release work, use `.agents/skills/merge-release/SKILL.md`.
 - For a fresh machine or a local MyAgents integration build, read `specs/tech_docs/assurance/development-and-local-integration.md`. `setup.sh` / `setup.ps1` prepare the exact patched DSH and pi-ai inputs; `npm run build` only builds source. After committing a clean DSH change, `scripts/build-local-handoff.mjs` produces one handoff with a pending native-validation claim for a MyAgents Dev build. Local handoff selection does not change the MyAgents release version binding or create a DSH Release.
-- Default tests use fake model adapters, fake Host ports, temporary homes/workspaces, and no real network or credentials.
+- Default tests use fake model adapters, fake Host ports and temporary homes/workspaces. Native network tests use isolated loopback services; real Provider campaigns require explicit credentials and remain separate from packaging.
 - Use explicit `git add <files...>` and Conventional Commits with a non-empty body.
 
 ## Required release gates

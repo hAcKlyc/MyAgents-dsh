@@ -133,4 +133,9 @@ belongs in a trusted new Runtime distribution and artifact—not an extension sn
 
 ## 9. Verification and implementation map
 
+| Concern | Source |
+| --- | --- |
 | Kind compilers | `packages/components-mcp/`, `components-skills/`, `components-commands/`, `components-hooks/`, `components-host-tools/` |
+| Generation lifecycle and isolation | `packages/component-runtime/src/service.ts` |
+| Exact descriptors and resources | `packages/protocol/src/contract-source.ts` |
+| Regression coverage | `tests/product-component-runtime.unit.test.ts`, component compiler and packed composition tests |

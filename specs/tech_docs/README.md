@@ -17,6 +17,7 @@ own acceptance. This tree owns task-oriented current subsystem explanation.
 | Add a Provider or model | [Model Provider plane](./execution/model-provider-plane.md), [Configuration and generations](./runtime/configuration-and-generations.md) |
 | Add a tool, Skill, MCP server, Agent, Hook or Command | [Tool Runtime](./execution/tool-runtime-and-policy.md), [Declarative components](./boundaries/declarative-components.md) |
 | Change Bash/files/platform/network behavior | [Platform and local execution](./boundaries/platform-and-local-execution.md), [Web and network](./boundaries/web-and-network.md), [Security boundaries](./assurance/security-and-trust-boundaries.md) |
+| Prepare a development checkout or local MyAgents Dev build | [Development setup and local integration](./assurance/development-and-local-integration.md) |
 | Build, verify or hand off exact bytes | [Verification, artifacts and handoff](./assurance/verification-artifacts-and-handoff.md) |
 
 ## Domains

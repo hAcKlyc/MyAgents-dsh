@@ -74,7 +74,7 @@ tool + permissionClass + target
 
 Its persisted `origin: root` denotes root-Session ownership, not a caller-origin restriction: a child `always_allow` writes the same shared root policy and later eligible root/child calls may match it. It carries a deterministic rule ID, chained policy revision and creation time. Grants last for the root Session and its children without a wall-clock expiry, including after process restart or reopening that same Session; independent Sessions do not inherit them. The official composition permits at most 128 grant events and 128 revocation events. Configuration-base changes clear effective exact rules through the durable revision chain.
 
-Protocol `4.0.0` preserves the established permission management methods:
+The current protocol preserves the established permission management methods:
 
 | Method | Semantics |
 | --- | --- |
