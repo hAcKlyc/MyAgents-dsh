@@ -4278,7 +4278,7 @@ const automaticPressureResults: unknown[] = [];
 const compactionPrivateCanary = ["COMPACTION", "PRIVATE", "CANARY"].join("_");
 const preAutomaticPressureEventCount = resumedAgent.session.snapshotEvents().length;
 for (let cycle = 1; cycle <= 3; cycle += 1) {
-  const turn = 10_000 + cycle;
+  const turn = longSessionTurnCount + cycle;
   resumedAgent.session.append("turn/start", { turn });
   for (let index = 0; index < 20; index += 1) {
     resumedAgent.session.append("user/message", createUserMessage({
