@@ -92,6 +92,7 @@ import {
 } from "@myagents-dsh/protocol";
 import { GeneratedHostClient } from "@myagents-dsh/protocol/generated/host-client";
 import { NativeRpcServer } from "@myagents-dsh/rpc-server";
+import { foldProductOperations } from "@myagents-dsh/operation-runtime";
 import { startNativeRpcLifecycle } from "@myagents-dsh/runtime-server";
 import {
   claimNativeRpcLifecycleAuthority,
@@ -2869,6 +2870,7 @@ const forkRestored = Session.fromRestore(forkReader.id, forkNativeEvents,
 assert.deepEqual(forkRestored.deriveMessages(), rewindTargetDerivedMessages);
 assert.equal(forkRestored.snapshotEvents().some((event) => event.type === "myagents/session/fork"), true);
 assert.equal(forkRestored.snapshotEvents().at(-1)?.type, "session/end-seed");
+assert.deepEqual(foldProductOperations(forkNativeEvents, forkRestored.id).operations, []);
 await forkReader.close();
 await forkReloadContext.fiber.dispose();
 

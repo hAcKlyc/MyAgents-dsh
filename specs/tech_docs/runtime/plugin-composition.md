@@ -2,7 +2,7 @@
 type: technical-architecture
 status: implemented
 module: runtime-plugin-composition
-updated: 2026-09-25
+updated: 2026-10-02
 patch_authority: ../../dsh/seam-decisions-v1.json
 ---
 
@@ -20,7 +20,7 @@ It is a maintained projection, not a competing executable inventory. Exact insta
 - `packages/product-profile/src/candidate-runtime-profile.ts` for the separately maintained profile allowlist;
 - `specs/dsh/seam-decisions-v1.json` for exact DSH patch order, hashes and removal conditions.
 
-The current [source baseline](../../dsh/dsh-baseline-v1.json) is official DeepSeek Harness `0.2.0-rc.2`, composed with the ten isolated patches in the [seam registry](../../dsh/seam-decisions-v1.json). A `.myagents...` package-version suffix identifies the content-addressed patched artifact as a whole; it does not mean every packed DSH package has source changes. The installed pi-ai core is separately pinned and patched under `specs/pi-ai/`; it remains one adapter dependency, not another AgentLoop.
+The current [source baseline](../../dsh/dsh-baseline-v1.json) is official DeepSeek Harness `0.2.0-rc.2`, composed with the eleven isolated patches in the [seam registry](../../dsh/seam-decisions-v1.json). A `.myagents...` package-version suffix identifies the content-addressed patched artifact as a whole; it does not mean every packed DSH package has source changes. The installed pi-ai core is separately pinned and patched under `specs/pi-ai/`; it remains one adapter dependency, not another AgentLoop.
 
 ### 1.1 Relationships
 
@@ -37,7 +37,7 @@ The following rules keep that count distinct from adjacent inventories:
 
 1. Count each selected `Context.plugin(...)` installation once.
 2. Count the platform subprocess implementation once: all platforms use the stock `LocalSubprocessRuntime` mechanics through the thin `ProductSubprocessRuntime` policy Provider.
-3. Count `NativeRpcServer` after process lifecycle installation and `ProductSqliteSessionPersistence` after initialization installs the production persistence plane.
+3. Count `NativeRpcServer` after process lifecycle installation and `ProductJsonlSessionPersistence` after initialization installs the production persistence plane.
 4. Do not count model-visible tool definitions separately. Their owning plugins register them through the single DSH `ctx.tools` pipeline.
 5. Do not count MCP, Skill, Agent, Command, Hook or Host Tool descriptors as executable Cordis plugins. They are declarative components compiled inside one `ProductComponentService` generation.
 6. Do not count ordinary helper objects, Provider profiles, generated contracts, package dependencies or the DSH artifact package inventory as plugin instances.
@@ -119,7 +119,9 @@ Windows mounts official PowerShell instead of Bash. The same policy Provider del
 | # | Plugin | Responsibility | Source | Relationship | DSH patch impact |
 | ---: | --- | --- | --- | --- | --- |
 | 46 | `@myagents-dsh/rpc-server:NativeRpcServer` | Serve bidirectional stdio RPC and carry validated DSH/Product projections onto `runtime/event` | MyAgents | Replace the stock DSH SDK RPC server | No |
-| 47 | `@myagents-dsh/persistence-product:ProductSqliteSessionPersistence` | Persist the same DSH Session log and own fork/rewind/delete journals | MyAgents | Replace the stock persistence Provider | No; native V4 SessionHandle and public event registry; seam 004 remains public composition |
+| 47 | `@myagents-dsh/persistence-product:ProductJsonlSessionPersistence` | Coordinate product locators, fork/rewind/delete journals and checkpoints over official native logs | MyAgents | Extend the official JSONL persistence through public handles | Indirect: 0003 Product event validation; seam 004 remains public composition |
+
+Each used native generation mounts official `@deepseek-ai/dsh-session-persistence-jsonl` in its own Cordis context. Those scoped persistence instances own native handles, physical leases, buffers and codecs; they are not a fixed root-plugin count. The Product Provider supplies only the event validation policy and locator coordination.
 
 The composition also installs the official `SqliteSessionQueryEngine` as the session-search projection owner, using an in-memory index with bounded windows. It does not become a second durable conversation owner. General proxy installation is a generation-owned public DSH helper; per-request model transport remains under the existing Host credential scope. See [Web/network](../boundaries/web-and-network.md).
 
@@ -154,12 +156,13 @@ The allowlist remains partial. Current source and exact packed composition, rath
 
 ## 9. Current patch relationship
 
-The current ten-patch series is:
+The current eleven-patch series is:
 
 | Patch | Protected semantic | Installed plugin surfaces |
 | --- | --- | --- |
 | 0001 | Wake an existing pending Inbox identity without reinsertion | `AgentLoop`, Agent public API; consumed by `SdkOperationService` and by `SubagentRuntime` through patch 0005, with native child authority |
 | 0002 | Transform authoritative tool input before assistant/tool commit | `AgentLoop`, Agent/scope events; consumed by `ProductHookRuntime` |
+| 0003 | Admit exact required Product events during native JSONL reads | Official JSONL protected validation hook; native codec, leases, buffering and recovery remain unchanged |
 | 0004 | Guard Session and Agent publication before visibility | `SessionStore`, `AgentRegistry`; consumed by `ProductSessionService` |
 | 0005 | Public continuable child lifecycle seams | `SubagentRuntime`; consumed by native child composition |
 | 0007 | Capacity-safe request estimation and compaction | `TokenMeter`, `BasicCompactionEngine` and compaction contracts |
@@ -169,7 +172,7 @@ The current ten-patch series is:
 | 0011 | Compose official file executors behind Product policy | `tool-fs` and `tool-fs-search`; consumed by `CanonicalFileTools` |
 | 0012 | Register literal Runtime context without prompt interpolation | `SystemPrompt`; consumed by the Product Workspace context contributor |
 
-Patches 0003 and 0006 remain retired: public native event recognition and DeepSeek stream identity supply those semantics. MyAgents owns the native SessionHandle SQLite Provider and mutation journals. Patch 0007 likewise strengthens the official compaction engine; MyAgents does not install a second compaction plugin.
+Patch 0006 remains retired: native DeepSeek stream identity supplies that semantic. Patch 0003 is reduced to the missing Product event validation hook in official JSONL; it does not implement storage. MyAgents owns only product locators, mutation journals and checkpoints. Native conversation event bytes belong to official JSONL. Patch 0007 likewise strengthens the official compaction engine; MyAgents does not install a second compaction plugin.
 
 ## 10. Management and change boundary
 

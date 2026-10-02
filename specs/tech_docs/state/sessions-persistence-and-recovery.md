@@ -38,6 +38,15 @@ and default checksummed `.jsonl.zstd` encoding. Product metadata at
 from headers. Native decoding normalizes omitted delegation depth to zero, and locator headers
 use that same canonical value. No old SQLite Session log or development schema is read or migrated.
 
+SQLite is a Product implementation choice, not a native DSH protocol requirement. It uses Node's
+built-in SQLite without another service. A rewind's final transaction atomically archives the source,
+activates the prepared native generation, switches its locator, tombstones excluded children and
+commits the receipt. Checkpoint preimages and their records are committed together. Native JSONL and
+Workspace writes remain outside that transaction and use explicit prepare/commit recovery; SQLite
+does not make cross-file side effects atomic. Replacing this store with separate JSON files would
+require an equivalent durable transaction mechanism. An upstream implementation of these missing
+Product semantics is the removal condition, rather than retaining a parallel implementation.
+
 `storage-contract.ts` composes the official `validateStoredEvents` with the exact Product
 required-event registry and each Product owner's payload validator. Known Product events are
 validated even when marked ignorable. Unknown required events and retired native shapes refuse;

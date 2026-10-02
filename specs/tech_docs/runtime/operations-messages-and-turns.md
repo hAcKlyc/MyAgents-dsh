@@ -2,7 +2,7 @@
 type: technical-architecture
 status: implemented
 module: operations-messages-and-turns
-updated: 2026-09-12
+updated: 2026-10-02
 ---
 
 # Operations, messages and turns
@@ -79,6 +79,12 @@ requires equality with the published primary. This avoids a circular publication
 preserving fail-closed identity checks at every non-lifecycle entry.
 
 ## 6. Resume and recovery
+
+Forked logs retain successful source terminals whose assistant identities were derived under the
+source Session. The operation fold validates the exact fork-receipt chain backwards from the
+current Session, then derives each segment's terminals under that segment's identity. Each settled
+fork receipt clears inherited operation idempotency before the target accepts work. This also
+handles nested forks; a forged source or target still fails exact terminal or lineage validation.
 
 On resume the fold validates Product events against exact DSH Inbox splice/claim, turn, request-context, assistant and usage facts. Incomplete but recoverable work is reconstructed under the exact primary generation. When an accepted DSH message remains pending, the Runtime appends an explicit recovery-wake fact and calls the accepted patched `Agent.wakePending(MessageId)` seam. A mismatched Agent, missing birth authority or contradictory fold/terminal first fences `SdkOperationService`; if encountered while binding/resuming the primary Session it yields `recovery_required` rather than fabricating completion.
 

@@ -191,7 +191,7 @@ const positiveTurn = (value: unknown, description: string): number => {
   return value as number;
 };
 
-const validateForkReceipt = (value: unknown, runtimeSessionId: string): void => {
+const validateForkReceipt = (value: unknown, runtimeSessionId: string): string => {
   const event = exactOwnDataObject(value, [
     "clientMutationId",
     "sourceGenerationId",
@@ -210,6 +210,7 @@ const validateForkReceipt = (value: unknown, runtimeSessionId: string): void => 
     || event.sourceRuntimeSessionId === runtimeSessionId) {
     return fail("fork receipt differs from the folded Session identity");
   }
+  return event.sourceRuntimeSessionId as string;
 };
 
 const validateOperationPricing = (value: unknown): OperationPricing => {
@@ -619,6 +620,18 @@ const foldProductOperationsValue = (
   ownsRootContextMessage: RootContextMessageOwnership,
 ): ProductOperationFold => {
   boundedIdentifier(runtimeSessionId, "operation fold runtime Session identity");
+  // Inherited terminals were derived under their source Session identity.
+  // Walk the exact fork lineage backwards before validating each segment.
+  const forkTargets = new Map<number, string>();
+  let operationSessionId = runtimeSessionId;
+  for (let index = events.length - 1; index >= 0; index -= 1) {
+    const event = events[index];
+    if (event === undefined) return fail("operation fold encountered a sparse event sequence");
+    const eventType: string = event.type;
+    if (eventType !== "myagents/session/fork") continue;
+    forkTargets.set(index, operationSessionId);
+    operationSessionId = validateForkReceipt((event as unknown as { data: unknown }).data, operationSessionId);
+  }
   const operations = new Map<string, MutableOperation>();
   const messageOwners = new Map<string, string>();
   const dshTurnOwners = new Map<number, string>();
@@ -665,7 +678,9 @@ const foldProductOperationsValue = (
     if (event.seq !== index) return fail("operation fold requires contiguous Session sequence numbers");
     const runtimeType: string = event.type;
     if (runtimeType === "myagents/session/fork") {
-      validateForkReceipt((event as unknown as { data: unknown }).data, runtimeSessionId);
+      const target = forkTargets.get(index);
+      if (target === undefined) return fail("fork receipt has no validated Session lineage");
+      validateForkReceipt((event as unknown as { data: unknown }).data, target);
       if (openTurn !== undefined || inbox["next-step"].length !== 0
         || inbox["next-turn"].length !== 0
         || removedClaimCandidates.size !== 0 || removedDiscardCandidates.size !== 0
@@ -675,6 +690,7 @@ const foldProductOperationsValue = (
       operations.clear();
       messageOwners.clear();
       dshTurnOwners.clear();
+      operationSessionId = target;
       continue;
     }
 
@@ -882,7 +898,7 @@ const foldProductOperationsValue = (
         let derived;
         try {
           derived = deriveOperationTerminal(
-            runtimeSessionId,
+            operationSessionId,
             events.slice(0, index),
             immutableOperation(operation),
           );
