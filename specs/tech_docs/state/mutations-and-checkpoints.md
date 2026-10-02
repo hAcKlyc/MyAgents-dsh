@@ -58,6 +58,12 @@ new active generation containing the stable DSH prefix plus one durable
 `myagents/session/rewind` receipt; the old generation becomes archived. Direct children and
 descendants born after the boundary are tombstoned/archived and can be restored by rollback.
 
+When a selected prefix ends inside inherited history, it excludes the generation's inherited
+end-seed marker. Rewind uses official `buildForkSeed` to complete that native seed before appending
+the Product receipt; the inherited cut and selected stable-prefix postcondition remain exact.
+Prefixes already containing their native marker are retained unchanged. Cold JSONL decoding is
+part of the regression, so a hash-valid but structurally invalid candidate cannot pass acceptance.
+
 Official JSONL create/append/flush completes the candidate before the locator transaction.
 The journal's timestamp makes candidate bytes deterministic across retries. A crash before locator
 publication leaves the source authoritative; retry validates the candidate and completes the same

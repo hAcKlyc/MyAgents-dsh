@@ -767,6 +767,32 @@ describe("ProductJsonlSessionPersistence", () => {
       targetRuntimeSessionId: "early-inherited-fork-target", targetWorkspaceIdentity: "multi-turn-workspace",
     });
     expect((await target.commitFork(nested.token, "early-inherited-fork")).phase).toBe("committed");
+    const beforeRewind = await inspectFixtureSession(target, SessionId(fork.targetRuntimeSessionId));
+    const rewind = await target.prepareRewind({
+      clientMutationId: "early-inherited-rewind", runtimeSessionId: fork.targetRuntimeSessionId,
+      sourceTranscriptPostcondition: productTranscriptPostcondition(beforeRewind.events),
+      targetStableBoundaryId: earlier,
+      targetTranscriptPostcondition: productTranscriptPostcondition(beforeRewind.events.slice(0, 2)),
+    });
+    const committed = await target.commitRewind(rewind.token, "early-inherited-rewind");
+    expect(committed.receipt).toMatchObject({ durableSequence: 4, rewindEventSequence: 3 });
+    await targetContext.fiber.dispose();
+    const coldContext = await mount(targetHome);
+    const cold = coldContext.sessionPersistence;
+    if (!(cold instanceof ProductJsonlSessionPersistence)) throw new Error("cold persistence is unavailable");
+    // This goes through the official JSONL decoder, which rejects a seeded log
+    // without its inherited end-seed marker even if its Product hash is valid.
+    const restored = await inspectFixtureSession(cold, SessionId(fork.targetRuntimeSessionId));
+    expect(restored.inheritedEventCount).toBe(2);
+    expect(restored.events.map(({ type }) => type)).toEqual([
+      "turn/start", "turn/end", "session/end-seed", "myagents/session/rewind",
+    ]);
+    expect(restored.events[2]).toMatchObject({ seq: 2, data: { inherited: true } });
+    expect(productTranscriptPostcondition(restored.events.slice(0, 2))).toBe(rewind.targetTranscriptPostcondition);
+    expect(await cold.commitRewind(rewind.token, "early-inherited-rewind")).toEqual(committed);
+    const coldRead = await cold.readSession({ maxResultBytes: 65_536, runtimeGeneration: "cold-rewound-target", runtimeSessionId: fork.targetRuntimeSessionId });
+    expect(coldRead.durableHead.sequence).toBe(4);
+    expect(coldRead.mutationBoundaries?.map(({ sequence, turn }) => ({ sequence, turn }))).toEqual([{ sequence: 2, turn: 1 }]);
   });
 
   it("stages, commits, retries, and aborts an independent stable-prefix fork", async () => {

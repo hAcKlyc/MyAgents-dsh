@@ -1779,7 +1779,14 @@ export class ProductMutationStore implements ProductCheckpointStore,
       const targetRevision = active.sessionRevision + 1;
       const targetBoundaryId = `b_${randomUUID()}`;
       const committedAt = rowInteger(asRecord(database.prepare("SELECT created_at FROM mutation_journals WHERE token = ?").get(token), "rewind creation time"), "created_at", "rewind creation time");
-      const rewindEvent = createProductRewindReceiptEvent(boundary.seqExclusive, committedAt, {
+      const inheritedEventCount = Math.min(active.inheritedEventCount, boundary.seqExclusive);
+      const prefix = sourceEvents.slice(0, boundary.seqExclusive);
+      // A boundary inside inherited history excludes this generation's native
+      // end-seed marker. Let DSH construct the valid seed before adding our receipt.
+      const seed = this.#decodeHeader(active).isSeeded && boundary.seqExclusive <= active.inheritedEventCount
+        ? buildForkSeed(prefix, SessionSeq(boundary.seqExclusive - 1))
+        : prefix;
+      const rewindEvent = createProductRewindReceiptEvent(seed.length, committedAt, {
         boundaryId: boundary.boundaryId,
         clientMutationId: record.clientMutationId,
         sourceGenerationId: record.sourceGenerationId,
@@ -1788,12 +1795,12 @@ export class ProductMutationStore implements ProductCheckpointStore,
         targetTranscriptPostcondition: record.targetTranscriptPostcondition,
         token,
       });
-      const rewindEnvelopeJson = snapshotCanonicalJson(rewindEvent, "rewind receipt event");
-      const targetHeadHash = chainHash(boundary.prefixHash, rewindEnvelopeJson);
-      const targetEventCount = boundary.seqExclusive + 1;
+      const targetEvents = [...seed, rewindEvent];
+      const targetHeadHash = this.#eventHead(targetEvents);
+      const targetEventCount = targetEvents.length;
       const receipt = Object.freeze({
         durableSequence: targetEventCount,
-        rewindEventSequence: boundary.seqExclusive,
+        rewindEventSequence: rewindEvent.seq,
         sourceGenerationId: record.sourceGenerationId,
         stableBoundaryId: targetBoundaryId,
         targetGenerationId,
@@ -1808,8 +1815,7 @@ export class ProductMutationStore implements ProductCheckpointStore,
         if (Number(outcome.changes) !== 1) throw new Error("rewind commit lost its prepared journal");
       }
       await this.nativeLogs.seed(targetGenerationId, this.#decodeHeader(active),
-        SessionLogOffset(Math.min(active.inheritedEventCount, boundary.seqExclusive)),
-        [...sourceEvents.slice(0, boundary.seqExclusive), rewindEvent]);
+        SessionLogOffset(inheritedEventCount), targetEvents);
       database.exec("BEGIN IMMEDIATE");
       try {
         database.prepare(`
@@ -1825,7 +1831,7 @@ export class ProductMutationStore implements ProductCheckpointStore,
           targetEventCount,
           targetHeadHash,
           committedAt,
-          Math.min(active.inheritedEventCount, boundary.seqExclusive),
+          inheritedEventCount,
         );
         const sourceArchived = database.prepare(`
           UPDATE session_generations SET state = 'archived'
