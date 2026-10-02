@@ -1,4 +1,4 @@
-// U15-A13: real SQLite, Session, AgentLoop, tools and cold-read projection.
+// U15-A13: native JSONL, product coordination, Session, AgentLoop, tools and cold reads.
 // Only model transport is synthetic; no prompts or requests enter the report.
 import assert from "node:assert/strict";
 import { mkdir, readFile, stat } from "node:fs/promises";
