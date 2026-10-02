@@ -109,6 +109,7 @@ const mountNativeLoop = async (ctx: Context): Promise<void> => {
 const nativePlatform = () => selectPlatformAdapter(resolveRuntimePlatformTarget(process.platform, process.arch));
 
 const roots: string[] = [];
+const contexts = new Set<Context>();
 
 const makeRuntimeHome = async (): Promise<string> => {
   const root = await realpath(await mkdtemp(join(tmpdir(), "myagents-product-persistence-")));
@@ -155,6 +156,8 @@ const mount = async (runtimeHome: string): Promise<Context> => {
       platform,
       runtimeHome,
     });
+    contexts.add(context);
+    context.effect(() => () => { contexts.delete(context); });
     return context;
   } catch (error) {
     await context.fiber.dispose();
@@ -168,6 +171,9 @@ const scalar = (database: DatabaseSync, sql: string, ...params: SQLInputValue[])
 };
 
 afterEach(async () => {
+  // The fixture owns every mounted context, including cold readers and fork
+  // target stores. Windows cannot unlink their live SQLite/JSONL handles.
+  await Promise.all([...contexts].map((context) => context.fiber.dispose()));
   await Promise.all(roots.splice(0).map((root) => rm(root, { force: true, recursive: true })));
 });
 
