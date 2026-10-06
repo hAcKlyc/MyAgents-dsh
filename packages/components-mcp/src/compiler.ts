@@ -530,6 +530,7 @@ export const createMcpComponentCompiler = (config: McpComponentCompilerConfig): 
       }
       const component = componentValue;
       const deadline = prepareDeadline(signal);
+      let stage = "authority";
       try {
         deadline.signal.throwIfAborted();
         authority.assertCurrent();
@@ -537,11 +538,13 @@ export const createMcpComponentCompiler = (config: McpComponentCompilerConfig): 
         let binding: HostMcpCredentialBinding | undefined;
         let material: Readonly<Record<string, string>> = Object.freeze({});
         if (identity !== undefined) {
+          stage = "credential-preflight";
           if (credentials === undefined) {
             throw new TypeError("credential-bearing MCP components require HostCredentialProvider");
           }
           binding = await Promise.resolve<HostMcpCredentialBinding>(credentials.preflightMcp(identity, credentialAuthority(authority, deadline.signal)));
           authority.assertCurrent();
+          stage = "credential-material";
           material = normalizeMaterial(await Promise.resolve<Readonly<Record<string, string>>>(credentials.resolveMcpConnection(
               binding,
               `${authority.componentGenerationId}:${component.id}:prepare`,
@@ -550,6 +553,7 @@ export const createMcpComponentCompiler = (config: McpComponentCompilerConfig): 
           authority.assertCurrent();
         }
         const redactions = materialRedactions(material);
+        stage = "launch-profile";
         const launchProfileRef = component.descriptor.transport === "stdio"
           ? component.descriptor.launchProfileRef
           : undefined;
@@ -560,6 +564,7 @@ export const createMcpComponentCompiler = (config: McpComponentCompilerConfig): 
           throw new TypeError("MCP stdio launch profile is missing or ambiguous");
         }
         const launchProfile = launchProfiles[0];
+        stage = "connection";
         const connection = normalizeConnection(await Promise.resolve<McpConnection>(connectMcp(Object.freeze({
           descriptor: component.descriptor,
           ...(launchProfile === undefined ? {} : { launchProfile }),
@@ -573,8 +578,12 @@ export const createMcpComponentCompiler = (config: McpComponentCompilerConfig): 
       try {
         signal.throwIfAborted();
         authority.assertCurrent();
-        const listed = validateListedTools(await Promise.resolve(connection.listTools(deadline.signal)));
+        stage = "tool-list";
+        const rawTools = await Promise.resolve(connection.listTools(deadline.signal));
+        stage = "tool-validation";
+        const listed = validateListedTools(rawTools);
         authority.assertCurrent();
+        stage = "tool-projection";
         const contributions: PreparedContribution[] = listed.map((tool) => {
           const name = publicToolName(component.id, tool.name);
           const definition: ToolDefinition = Object.freeze({
@@ -671,6 +680,16 @@ export const createMcpComponentCompiler = (config: McpComponentCompilerConfig): 
         }
         throw error;
       }
+      } catch (error) {
+        // Remote errors may echo credentials, headers or child stderr. Log the
+        // compiler-owned stage rather than serializing untrusted exception text.
+        if (!signal.aborted) {
+          console.warn("[dsh:mcp-prepare]", JSON.stringify({
+            componentId: component.id, stage,
+            reason: error instanceof TypeError ? "validation_failed" : "operation_failed",
+          }));
+        }
+        throw error;
       } finally {
         deadline.close();
       }

@@ -172,6 +172,62 @@ describe("transactional product component generations", () => {
     expect(() => validateExtensionSnapshot(proxy)).toThrow();
   });
 
+  it("scopes component identities and Skill references by kind while rejecting same-kind duplicates", () => {
+    const skill = skillFixture("review");
+    const command: ExtensionComponent = {
+      id: "review", enabled: true, kind: "command",
+      descriptor: { description: "Review command", resourceId: "review-template" },
+    };
+    const content = "Review the fixture.";
+    const agent: ExtensionComponent = {
+      ...agentComponent("review"), kind: "agent",
+      descriptor: { description: "Review agent", prompt: "Review", skills: ["review"] },
+    };
+    const components: ExtensionComponent[] = [skill.component, command, agent, {
+      id: "review", enabled: true, kind: "mcp",
+      descriptor: { transport: "stdio", launchProfileRef: "review-launch" },
+    }];
+    const valid = snapshot("cross-kind-v1", components, [skill.resource, {
+      id: "review-template", kind: "command_template", mediaType: "text/markdown",
+      content, sha256: createHash("sha256").update(content).digest("hex"),
+    }]);
+    expect(validateExtensionSnapshot(valid)).toEqual(valid);
+    expect(() => validateExtensionSnapshot(snapshot("same-kind-v1", [agent, structuredClone(agent)])))
+      .toThrow(/component IDs must be unique/u);
+    const commandResource = valid.resources[1];
+    if (commandResource === undefined) throw new Error("command fixture resource is missing");
+    expect(() => validateExtensionSnapshot(snapshot("wrong-kind-reference-v1", [command, agent], [commandResource])))
+      .toThrow(/absent declarative Skill/u);
+  });
+
+  it("preserves each kind's source order and catalog when different kinds share names", async () => {
+    const effects: string[] = [];
+    const compiler = (kind: "agent" | "skill"): ComponentCompiler => ({
+      kind,
+      prepare: (component) => Promise.resolve({
+        status: "ready", dispose: () => Promise.resolve(),
+        contributions: [{ componentId: component.id, kind, name: component.id,
+          catalog: kind === "agent" ? { kind: "agent", name: component.id }
+            : { kind: "skill", value: { name: component.id, description: "Fixture", disableModelInvocation: false } },
+          install: () => { effects.push(`${kind}:${component.id}`); return () => { effects.push(`remove:${kind}:${component.id}`); }; },
+        }],
+      }),
+    });
+    const first = skillFixture("first");
+    const second = skillFixture("second");
+    const initial = snapshot("cross-kind-install-v1", [agentComponent("first"), agentComponent("second"), second.component, first.component], [first.resource, second.resource]);
+    const harness = await mount({ initial, compilers: [compiler("skill"), compiler("agent")] });
+    expect(harness.service.status()).toMatchObject({ state: "applied", components: [
+      { key: "agent:first", state: "ready" }, { key: "agent:second", state: "ready" },
+      { key: "skill:second", state: "ready" }, { key: "skill:first", state: "ready" },
+    ] });
+    expect(effects).toEqual(["skill:second", "skill:first", "agent:first", "agent:second"]);
+    expect(harness.service.catalog()).toMatchObject({ agents: ["first", "second"], skills: [{ name: "first" }, { name: "second" }] });
+    await harness.controller.replace(snapshot("cross-kind-remove-v1", [first.component], [first.resource]));
+    expect(harness.service.catalog()).toMatchObject({ agents: [], skills: [{ name: "first" }] });
+    expect(harness.service.catalog().tools).toContain("read");
+  });
+
   it("prepares invisibly and publishes one deterministic catalog only at the quiescent boundary", async () => {
     const effects: string[] = [];
     let allowCommit = true;

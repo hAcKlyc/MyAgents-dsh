@@ -240,7 +240,7 @@ describe("declarative Skill, Agent, and Command component compilers", () => {
     )).toThrow(/must enable SKILL\.md/u);
   });
 
-  it("compiles DSH command definitions and performs only bounded positional template expansion", async () => {
+  it.each(["", " \t\n", "Review a revision range"])("compiles command description %j and bounded positional templates", async (description) => {
     let observed: DynamicCommandRegistration | undefined;
     const compiler = createCommandComponentCompiler({
       controller: Object.freeze({
@@ -255,7 +255,7 @@ describe("declarative Skill, Agent, and Command component compilers", () => {
       descriptor: Object.freeze({
         aliases: ["rr"],
         argumentHint: "<base> <head>",
-        description: "Review a revision range",
+        description,
         resourceId: "review-range-template",
       }),
       enabled: true,
@@ -274,14 +274,14 @@ describe("declarative Skill, Agent, and Command component compilers", () => {
       aliases: ["rr"],
       argumentHint: "<base> <head>",
       componentId: "review-range",
-      description: "Review a revision range",
+      description: description.trim() ? description : "review-range",
       generation: { digest: "a".repeat(64), revision: "extension-v1" },
       name: "review-range",
       template: content,
     });
     expect(plan.contributions[0]?.catalog).toMatchObject({
       kind: "command",
-      value: { name: "review-range", aliases: ["rr"], source: "command" },
+      value: { name: "review-range", description: description.trim() ? description : "review-range", aliases: ["rr"], source: "command" },
     });
     expect(expandCommandTemplate(content, ["main", "feature"])).toBe(
       "Review main against feature. Context: main feature",
@@ -290,7 +290,7 @@ describe("declarative Skill, Agent, and Command component compilers", () => {
     expect(() => expandCommandTemplate("x".repeat(1_000_001), [])).toThrow(/exceeds/u);
   });
 
-  it("registers command aliases in the public DSH runtime and admits one normal product operation", async () => {
+  it.each(["", " \t\n", "Review a revision range"])("registers command aliases with description %j and admits one normal product operation", async (description) => {
     const root = new Context();
     let controller: ProductDynamicCommandController | undefined;
     const starts: unknown[] = [];
@@ -332,7 +332,7 @@ describe("declarative Skill, Agent, and Command component compilers", () => {
         aliases: Object.freeze(["rr"]),
         argumentHint: "<base> <head>",
         componentId: "review-range",
-        description: "Review a revision range",
+        description,
         generation: Object.freeze({ digest: "a".repeat(64), revision: "extension-v1" }),
         name: "review-range",
         template: "Review $1 against $2. Context: $ARGUMENTS",
@@ -340,6 +340,7 @@ describe("declarative Skill, Agent, and Command component compilers", () => {
       expect(root.commands.list(agent)).toEqual([]);
       const unpublish = prepared.install();
       expect(root.commands.list(agent).map(({ name }) => name)).toEqual(["review-range", "rr"]);
+      expect(root.commands.list(agent).map(({ description: value }) => value)).toEqual([description.trim() ? description : "review-range", description.trim() ? description : "review-range"]);
       const execution = await root.commands.execute(
         agent,
         "/rr 'main branch' feature",

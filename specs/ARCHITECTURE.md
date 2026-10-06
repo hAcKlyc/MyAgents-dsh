@@ -90,6 +90,8 @@ The target architecture makes MyAgents and the standalone SDK two Hosts of the s
 
 The Reference Web Host is a third Host of the same contract. It may expose an ephemeral loopback-only browser carrier, but the carrier terminates in the Host process: the Runtime remains an unchanged stdio child with one primary root Session. Multiple browser-visible Sessions map to separate Runtime processes while active and to Host-owned routing metadata while cold.
 
+Declarative component identities are scoped by kind and public id; names shared by different kinds do not reject an entire Runtime generation.
+
 The MyAgents Host separates shared extension declarations from Runtime-specific Skill admission; Runtime retains execution authority and rejects unsupported execution-context metadata per component. This source behavior and the remaining UI/generation work are recorded in [Declarative components](./tech_docs/boundaries/declarative-components.md).
 
 ## 4. Layer model

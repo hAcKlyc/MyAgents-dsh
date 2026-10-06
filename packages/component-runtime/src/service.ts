@@ -652,11 +652,11 @@ export class ProductComponentService extends Service {
         }
         plans.push(plan);
       }
-      const componentOrder = new Map(snapshot.components.map((component, index) => [component.id, index]));
+      const componentOrder = new Map(snapshot.components.map((component, index) => [`${component.kind}:${component.id}`, index]));
       const contributions = plans.flatMap(({ contributions: values }) => values).sort((left, right) =>
         COMPONENT_KIND_RANK[left.kind] - COMPONENT_KIND_RANK[right.kind]
-        || (componentOrder.get(left.componentId) ?? Number.MAX_SAFE_INTEGER)
-          - (componentOrder.get(right.componentId) ?? Number.MAX_SAFE_INTEGER)
+        || (componentOrder.get(`${left.kind}:${left.componentId}`) ?? Number.MAX_SAFE_INTEGER)
+          - (componentOrder.get(`${right.kind}:${right.componentId}`) ?? Number.MAX_SAFE_INTEGER)
         || compareCodePoints(left.componentId, right.componentId)
         || compareCodePoints(left.name, right.name));
       const admittedContributions: PreparedContribution[] = [];
