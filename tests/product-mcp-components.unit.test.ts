@@ -156,6 +156,35 @@ const snapshot = (revision: string, includeMcp = true): MethodParams<"extension/
 };
 
 describe("generation-owned MCP component compiler", () => {
+  it.each(["connection", "tool-list", "tool-validation"])("reports the %s preparation stage without exposing connection errors", async (stage) => {
+    const warning = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    const root = new Context();
+    contexts.push(root);
+    const close = vi.fn(() => Promise.resolve());
+    const secret = "secret-canary";
+    const connection: McpConnection = {
+      close, callTool: () => Promise.resolve({ content: [] }),
+      listTools: () => stage === "tool-list" ? Promise.reject(new Error(`Bearer ${secret}`))
+        : Promise.resolve([{ name: "invalid name", inputSchema: { type: "object" }, description: secret }]),
+    };
+    const compiler = createMcpComponentCompiler({ context: root, connectionFactory: {
+      connect: () => stage === "connection" ? Promise.reject(new Error(`password=${secret}`)) : Promise.resolve(connection),
+    } });
+    const source = snapshot(`diagnostic-${stage}`);
+    const [component] = source.components;
+    if (component === undefined) throw new Error("MCP fixture component is missing");
+    const signal = new AbortController().signal;
+    await expect(compiler.prepare(component, source, signal, {
+      componentId: component.id, componentGenerationId: `${source.revision}:${source.digest}`, signal,
+      assertCurrent: () => undefined, assertToolExecution: () => undefined, authorizeToolExecution: () => Promise.resolve(),
+    })).rejects.toThrow();
+    expect(warning).toHaveBeenCalledWith("[dsh:mcp-prepare]", JSON.stringify({
+      componentId: "fixture", stage, reason: stage === "tool-validation" ? "validation_failed" : "operation_failed",
+    }));
+    expect(JSON.stringify(warning.mock.calls)).not.toContain(secret);
+    expect(close).toHaveBeenCalledTimes(stage === "connection" ? 0 : 1);
+  });
+
   it("runs approved stdio profiles through the managed DSH subprocess Provider", async () => {
     const root = new Context();
     contexts.push(root);

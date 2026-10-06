@@ -35,7 +35,7 @@ These descriptors are not Cordis plugins. Compilers are trusted code installed b
 ## 4. Generation lifecycle and isolation
 
 ```text
-validate revision, digest, unique ids and resource references
+validate revision, digest, unique (kind, id) identities and resource references
   -> prepare every component without publishing catalog contributions
      (MCP prepare may open a connection/process and list tools)
   -> isolate unsupported/failed/colliding component when clean disposal is proven
@@ -46,13 +46,14 @@ validate revision, digest, unique ids and resource references
   -> drain and dispose retired generation resources
 ```
 
+Component identity is `(kind, id)`: a Skill, Command, Agent and MCP server may share a public name. Agent Skill references resolve only in the Skill namespace, and source order is retained within each kind. Resource ids remain globally unique because they share one reference table.
+
 A structurally valid component is an independent compatibility unit. Missing compiler, catalog
 collision, reference resolution during a compiler prepare, authentication/readiness failure or a
 reversible prepare/install failure can degrade only that component while the remaining generation
 becomes effective. The protocol currently exposes only desired/effective revision, generation state
 and `{key, state, reason}` per component. It has no phase, timestamp, snapshot digest or durable
-component receipt, and caught compiler exceptions are reduced to bounded generic reasons rather
-than preserved as a detailed Host log. Although the internal plan type supports `needs_auth`, the
+component receipt, and caught compiler exceptions are reduced to bounded generic reasons. The MCP compiler additionally records its component id, compiler-owned preparation stage and failure category through Runtime stderr. It never logs raw remote exception text, connection material, headers or child stderr. Host cancellation remains cancellation and does not generate a preparation warning. Although the internal plan type supports `needs_auth`, the
 five official compilers currently produce `ready` or throw; unavailable MCP credentials therefore
 project as `degraded/mcp_prepare_failed`, not `needs_auth`.
 
@@ -87,7 +88,7 @@ operation-frozen allowed read root, not only the Workspace root. The snapshot ca
 Skill source, not a recursive directory serialization; referenced resources are opened on demand
 through ordinary governed tools.
 
-The MyAgents Host owns shared Skill/Command/Agent declaration types and discovery under `runtimes/product-extensions/`; Managed Codex applies its own Skill admission after discovery, while DSH receives complete source identities and metadata. DSH preserves authored `allowed-tools` guidance without creating permission grants, honors invocation flags, and isolates unsupported `context`/`agent` semantics per Skill. Runtime dynamic Skill preparation independently rejects unsupported execution-context metadata. Nonconforming command names retain their original spelling and receive a precise rename instruction; no implicit lowercase merge is performed.
+The MyAgents Host owns shared Skill/Command/Agent declaration types and discovery under `runtimes/product-extensions/`; Managed Codex applies its own Skill admission after discovery, while DSH receives complete source identities and metadata. DSH preserves authored `allowed-tools` guidance without creating permission grants, honors invocation flags, and isolates unsupported `context`/`agent` semantics per Skill. Runtime dynamic Skill preparation independently rejects unsupported execution-context metadata. Nonconforming command names retain their original spelling and receive a precise rename instruction; no implicit lowercase merge is performed. A missing/blank command description is normalized to the primary command name at the native registration adapter; the same normalized value enters the catalog and aliases. This preserves optional Host frontmatter without changing names or template execution.
 
 ## 6. MCP boundary
 

@@ -161,6 +161,7 @@ const normalizeRegistration = (value: DynamicCommandRegistration): DynamicComman
   }
   const aliases = Object.freeze(registration.aliases.map((alias) => commandName(alias, "Command alias")));
   const name = commandName(registration.name, "Command name");
+  const description = boundedText(registration.description, 4_096, "Command description");
   if (new Set([name, ...aliases]).size !== aliases.length + 1) {
     throw new TypeError("Command names and aliases must be unique");
   }
@@ -171,7 +172,7 @@ const normalizeRegistration = (value: DynamicCommandRegistration): DynamicComman
     aliases,
     ...(argumentHint === undefined ? {} : { argumentHint }),
     componentId: commandName(registration.componentId, "Command component identity"),
-    description: boundedText(registration.description, 4_096, "Command description"),
+    description: description.trim() ? description : name,
     generation: generationIdentity(registration.generation),
     name,
     template: boundedText(registration.template, MAX_COMMAND_INPUT_BYTES, "Command template"),
@@ -479,7 +480,7 @@ export const createCommandComponentCompiler = (
       if (resource?.kind !== "command_template") {
         throw new TypeError("Command component lacks its exact declarative template");
       }
-      const registration: DynamicCommandRegistration = Object.freeze({
+      const registration: DynamicCommandRegistration = normalizeRegistration({
         aliases: Object.freeze([...(component.descriptor.aliases ?? [])]),
         ...(component.descriptor.argumentHint === undefined
           ? {}

@@ -89,10 +89,10 @@ export const validateExtensionSnapshot = (value: unknown): ExtensionSnapshot => 
   }
   const componentIds = new Set<string>();
   for (const component of snapshot.components) {
-    if (componentIds.has(component.id)) {
+    if (componentIds.has(`${component.kind}:${component.id}`)) {
       throw new ProtocolError("extension_duplicate_component", "extension component IDs must be unique");
     }
-    componentIds.add(component.id);
+    componentIds.add(`${component.kind}:${component.id}`);
   }
   const resourceIds = new Set<string>();
   for (const resource of snapshot.resources) {
@@ -108,7 +108,9 @@ export const validateExtensionSnapshot = (value: unknown): ExtensionSnapshot => 
     }
   }
   const resources = new Map(snapshot.resources.map((resource) => [resource.id, resource] as const));
-  const componentsById = new Map(snapshot.components.map((component) => [component.id, component] as const));
+  const skillsById = new Map(snapshot.components
+    .filter((component) => component.kind === "skill")
+    .map((component) => [component.id, component] as const));
   for (const component of snapshot.components) {
     if (component.kind === "command" || component.kind === "skill") {
       const resource = resources.get(component.descriptor.resourceId);
@@ -122,7 +124,7 @@ export const validateExtensionSnapshot = (value: unknown): ExtensionSnapshot => 
     }
     if (component.kind === "agent") {
       for (const skillId of component.descriptor.skills ?? []) {
-        if (componentsById.get(skillId)?.kind !== "skill") {
+        if (!skillsById.has(skillId)) {
           throw new ProtocolError(
             "extension_component_reference_missing",
             "agent component references an absent declarative Skill component",
