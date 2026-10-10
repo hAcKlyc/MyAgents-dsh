@@ -22,7 +22,7 @@ This table records the current source boundaries. Exact artifact evidence and th
 | Surface | State | Exact current boundary |
 | --- | --- | --- |
 | DSH source distribution | Fixed official source plus required isolated patches | The [source baseline](./dsh/dsh-baseline-v1.json) pins DSH `0.2.0-rc.2` at `639ed015397290b3745d163aafe02ffee4aa3f84`; the [seam registry](./dsh/seam-decisions-v1.json) lists eleven ordered core patches. pi-ai is separately pinned and patched. |
-| Standalone Runtime and native RPC | Accepted protocol `6.0.0` | Native V4 durable Session events, explicit live assistant-stream boundaries and declared per-model system-prompt/tool-update capabilities. Exact vocabulary and shapes come from the generated contract. |
+| Standalone Runtime and native RPC | Source implements protocol `6.1.0`; artifact acceptance is tied to exact handoff bytes | Native V4 durable Session events, explicit live assistant-stream boundaries and declared per-model system-prompt/tool-update capabilities. Exact vocabulary and shapes come from the generated contract. |
 | Batch 3 integration handoff | Ingested by the MyAgents Host | The MyAgents `dsh-release.json` selects the Release version; build preparation derives an effective lock recording the exact installed Runtime, contracts and platform evidence. `dsh-lock.json` is the source-mode development fallback. [Release delivery](./tech_docs/assurance/verification-artifacts-and-handoff.md) packages accepted target handoffs under fixed asset names; publication requires all four target gates. |
 | Reference Web Host | Browser and Host implementation present; no current verified delivery pair | Its configured Runtime digest is stale against the generated protocol; current startup requires rebinding and fresh browser/native evidence. See [Reference Web Host](./tech_docs/hosts/reference-web-host.md). |
 | Standalone Agent SDK | Not started | Batch 2 target; no Agent SDK package exists in this repository yet. |
@@ -521,4 +521,4 @@ The early seam review identified authoritative PreToolUse input rewriting, exact
 - Native RPC uses negotiated semantic versions and a schema digest.
 - Product profiles and canonical tool contracts have independent revisions and digests.
 - Future Agent SDK compatibility is versioned by manifest, not inferred from package version alone.
-- The native contract currently identifies protocol `6.0.0` and history `dsh-session-events-v2`. It accepts that version only and does not emulate earlier protocols. Exact types and digests are generated from one contract source.
+- The native contract currently identifies protocol `6.1.0` and history `dsh-session-events-v2`. It accepts that version only and does not emulate earlier protocols. Exact types and digests are generated from one contract source.

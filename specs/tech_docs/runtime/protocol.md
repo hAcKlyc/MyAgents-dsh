@@ -2,7 +2,7 @@
 type: protocol-specification
 status: implemented
 module: runtime-protocol
-version: 6.0.0
+version: 6.1.0
 updated: 2026-10-02
 ---
 
@@ -12,7 +12,7 @@ updated: 2026-10-02
 
 This guide explains the intent and ownership of the native Host ↔ MyAgents-dsh contract. `packages/protocol/src/contract-source.ts` owns exact wire shapes; generated schemas, types, fixtures and metadata are its deterministic projections. This guide does not define a second schema or implementation status source.
 
-The accepted protocol `6.0.0` transports native V4
+The current source protocol `6.1.0` transports native V4
 Session history and separates live assistant observations from durable assistant messages.
 An `assistant_stream` start opens a generation/primary-Agent-scoped stream; text/reasoning deltas
 carry that stream identity and native frame position. The end names either an abandoned attempt
@@ -30,7 +30,7 @@ The model profile can explicitly declare native `in-history` system-prompt updat
 
 ### 1.1 Compatibility versioning
 
-The active source implements exactly `6.0.0`. Initialization accepts a Host range only when it
+The active source implements exactly `6.1.0`. Initialization accepts a Host range only when it
 contains this version; it does not emulate a predecessor. The changed native history and required
 stream identity fields require matching generated Host contracts. The TypeBox source, generated
 digests and executable tests own exact wire shapes; a version increment is not artifact acceptance.
@@ -59,6 +59,15 @@ The key words MUST, MUST NOT, SHOULD, SHOULD NOT, and MAY are normative.
 ## 3. Transport
 
 ### 3.1 Framing
+
+`extension/replace` accepts an inline snapshot or a `snapshotAttachment` JSON reference.
+Hosts use the attachment form for capability inventories that need not fit one frame.
+Before component admission, Runtime acquires a generation-fenced lease, reads at most
+the declared size (bounded to 20 MiB), checks exact bytes and SHA-256, validates the
+ordinary snapshot and its canonical digest, and releases the lease. The same existing
+component transaction then applies the resolved snapshot; partial catalogs are never
+published. Acquire/release may use a component scope before primary Session binding;
+attachment publication still requires Session authority.
 
 - Transport is newline-delimited JSON-RPC 2.0 over process stdin/stdout.
 - Each line contains exactly one UTF-8 JSON object and one trailing newline.

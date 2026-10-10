@@ -1,3 +1,4 @@
+import type { ExtensionSnapshot } from "@myagents-dsh/protocol";
 import { createHash } from "node:crypto";
 
 import {
@@ -142,9 +143,9 @@ const exactKeys = (
 export const compileReferenceWebComponents = (
   revision: string,
   components: readonly BrowserComponentDefinition[],
-): MethodParams<"extension/replace"> => {
-  const nativeComponents: MethodParams<"extension/replace">["components"][number][] = [];
-  const resources: MethodParams<"extension/replace">["resources"][number][] = [];
+): ExtensionSnapshot => {
+  const nativeComponents: ExtensionSnapshot["components"][number][] = [];
+  const resources: ExtensionSnapshot["resources"][number][] = [];
   for (const component of components) {
     const configuration = plainRecord(component.configuration, `${component.kind} component configuration`);
     exactKeys(configuration, component.kind === "skill" || component.kind === "command"
@@ -155,7 +156,7 @@ export const compileReferenceWebComponents = (
       kind: component.kind,
       enabled: component.enabled,
       descriptor,
-    } as MethodParams<"extension/replace">["components"][number]);
+    } as ExtensionSnapshot["components"][number]);
     if (component.kind === "skill" || component.kind === "command") {
       const resource = plainRecord(configuration.resource, `${component.kind} resource`);
       exactKeys(resource, ["content"], `${component.kind} resource`);
@@ -175,7 +176,7 @@ export const compileReferenceWebComponents = (
       });
     }
   }
-  const authority: Omit<MethodParams<"extension/replace">, "digest"> = {
+  const authority: Omit<ExtensionSnapshot, "digest"> = {
     formatVersion: 1,
     revision,
     components: nativeComponents,
@@ -189,10 +190,12 @@ export const compileReferenceWebComponents = (
       profiles: [],
     },
   };
-  return validateMethodParams("extension/replace", {
+  const snapshot = validateMethodParams("extension/replace", {
     ...authority,
     digest: extensionSnapshotDigest(authority),
   });
+  // This builder always constructs the inline representation.
+  return snapshot as ExtensionSnapshot;
 };
 
 const defaultNativeExtensions = compileReferenceWebComponents(
@@ -367,7 +370,7 @@ export type ReferenceWebComposition = Readonly<{
     paths: ReferenceWebRuntimePaths,
   ) => InitializeParams;
   buildBinding: (row: WebSessionCatalogRow, authority: RuntimeBindingAuthority) => RuntimeBinding;
-  buildExtensionSnapshot: (row: WebSessionCatalogRow) => MethodParams<"extension/replace">;
+  buildExtensionSnapshot: (row: WebSessionCatalogRow) => ExtensionSnapshot;
   applyStoredConfiguration: (
     row: WebSessionCatalogRow,
     client: Parameters<NativeBrowserCommandHandler>[1]["client"],

@@ -1,4 +1,5 @@
 import { installProductNetworkTransport, type ProductNetworkTransport } from "./network-transport.js";
+import { resolveExtensionSnapshot } from './extension-snapshot.js';
 import * as ToolBash from "@deepseek-ai/dsh-tool-bash";
 import * as ToolPwsh from "@deepseek-ai/dsh-tool-pwsh";
 import * as ToolJobs from "@deepseek-ai/dsh-tool-jobs";
@@ -916,7 +917,15 @@ export const claimNativeRpcLifecycleAuthority = (
     hostPorts,
     installPersistence: (runtimeHome, platformTarget) =>
       installProductPersistence(state, runtimeHome, platformTarget),
-    extensionReplace: (params, signal) => state.components.replace(params, signal),
+    extensionReplace: async (params, signal) => {
+      const environment = state.context.productSession.requireExecutionEnvironment();
+      const snapshot = await resolveExtensionSnapshot({ params, signal,
+        stagingRoot: environment.attachmentStagingRoot,
+        ports: state.context.hostPorts, controller: state.hostPorts,
+        io: requireLocalWorkspaceFileSystem(state.context.fs).createAttachmentIoAuthority(),
+      });
+      return state.components.replace(snapshot, signal);
+    },
     extensionStatus: () => state.context.productComponents.status(),
     extensionReload: async (signal) => {
       await state.components.reconcile(signal);

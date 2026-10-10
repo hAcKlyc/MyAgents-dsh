@@ -12,7 +12,7 @@ export { ToolCatalogSchema } from "./tool-catalog.js";
 export { RUNTIME_VERSION } from "./runtime-version.generated.js";
 export type { CanonicalToolName } from "../generated/canonical-tools.generated.js";
 
-export const PROTOCOL_VERSION = "6.0.0" as const;
+export const PROTOCOL_VERSION = "6.1.0" as const;
 export const DSH_ENGINE_VERSION = "0.2.0-rc.2.myagents.639ed0153972.56bce4eb7e07" as const;
 export const SESSION_FORMAT = "dsh-session-events-v2" as const;
 export const DEEPSEEK_WEB_SEARCH_ADAPTER_ID = "deepseek-official-native-web-search" as const;
@@ -1031,7 +1031,13 @@ export const RPC_METHODS = {
   "permission/rules/add": method("host_to_runtime", strictObject({ expectedRevision: revision, tool: identifier, permissionClass: identifier, target: Type.String({ minLength: 1, maxLength: 8_192 }) }), permissionRuleMutationResult),
   "permission/rules/revoke": method("host_to_runtime", strictObject({ expectedRevision: revision, ruleId: identifier }), permissionRuleMutationResult),
   "credential/reconcile": method("host_to_runtime", strictObject({ subject: Type.Literal("mcp"), serverId: identifier, extensionDigest: sha256, previousCredentialRevision: Type.Optional(revision), credentialRevision: revision, reason: Type.Union([Type.Literal("rotated"), Type.Literal("revoked"), Type.Literal("logged_out")]) }), Type.Union([strictObject({ state: Type.Literal("applied"), effectiveCredentialRevision: revision }), strictObject({ state: Type.Literal("restart_when_idle"), blockedNewCalls: Type.Literal(true) }), strictObject({ state: Type.Literal("already_effective"), effectiveCredentialRevision: revision }), strictObject({ state: Type.Literal("failed"), code: identifier, retryable: Type.Boolean() })])),
-  "extension/replace": method("host_to_runtime", extensionSnapshot, applyResult),
+  "extension/replace": method("host_to_runtime", Type.Union([
+    extensionSnapshot,
+    strictObject({ snapshotAttachment: strictObject({
+      attachmentId: identifier, mimeType: Type.Literal("application/json"),
+      sizeBytes: Type.Integer({ minimum: 1, maximum: 20 * 1_024 * 1_024 }), sha256,
+    }) }),
+  ]), applyResult),
   "extension/status": method("host_to_runtime", emptyParams, applyResult),
   "extension/catalog": method("host_to_runtime", emptyParams, ExtensionCatalogSchema),
   "extension/reload": method("host_to_runtime", operationParams, ExtensionCatalogSchema),

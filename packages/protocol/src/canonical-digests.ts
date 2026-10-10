@@ -2,7 +2,7 @@ import { createHash } from "node:crypto";
 
 import type { MethodParams } from "./contract-source.js";
 
-type ExtensionSnapshot = MethodParams<"extension/replace">;
+export type ExtensionSnapshot = Extract<MethodParams<"extension/replace">, { formatVersion: 1 }>;
 
 const compareCodePoints = (left: string, right: string): number =>
   left < right ? -1 : left > right ? 1 : 0;

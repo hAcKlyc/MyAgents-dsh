@@ -34,6 +34,12 @@ These descriptors are not Cordis plugins. Compilers are trusted code installed b
 
 ## 4. Generation lifecycle and isolation
 
+Large snapshots use the protocol's `snapshotAttachment` representation. The Runtime
+composition resolves and verifies these bytes through the existing Host attachment
+lease before calling this component owner. Components receive the same inline,
+digest-validated snapshot in either transport form; there is no staged component store
+or partial replacement path.
+
 ```text
 validate revision, digest, unique (kind, id) identities and resource references
   -> prepare every component without publishing catalog contributions

@@ -406,7 +406,8 @@ export class HostPortService extends Service {
     const runtimeGeneration = this.#runtimeGenerationValue;
     const productSessionId = this.#productSessionIdValue;
     if (owner === undefined || peer === undefined || runtimeGeneration === undefined
-      || productSessionId === undefined || owner.runtimeSessionId === undefined
+      || productSessionId === undefined
+      || (owner.runtimeSessionId === undefined && (owner.componentGenerationId === undefined || owner.componentId === undefined))
       || this.#stateValue === "unbound" || this.#stateValue === "closed") {
       return Promise.reject(serviceError(
         "host_attachment_release_failed",
@@ -417,7 +418,9 @@ export class HostPortService extends Service {
       requestId: `host-port:${this.#nextRequestId++}`,
       runtimeGeneration,
       productSessionId,
-      runtimeSessionId: owner.runtimeSessionId,
+      ...(owner.runtimeSessionId === undefined ? {} : { runtimeSessionId: owner.runtimeSessionId }),
+      ...(owner.componentGenerationId === undefined ? {} : { componentGenerationId: owner.componentGenerationId }),
+      ...(owner.componentId === undefined ? {} : { componentId: owner.componentId }),
       deadlineMs: attachmentCleanupDeadlineMs,
     });
     const cleanup = this.#releaseStaleAttachment(
@@ -521,7 +524,8 @@ export class HostPortService extends Service {
       "host/attachment/acquire",
       authority,
       request,
-      ["runtimeSessionId"],
+      originalHostPortService(this).#requestAuthorities.get(authority)?.runtimeSessionId === undefined
+        ? ["componentGenerationId", "componentId"] : ["runtimeSessionId"],
     );
   }
 
@@ -533,7 +537,8 @@ export class HostPortService extends Service {
       "host/attachment/release",
       authority,
       request,
-      ["runtimeSessionId"],
+      originalHostPortService(this).#requestAuthorities.get(authority)?.runtimeSessionId === undefined
+        ? ["componentGenerationId", "componentId"] : ["runtimeSessionId"],
     );
   }
 
@@ -666,7 +671,8 @@ export class HostPortService extends Service {
     leaseId: string,
   ): Promise<void> {
     const runtimeSessionId = authority.runtimeSessionId;
-    if (runtimeSessionId === undefined) {
+    if (runtimeSessionId === undefined
+      && (authority.componentGenerationId === undefined || authority.componentId === undefined)) {
       const failure = serviceError(
         "host_attachment_release_failed",
         "Host attachment lease cleanup authority is incomplete",
@@ -683,7 +689,9 @@ export class HostPortService extends Service {
       requestId: `host-port:${this.#nextRequestId++}`,
       runtimeGeneration: authority.runtimeGeneration,
       productSessionId: authority.productSessionId,
-      runtimeSessionId,
+      ...(runtimeSessionId === undefined ? {} : { runtimeSessionId }),
+      ...(authority.componentGenerationId === undefined ? {} : { componentGenerationId: authority.componentGenerationId }),
+      ...(authority.componentId === undefined ? {} : { componentId: authority.componentId }),
       deadlineMs: attachmentCleanupDeadlineMs,
     });
     try {

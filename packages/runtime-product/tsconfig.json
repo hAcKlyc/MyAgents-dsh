@@ -11,6 +11,7 @@
     "tsBuildInfoFile": "../../dist/packages/runtime-product/.tsbuildinfo"
   },
   "files": [
+    "src/extension-snapshot.ts",
     "src/collaboration-policy.ts",
     "src/composition.ts",
     "src/host-interaction.ts",

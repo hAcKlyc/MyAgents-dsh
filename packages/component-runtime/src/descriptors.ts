@@ -12,7 +12,7 @@ import {
 } from "@myagents-dsh/protocol";
 import type { ToolRunContext } from "@deepseek-ai/dsh-tools";
 
-export type ExtensionSnapshot = MethodParams<"extension/replace">;
+export type ExtensionSnapshot = Extract<MethodParams<"extension/replace">, { formatVersion: 1 }>;
 export type ExtensionComponent = ExtensionSnapshot["components"][number];
 export type ComponentStatus = MethodResult<"extension/status">["components"][number];
 export type ExtensionCatalog = MethodResult<"extension/catalog">;
@@ -80,6 +80,9 @@ const sha256 = (value: string): string => createHash("sha256").update(value).dig
 
 export const validateExtensionSnapshot = (value: unknown): ExtensionSnapshot => {
   const snapshot = validateMethodParams("extension/replace", value);
+  if ('snapshotAttachment' in snapshot) {
+    throw new ProtocolError("extension_resource_missing", "extension snapshot attachment must be resolved before component admission");
+  }
   const { digest, ...authority } = snapshot;
   if (extensionSnapshotDigest(authority) !== digest) {
     throw new ProtocolError(

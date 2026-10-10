@@ -1,3 +1,4 @@
+import type { ExtensionSnapshot } from "@myagents-dsh/protocol";
 import { resolvePwshPath } from "@deepseek-ai/dsh-pwsh-local";
 import {
   CANONICAL_TOOL_NAMES,
@@ -69,7 +70,7 @@ export const OFFICIAL_TOOL_CATALOG: EffectiveToolCatalogSnapshot =
     digest: effectiveToolCatalogDigest(toolCatalogAuthority),
   }));
 
-const extensionAuthority: Omit<MethodParams<"extension/replace">, "digest"> = Object.freeze({
+const extensionAuthority: Omit<ExtensionSnapshot, "digest"> = Object.freeze({
   formatVersion: 1 as const,
   revision: OFFICIAL_EXTENSION_REVISION,
   components: [],

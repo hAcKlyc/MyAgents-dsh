@@ -1,3 +1,4 @@
+import type { ExtensionSnapshot } from "@myagents-dsh/protocol";
 import { modelToolNames } from "@myagents-dsh/protocol";
 import type {} from "@deepseek-ai/dsh-subagent";
 // Retain a historical stock log fixture without activating the stock Todo tool.
@@ -164,7 +165,7 @@ const validatedArtifactToolCatalog = validateEffectiveToolCatalog({
   ...toolCatalogWithoutDigest,
   digest: effectiveToolCatalogDigest(toolCatalogWithoutDigest),
 });
-const artifactExtensionAuthority: Omit<MethodParams<"extension/replace">, "digest"> = {
+const artifactExtensionAuthority: Omit<ExtensionSnapshot, "digest"> = {
   formatVersion: 1 as const,
   revision: "artifact-component-v1",
   components: [Object.freeze({
@@ -195,7 +196,7 @@ const artifactDynamicSkillContent = [
   "Return only evidence owned by the frozen declarative Skill document.",
 ].join("\n");
 const artifactDynamicCommandTemplate = "Load the release-audit Skill for $1; full arguments: $ARGUMENTS";
-const artifactDeclarativeExtensionAuthority: Omit<MethodParams<"extension/replace">, "digest"> = {
+const artifactDeclarativeExtensionAuthority: Omit<ExtensionSnapshot, "digest"> = {
   formatVersion: 1 as const,
   revision: "artifact-declarative-components-v1",
   components: [
@@ -282,7 +283,7 @@ const artifactDeclarativeExtensionSnapshot = Object.freeze({
   ...artifactDeclarativeExtensionAuthority,
   digest: extensionSnapshotDigest(artifactDeclarativeExtensionAuthority),
 });
-const hostModelExtensionAuthority: Omit<MethodParams<"extension/replace">, "digest"> = {
+const hostModelExtensionAuthority: Omit<ExtensionSnapshot, "digest"> = {
   ...artifactExtensionAuthority,
   revision: "artifact-host-model-components-v1",
   components: [...artifactExtensionAuthority.components, Object.freeze({
@@ -554,8 +555,8 @@ for (const childContext of [
 }
 await childScopeComposition.dispose();
 
-const lifecycleMcpSnapshot = (revision: string): MethodParams<"extension/replace"> => {
-  const authority: Omit<MethodParams<"extension/replace">, "digest"> = {
+const lifecycleMcpSnapshot = (revision: string): ExtensionSnapshot => {
+  const authority: Omit<ExtensionSnapshot, "digest"> = {
     formatVersion: 1 as const,
     revision,
     components: [Object.freeze({

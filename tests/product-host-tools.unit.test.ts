@@ -1,3 +1,4 @@
+import type { ExtensionSnapshot } from "@myagents-dsh/protocol";
 import { modelToolNames } from "@myagents-dsh/protocol";
 import { Context } from "@deepseek-ai/cordis";
 import { ToolCallId } from "@deepseek-ai/dsh-llm";
@@ -22,7 +23,6 @@ import {
   effectiveToolCatalogDigest,
   extensionSnapshotDigest,
   type EffectiveToolCatalogSnapshot,
-  type MethodParams,
 } from "@myagents-dsh/protocol";
 import { GeneratedHostClient } from "@myagents-dsh/protocol/generated/host-client";
 import { createInMemoryPeerPair, StandardTestHost } from "@myagents-dsh/test-host";
@@ -52,7 +52,7 @@ const catalog = (): EffectiveToolCatalogSnapshot => {
   return Object.freeze({ ...authority, digest: effectiveToolCatalogDigest(authority) });
 };
 
-type SnapshotAuthority = Omit<MethodParams<"extension/replace">, "digest">;
+type SnapshotAuthority = Omit<ExtensionSnapshot, "digest">;
 
 const hostToolComponent = (overrides: Record<string, unknown> = {}) => Object.freeze({
   id: "mcp__fixture__echo",
@@ -75,7 +75,7 @@ const hostToolComponent = (overrides: Record<string, unknown> = {}) => Object.fr
 const snapshot = (
   revision: string,
   components: SnapshotAuthority["components"] = [hostToolComponent()],
-): MethodParams<"extension/replace"> => {
+): ExtensionSnapshot => {
   const authority: SnapshotAuthority = {
     formatVersion: 1,
     revision,

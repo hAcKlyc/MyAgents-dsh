@@ -194,6 +194,8 @@ const checkpointHarness = async (options: Readonly<{ nativeFs?: boolean; reopenR
 };
 
 describe("ProductCheckpointService", () => {
+  // Two cold SQLite generations, durable rewinds and a fork exceed the default
+  // unit-test budget on Windows runners; retain all native recovery assertions.
   it("retains file and directory recovery across cold repeated rewind and subsequent fork", async () => {
     const state = await checkpointHarness({ nativeFs: true });
     const persistence = state.context.sessionPersistence as ProductJsonlSessionPersistence;
@@ -273,7 +275,7 @@ describe("ProductCheckpointService", () => {
     expect(await readFile(path, "utf8")).toBe("one");
     await store.rollbackRewind(second.token, "retained-second-rewind");
     await cold.context.fiber.dispose();
-  });
+  }, 60_000);
   it("keeps inherited checkpoint events out of a native fork's recovery authority", async () => {
     const state = await checkpointHarness();
     const prepared = await state.context.productCheckpoint.prepare(state.product, {

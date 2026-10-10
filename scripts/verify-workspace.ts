@@ -217,6 +217,7 @@ const expectedWorkspaceFiles = new Map([
   ]],
   ["packages/rpc-server", ["src/event-projector.ts", "src/index.ts", "src/native-rpc-service.ts"]],
   ["packages/runtime-product", [
+    "src/extension-snapshot.ts",
     "src/collaboration-policy.ts",
     "src/composition.ts",
     "src/host-interaction.ts",

@@ -1,3 +1,4 @@
+import type { ExtensionSnapshot } from "@myagents-dsh/protocol";
 import { CallToolResultSchema } from "@modelcontextprotocol/sdk/types.js";
 import { modelToolNames } from "@myagents-dsh/protocol";
 import { Context } from "@deepseek-ai/cordis";
@@ -36,7 +37,6 @@ import {
   effectiveToolCatalogDigest,
   extensionSnapshotDigest,
   type EffectiveToolCatalogSnapshot,
-  type MethodParams,
 } from "@myagents-dsh/protocol";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { PassThrough } from "node:stream";
@@ -138,7 +138,7 @@ const catalog = (): EffectiveToolCatalogSnapshot => {
   return Object.freeze({ ...authority, digest: effectiveToolCatalogDigest(authority) });
 };
 
-const snapshot = (revision: string, includeMcp = true): MethodParams<"extension/replace"> => {
+const snapshot = (revision: string, includeMcp = true): ExtensionSnapshot => {
   const authority = {
     formatVersion: 1 as const,
     revision,
