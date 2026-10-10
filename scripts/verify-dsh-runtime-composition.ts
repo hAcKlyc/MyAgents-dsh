@@ -147,6 +147,7 @@ const runtimeCompositionSourcePaths = [
   "packages/rpc-server/src/event-projector.ts",
   "packages/rpc-server/src/native-rpc-service.ts",
   "packages/runtime-product/src/composition.ts",
+  "packages/runtime-product/src/extension-snapshot.ts",
   "packages/runtime-product/src/collaboration-policy.ts",
   "packages/runtime-product/src/host-interaction.ts",
   "packages/runtime-product/src/host-model.ts",

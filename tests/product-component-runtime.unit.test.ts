@@ -1,3 +1,4 @@
+import type { ExtensionSnapshot } from "@myagents-dsh/protocol";
 import { modelToolNames } from "@myagents-dsh/protocol";
 import { Context } from "@deepseek-ai/cordis";
 import {
@@ -13,7 +14,6 @@ import {
   effectiveToolCatalogDigest,
   extensionSnapshotDigest,
   type EffectiveToolCatalogSnapshot,
-  type MethodParams,
 } from "@myagents-dsh/protocol";
 import { createHash } from "node:crypto";
 import { afterEach, describe, expect, it } from "vitest";
@@ -39,13 +39,13 @@ const catalog = (): EffectiveToolCatalogSnapshot => {
   return Object.freeze({ ...authority, digest: effectiveToolCatalogDigest(authority) });
 };
 
-type SnapshotAuthority = Omit<MethodParams<"extension/replace">, "digest">;
+type SnapshotAuthority = Omit<ExtensionSnapshot, "digest">;
 
 const snapshot = (
   revision: string,
   components: SnapshotAuthority["components"] = [],
   resources: SnapshotAuthority["resources"] = [],
-): MethodParams<"extension/replace"> => {
+): ExtensionSnapshot => {
   const authority: SnapshotAuthority = {
     formatVersion: 1,
     revision,
@@ -103,7 +103,7 @@ type Harness = Readonly<{
 const mount = async (options: Readonly<{
   boundary?: (signal: AbortSignal, commit: () => void) => Promise<boolean>;
   compilers?: readonly ComponentCompiler[];
-  initial?: MethodParams<"extension/replace">;
+  initial?: ExtensionSnapshot;
   whenUnused?: (identity: Readonly<{ revision: string; digest: string }>) => Promise<void>;
 }> = {}): Promise<Harness> => {
   const root = new Context();

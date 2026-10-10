@@ -48,7 +48,8 @@ The authority detail is consumer-specific:
 | declarative MCP credential | component generation/id and credential revision |
 | interaction | Session, operation, turn and configuration revision |
 | Host Tool or Hook | operation/call/component authority |
-| attachment | Runtime Session authority |
+| attachment put | Runtime Session authority |
+| attachment acquire/release | Runtime Session or component generation/id authority; component scope permits extension import before Session binding |
 
 ```text
 Runtime capability adapter

@@ -1,3 +1,4 @@
+import type { ExtensionSnapshot } from "@myagents-dsh/protocol";
 import { randomUUID } from "node:crypto";
 import { mkdir, realpath } from "node:fs/promises";
 import { resolve } from "node:path";
@@ -59,7 +60,7 @@ export type RuntimeSupervisorOptions = Readonly<{
     }>,
   ) => MethodParams<"initialize">;
   buildBinding: (row: WebSessionCatalogRow, authority: RuntimeBindingAuthority) => RuntimeBinding;
-  buildExtensionSnapshot?: (row: WebSessionCatalogRow) => MethodParams<"extension/replace">;
+  buildExtensionSnapshot?: (row: WebSessionCatalogRow) => ExtensionSnapshot;
   applyStoredConfiguration?: (
     row: WebSessionCatalogRow,
     client: GeneratedHostClient,
