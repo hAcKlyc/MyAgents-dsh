@@ -102,6 +102,38 @@ const createHarness = async (
   return harness;
 };
 
+it.each(['success', 'stale'] as const)('cleans up component-scoped snapshot leases before Session binding (%s)', async ending => {
+  const acquired = deferred<{ leaseId: string; readOnlyPath: string; mimeType: string; sizeBytes: number; sha256: string }>();
+  const releases: unknown[] = [];
+  const harness = await createHarness({
+    'host/attachment/acquire': () => acquired.promise,
+    'host/attachment/release': params => { releases.push(params); return { ok: true }; },
+  });
+  let current = true;
+  const authority = harness.controller.createRequestAuthority({
+    signal: new AbortController().signal, deadlineMs: 30_000,
+    componentGenerationId: 'snapshot-generation', componentId: 'extension-snapshot',
+    assertCurrent: () => { if (!current) throw new Error('retired snapshot'); },
+  });
+  const pending = harness.service.acquireAttachment(authority, {
+    attachmentId: 'snapshot', expectedMimeType: 'application/json', expectedSizeBytes: 2, expectedSha256: digest,
+  });
+  void pending.catch(() => undefined);
+  await tick();
+  if (ending === 'stale') current = false;
+  acquired.resolve({ leaseId: 'snapshot-lease', readOnlyPath: '/staging/snapshot', mimeType: 'application/json', sizeBytes: 2, sha256: digest });
+  if (ending === 'stale') await expect(pending).rejects.toThrow();
+  else {
+    const lease = await pending;
+    await harness.controller.cleanupAttachmentLease(authority, lease.leaseId);
+  }
+  expect(releases).toHaveLength(1);
+  expect(releases[0]).toMatchObject({ authority: {
+    componentGenerationId: 'snapshot-generation', componentId: 'extension-snapshot',
+    productSessionId: 'product-session-1', runtimeGeneration: 'runtime-generation-1',
+  }, leaseId: 'snapshot-lease' });
+});
+
 const fullAuthority = (
   harness: Harness,
   signal: AbortSignal = new AbortController().signal,
