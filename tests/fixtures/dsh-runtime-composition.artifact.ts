@@ -1093,9 +1093,9 @@ const artifactHttpResponse = (
   statusCode,
 });
 const artifactHttpTransport: ProductHttpTransport = Object.freeze({
-  dispatch: (url: URL, address: ProductDnsAnswer, signal: AbortSignal) => {
+  dispatch: (url: URL, addresses: readonly ProductDnsAnswer[], signal: AbortSignal) => {
     signal.throwIfAborted();
-    webToolEvidence.push(`transport:${url.hostname}${url.pathname}:${address.address}`);
+    webToolEvidence.push(`transport:${url.hostname}${url.pathname}:${addresses[0]?.address}`);
     return Promise.resolve(url.hostname === "example.com"
       ? artifactHttpResponse(302, {
           location: "https://redirect.example.com/document.pdf?synthetic_signed=artifact",

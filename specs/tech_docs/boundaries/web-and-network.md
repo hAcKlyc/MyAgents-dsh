@@ -77,15 +77,24 @@ requires an artifact-bound campaign on the selected route.
 
 ## 6. MCP networking
 
-Managed remote MCP HTTP/SSE transports reuse a same-origin guarded fetch backed by the
-composition-owned `ProductSafeHttpClient`; there is no ambient `globalThis.fetch` fallback.
-Credentials are supplied only through the component's Host credential scope. The official composition selects its captured general proxy route through the public DSH HTTP-proxy service; it does not borrow a model Provider's policy. This claim excludes
-stdio MCP: it is a trusted local subprocess and, like Bash or a build-time plugin, may use the local
-user's network authority outside `ProductSafeHttpClient`.
+Managed HTTP/SSE MCP descriptors are trusted Host connection authorization, including localhost,
+IPv4/IPv6, local names, private networks and custom ports. They do not inherit the public-only
+rules for model-selected Web URLs. Trusted composition selects `destinationPolicy: "host-configured"`
+on the existing `ProductSafeHttpClient`; the default `public-web` policy is unchanged. Configured
+names use the OS resolver (including hosts/local names) without Web-only DNS64 discovery; the Node transport selects a reachable validated address before sending one HTTP request, so localhost works with IPv4-only or IPv6-only listeners;
+DNS answer validity, address pinning, redirect denial, byte/concurrency/deadline limits and cleanup
+remain owned by that client. MCP accepts only HTTP(S) without userinfo or fragments and confines
+all HTTP and SSE GET/POST requests and credential headers to the descriptor's exact origin.
+
+There is no ambient `globalThis.fetch` fallback. Credentials resolve only through the component's
+Host credential scope. The existing public DSH HTTP-proxy service selects the captured general
+route and bypasses loopback; MCP never borrows a model Provider policy or falls back from a failed
+explicit proxy to direct. Stdio remains a trusted local subprocess with the local user's network
+authority, outside this HTTP client.
 
 ## 7. Failure and security boundary
 
-Runtime-owned WebFetch, standalone DeepSeek WebSearch and managed remote MCP use
+Runtime-owned WebFetch and standalone DeepSeek WebSearch use the default public-Web policy of
 `ProductSafeHttpClient`, which owns direct DNS/private-address, literal-address, redirect and byte/decompression defense; an explicitly selected trusted proxy owns remote name resolution.
 Host-backed canonical web only verifies HTTP(S)/no-userinfo at Runtime admission, applies Product
 permission and validates the returned canonical shape; the trusted Host owns its own DNS/private
@@ -151,9 +160,11 @@ transport, not an independent public HTTP route; network-capable Host tools reta
 
 `test:network-native` uses only local target/proxy servers and synthetic names. It exercises actual
 HTTP routing for concurrent general/direct/two-Provider policies, inherited ALL_PROXY, casing
-precedence, NO_PROXY, changed subsequent policy, safe-HTTP MCP transport, cancellation and stalled
+precedence, NO_PROXY, changed subsequent policy, configured-MCP localhost/custom-port direct routing despite a general proxy, cancellation and stalled
 shutdown. Unit tests separately reject private literals, unsafe redirects and capability getters,
 and prove no direct fallback. This is macOS source evidence, not HTTPS, arbitrary-client, packed,
 other-platform or real-Provider acceptance.
 
 Concurrent generation shutdown and Provider iterator cleanup use idempotent destruction of already-retiring pools; closing an already-destroyed undici pool would otherwise replace the original cancellation with a cleanup error. The native loopback regression keeps both general and Provider requests stalled while disposing the generation.
+
+The MCP response adapter destroys its owned HTTP response before awaiting iterator completion, so cancelling an SSE POST response with an open body releases pending reads and the connection slot. Concurrent cancellation awaits the same disposal.

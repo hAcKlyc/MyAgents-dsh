@@ -61,35 +61,14 @@ const normalizeConfig = (value: unknown): Readonly<{
   });
 };
 
-const blockedIpv4 = (hostname: string): boolean => {
-  const octets = hostname.split(".").map(Number);
-  const first = octets[0] ?? -1;
-  const second = octets[1] ?? -1;
-  return first === 0 || first === 10 || first === 127 || first >= 224
-    || (first === 100 && second >= 64 && second <= 127)
-    || (first === 169 && second === 254)
-    || (first === 172 && second >= 16 && second <= 31)
-    || (first === 192 && second === 168);
-};
-
-const isIpv4Literal = (hostname: string): boolean => {
-  const octets = hostname.split(".");
-  return octets.length === 4 && octets.every((octet) => /^(?:0|[1-9][0-9]{0,2})$/u.test(octet)
-    && Number(octet) <= 255);
-};
-
 const remoteEndpoint = (raw: string): URL => {
   const url = new URL(raw);
-  const hostname = url.hostname.toLowerCase().replace(/\.$/u, "");
+  // The descriptor is supplied by the trusted Host, including local/intranet
+  // destinations. Public-Web SSRF policy belongs to model-selected Web URLs.
   if ((url.protocol !== "http:" && url.protocol !== "https:")
-    || url.username !== "" || url.password !== "" || url.hash !== ""
-    || hostname.length === 0 || hostname === "localhost" || hostname.endsWith(".localhost")
-    || hostname.endsWith(".local") || hostname.endsWith(".internal") || hostname.endsWith(".home")
-    || hostname.endsWith(".lan") || hostname.includes(":")
-    || (isIpv4Literal(hostname) && blockedIpv4(hostname))) {
-    throw new TypeError("MCP remote endpoint is not an approved public HTTP(S) destination");
+    || url.username !== "" || url.password !== "" || url.hash !== "" || url.hostname.length === 0) {
+    throw new TypeError("MCP endpoint must be HTTP(S) without URL credentials or fragment");
   }
-  url.hostname = hostname;
   return url;
 };
 
@@ -417,6 +396,7 @@ export const createManagedMcpConnectionFactory = (
       // Protocol v2 retains explicit legacy SSE descriptors for compatible MCP servers.
       // eslint-disable-next-line @typescript-eslint/no-deprecated
       return Promise.resolve(new SSEClientTransport(endpoint, Object.freeze({
+        fetch,
         eventSourceInit: Object.freeze({ fetch: fetch as never }),
         requestInit: Object.freeze({ headers, redirect: "error" as const }),
       })));

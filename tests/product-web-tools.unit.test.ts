@@ -237,7 +237,7 @@ describe("safe Web Providers and canonical Web tools", () => {
 
     expect(Buffer.concat(chunks).toString("utf8")).toBe("{\"ok\":true}");
     expect(dispatch).toHaveBeenCalledOnce();
-    expect(dispatch.mock.calls[0]?.[1]).toEqual({ address: "93.184.216.34", family: 4 });
+    expect(dispatch.mock.calls[0]?.[1]).toEqual([{ address: "93.184.216.34", family: 4 }]);
     expect(dispatch.mock.calls[0]?.[3]).toMatchObject({
       method: "POST",
       headers: { "content-type": "application/json" },
@@ -250,6 +250,34 @@ describe("safe Web Providers and canonical Web tools", () => {
       policyRef: policy.policyRef,
       signal: new AbortController().signal,
     })).rejects.toMatchObject({ code: "unsafe_destination" });
+    expect(dispatch).toHaveBeenCalledOnce();
+  });
+
+  it.each([
+    ["http://localhost:34567/mcp", "127.0.0.1", 4],
+    ["http://[::1]:34567/mcp", "::1", 6],
+    ["http://mcp.internal:8080/mcp", "192.168.1.2", 4],
+  ] as const)("admits Host-configured %s without a public DNS64 lookup", async (endpoint, address, family) => {
+    const dispatch = vi.fn<ProductHttpTransport["dispatch"]>(() => Promise.resolve(response(200, {}, ["ok"])));
+    const lookup = vi.fn(() => Promise.resolve([{ address, family }]));
+    const client = new ProductSafeHttpClient(policy, { destinationPolicy: "host-configured", lookup, transport: { dispatch } });
+    const opened = await client.open(endpoint, { method: "GET", policyRef: policy.policyRef, signal: new AbortController().signal });
+    await opened.dispose();
+    expect(dispatch.mock.calls[0]?.[1]).toEqual([{ address, family }]);
+    expect(lookup).toHaveBeenCalledTimes(1);
+    expect(lookup).not.toHaveBeenCalledWith("ipv4only.arpa", expect.anything());
+    await expect(new ProductSafeHttpClient(policy, { lookup, transport: { dispatch } }).open(endpoint,
+      { method: "GET", policyRef: policy.policyRef, signal: new AbortController().signal })).rejects.toMatchObject({ code: "unsafe_destination" });
+  });
+
+  it("retains redirect and malformed-DNS rejection for Host-configured MCP", async () => {
+    const dispatch = vi.fn<ProductHttpTransport["dispatch"]>(() => Promise.resolve(response(302, { location: "http://elsewhere.local/" }, [])));
+    const lookup = vi.fn<() => Promise<readonly ProductDnsAnswer[]>>(() => Promise.resolve([{ address: "127.0.0.1", family: 4 }]));
+    const client = new ProductSafeHttpClient(policy, { destinationPolicy: "host-configured", lookup, transport: { dispatch } });
+    const request = { method: "GET" as const, policyRef: policy.policyRef, signal: new AbortController().signal };
+    await expect(client.open("http://localhost:3000/mcp", request)).rejects.toMatchObject({ code: "unsafe_destination" });
+    lookup.mockResolvedValue([{ address: "not-an-address", family: 4 }]);
+    await expect(client.open("http://localhost:3000/mcp", request)).rejects.toMatchObject({ code: "unsafe_destination" });
     expect(dispatch).toHaveBeenCalledOnce();
   });
 
@@ -353,8 +381,8 @@ describe("safe Web Providers and canonical Web tools", () => {
   it("pins each hop and repeats policy plus permission checks across redirects", async () => {
     const dispatched: string[] = [];
     const transport: ProductHttpTransport = {
-      dispatch: (url, address) => {
-        dispatched.push(`${url.origin}:${address.address}`);
+      dispatch: (url, addresses) => {
+        dispatched.push(`${url.origin}:${addresses[0]?.address}`);
         return Promise.resolve(url.hostname === "example.com"
           ? response(302, { location: "https://redirect.example.com/final" }, [])
           : response(200, { "content-type": "text/plain" }, ["safe body"]));

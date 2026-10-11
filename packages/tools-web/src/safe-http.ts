@@ -1,5 +1,5 @@
 import { throwIfProductToolAborted } from "@myagents-dsh/tool-runtime-product";
-import { Resolver } from "node:dns/promises";
+import { lookup as lookupOsHostname, Resolver } from "node:dns/promises";
 import { request as httpRequest, type ClientRequest, type IncomingMessage } from "node:http";
 import { request as httpsRequest } from "node:https";
 import { BlockList, isIP, type LookupFunction } from "node:net";
@@ -88,7 +88,7 @@ export interface ProductHttpTransport {
   /** Reject only after abort has made the owned request/response work quiescent. */
   dispatch(
     url: URL,
-    address: ProductDnsAnswer,
+    addresses: readonly ProductDnsAnswer[],
     signal: AbortSignal,
     request?: ProductHttpRequest,
   ): Promise<ProductHttpResponse>;
@@ -100,6 +100,8 @@ export interface ProductHttpProxyTransport {
 }
 
 export interface ProductSafeHttpClientConfig {
+  /** Host-declared MCP destinations carry their own URL authority; model Web URLs do not. */
+  readonly destinationPolicy?: "public-web" | "host-configured";
   readonly proxyTransportFor?: (url: URL) => ProductHttpProxyTransport | undefined;
   /** Test/builder seam; reject only after abort has made resolution work quiescent. */
   readonly lookup?: (hostname: string, signal: AbortSignal) => Promise<readonly ProductDnsAnswer[]>;
@@ -253,7 +255,7 @@ export const validateProductNetworkPolicy = (value: unknown): ProductNetworkPoli
 const hostMatches = (hostname: string, rule: string): boolean =>
   hostname === rule || hostname.endsWith(`.${rule}`);
 
-const parseSafeUrl = (rawUrl: string, policy: ProductNetworkPolicy): URL => {
+const parseHttpUrl = (rawUrl: string): URL => {
   let url: URL;
   try { url = new URL(rawUrl); } catch {
     throw new ProductToolError("unsafe_destination", "WebFetch URL is invalid");
@@ -264,6 +266,11 @@ const parseSafeUrl = (rawUrl: string, policy: ProductNetworkPolicy): URL => {
   if (url.username !== "" || url.password !== "") {
     throw new ProductToolError("unsafe_destination", "WebFetch URL must not contain credentials");
   }
+  return url;
+};
+
+const parseSafeUrl = (rawUrl: string, policy: ProductNetworkPolicy): URL => {
+  const url = parseHttpUrl(rawUrl);
   const hostname = url.hostname.toLowerCase().replace(/\.$/u, "");
   if (hostname.length === 0 || hostname === "localhost" || hostname.endsWith(".localhost")
     || hostname.endsWith(".local") || hostname.endsWith(".internal") || hostname.endsWith(".home")
@@ -278,6 +285,17 @@ const parseSafeUrl = (rawUrl: string, policy: ProductNetworkPolicy): URL => {
   url.hostname = hostname;
   url.hash = "";
   return url;
+};
+
+// Configured MCP names follow the OS resolver (including hosts and local names).
+// The operation awaits resolver settlement even after cancellation; no detached DNS work.
+const configuredLookup = async (hostname: string, signal: AbortSignal): Promise<readonly ProductDnsAnswer[]> => {
+  signal.throwIfAborted();
+  const family = isIP(hostname);
+  if (family === 4 || family === 6) return [{ address: hostname, family }];
+  const answers = await lookupOsHostname(hostname, { all: true });
+  signal.throwIfAborted();
+  return answers.map(answer => ({ address: answer.address, family: answer.family as 4 | 6 }));
 };
 
 const systemLookup = async (hostname: string, signal: AbortSignal): Promise<readonly ProductDnsAnswer[]> => {
@@ -521,24 +539,28 @@ const decompress = (
 class NodeProductHttpTransport implements ProductHttpTransport {
   async dispatch(
     url: URL,
-    address: ProductDnsAnswer,
+    addresses: readonly ProductDnsAnswer[],
     signal: AbortSignal,
     requestOptions?: ProductHttpRequest,
   ): Promise<ProductHttpResponse> {
+    const first = addresses[0];
+    if (first === undefined) throw new TypeError("HTTP transport requires a resolved address");
     const lookup: LookupFunction = (_hostname, options, callback) => {
-      if (options.all === true) callback(null, [{ address: address.address, family: address.family }]);
-      else callback(null, address.address, address.family);
+      if (options.all === true) callback(null, addresses.map(address => ({ ...address })));
+      else callback(null, first.address, first.family);
     };
     const request = url.protocol === "https:" ? httpsRequest : httpRequest;
     let outgoing!: ClientRequest;
     const response = await new Promise<IncomingMessage>((resolve, reject) => {
-      outgoing = request(url, {
-        agent: false,
+      const options = {
+        agent: false as const,
+        autoSelectFamily: true,
         headers: requestOptions?.headers ?? DEFAULT_WEB_FETCH_REQUEST.headers,
         lookup,
         method: requestOptions?.method ?? "GET",
         signal,
-      }, resolve);
+      };
+      outgoing = request(url, options, resolve);
       outgoing.once("error", (error) => {
         void waitForNodeClose(outgoing).then(() => reject(error), reject);
       });
@@ -656,6 +678,7 @@ const normalizeOpenRequest = (
 export class ProductSafeHttpClient {
   readonly #lookup: (hostname: string, signal: AbortSignal) => Promise<readonly ProductDnsAnswer[]>;
   readonly #policy: ProductNetworkPolicy;
+  readonly #destinationPolicy: "public-web" | "host-configured";
   readonly #transport: ProductHttpTransport;
   readonly #proxyTransportFor: ((url: URL) => ProductHttpProxyTransport | undefined) | undefined;
   #active = 0;
@@ -666,10 +689,16 @@ export class ProductSafeHttpClient {
     const candidate: unknown = config;
     if (candidate === null || typeof candidate !== "object" || Array.isArray(candidate) || isProxy(candidate)
       || (Object.getPrototypeOf(candidate) !== Object.prototype && Object.getPrototypeOf(candidate) !== null)
-      || Reflect.ownKeys(candidate).some((key) => key !== "lookup" && key !== "transport" && key !== "proxyTransportFor")) {
+      || Reflect.ownKeys(candidate).some((key) => key !== "lookup" && key !== "transport" && key !== "proxyTransportFor" && key !== "destinationPolicy")) {
       throw new TypeError("safe HTTP client config must be a plain exact object");
     }
     const normalized = candidate as ProductSafeHttpClientConfig;
+    const destination = Object.getOwnPropertyDescriptor(normalized, "destinationPolicy");
+    if (destination !== undefined && (!("value" in destination)
+      || (destination.value !== "public-web" && destination.value !== "host-configured"))) {
+      throw new TypeError("HTTP destination policy must be selected by trusted composition");
+    }
+    this.#destinationPolicy = destination?.value as ProductSafeHttpClientConfig["destinationPolicy"] ?? "public-web";
     const proxyDescriptor = Object.getOwnPropertyDescriptor(normalized, "proxyTransportFor");
     if (proxyDescriptor !== undefined && (!("value" in proxyDescriptor)
       || typeof proxyDescriptor.value !== "function" || isProxy(proxyDescriptor.value))) {
@@ -689,7 +718,7 @@ export class ProductSafeHttpClient {
       throw new TypeError("safe HTTP transport must be an own-data capability");
     }
     this.#lookup = lookupDescriptor === undefined
-      ? systemLookup
+      ? this.#destinationPolicy === "host-configured" ? configuredLookup : systemLookup
       : (hostname, signal) => Reflect.apply(
           lookupDescriptor.value as (hostname: string, signal: AbortSignal) => Promise<readonly ProductDnsAnswer[]>,
           normalized,
@@ -707,13 +736,13 @@ export class ProductSafeHttpClient {
       this.#transport = Object.freeze({
         dispatch: (
           url: URL,
-          address: ProductDnsAnswer,
+          addresses: readonly ProductDnsAnswer[],
           signal: AbortSignal,
           request?: ProductHttpRequest,
         ) => Reflect.apply(
           dispatch.value as ProductHttpTransport["dispatch"],
           transport,
-          [url, address, signal, request],
+          [url, addresses, signal, request],
         ),
       });
     }
@@ -733,7 +762,7 @@ export class ProductSafeHttpClient {
     let response: ProductHttpResponse | undefined;
     try {
       release = await this.#acquire(signal);
-      const url = parseSafeUrl(rawUrl, this.#policy);
+      const url = this.#destinationPolicy === "host-configured" ? parseHttpUrl(rawUrl) : parseSafeUrl(rawUrl, this.#policy);
       const dispatched = this.#dispatch(url, signal, normalized.request);
       response = await dispatched;
       if ([301, 302, 303, 307, 308].includes(response.statusCode)) {
@@ -857,17 +886,21 @@ export class ProductSafeHttpClient {
   async #dispatch(url: URL, signal: AbortSignal, request?: ProductHttpRequest): Promise<ProductHttpResponse> {
     signal.throwIfAborted();
     const outgoingRequest = request ?? DEFAULT_WEB_FETCH_REQUEST;
-    // Public-address checks also apply to explicit proxy routes; the proxy only
-    // owns DNS for non-literal names, never permission to reach a private literal.
+    // Public-Web callers retain literal-address checks even through a proxy.
+    // Configured MCP destinations instead derive authority from their Host descriptor.
     const literal = lookupHostname(url.hostname);
     const family = isIP(literal);
-    if (family === 4 || family === 6) selectPublicAddress([{ address: literal, family }], []);
+    if (this.#destinationPolicy === "public-web" && (family === 4 || family === 6)) selectPublicAddress([{ address: literal, family }], []);
     const proxy: unknown = this.#proxyTransportFor?.(url);
     let dispatched: Promise<ProductHttpResponse>;
     if (proxy === undefined) {
       const resolved = await this.#resolve(url.hostname, signal);
       signal.throwIfAborted();
-      dispatched = this.#transport.dispatch(url, selectPublicAddress(resolved.addresses, resolved.pref64s), signal, outgoingRequest);
+      const addresses = this.#destinationPolicy === "public-web"
+        ? [selectPublicAddress(resolved.addresses, resolved.pref64s)] : resolved.addresses;
+      if (addresses.length === 0) throw new ProductToolError("unsafe_destination", "HTTP destination has no DNS address");
+      // Node selects a reachable pinned address before sending the single HTTP request.
+      dispatched = this.#transport.dispatch(url, addresses, signal, outgoingRequest);
     } else {
       // An explicitly selected proxy owns remote DNS. The caller has already
       // applied URL/hostname/literal-address policy; a proxy failure never falls back.
@@ -891,7 +924,7 @@ export class ProductSafeHttpClient {
     const canonicalHostname = lookupHostname(hostname);
     const addresses = this.#normalizeDnsAnswers(await this.#lookup(canonicalHostname, signal));
     signal.throwIfAborted();
-    const needPref64 = addresses.some((address) => address.family === 6) && isIP(canonicalHostname) === 0
+    const needPref64 = this.#destinationPolicy === "public-web" && addresses.some((address) => address.family === 6) && isIP(canonicalHostname) === 0
       && canonicalHostname !== "ipv4only.arpa";
     const discovery = needPref64
       ? await this.#lookup("ipv4only.arpa", signal).then(
@@ -926,7 +959,8 @@ export class ProductSafeHttpClient {
         || !["address", "family"].every((key) => {
           const descriptor = answerDescriptors[key];
           return descriptor !== undefined && descriptor.enumerable && "value" in descriptor;
-        }) || typeof answer.address !== "string" || (answer.family !== 4 && answer.family !== 6)) {
+        }) || typeof answer.address !== "string" || (answer.family !== 4 && answer.family !== 6)
+          || isIP(answer.address) !== answer.family) {
         throw new ProductToolError("unsafe_destination", "WebFetch DNS result is invalid");
       }
       result.push(Object.freeze({ address: answer.address, family: answer.family }));

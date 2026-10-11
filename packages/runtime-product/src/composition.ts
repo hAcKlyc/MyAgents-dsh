@@ -1,3 +1,4 @@
+import { mcpOpenResponse } from "./mcp-response.js";
 import { installProductNetworkTransport, type ProductNetworkTransport } from "./network-transport.js";
 import { resolveExtensionSnapshot } from './extension-snapshot.js';
 import * as ToolBash from "@deepseek-ai/dsh-tool-bash";
@@ -171,7 +172,6 @@ import {
   type CanonicalWebToolsConfig,
   type ProductWebSearchRequest,
   type ProductNetworkPolicy,
-  type ProductSafeHttpOpenResponse,
 } from "@myagents-dsh/tools-web";
 import { ProductSessionService, validateProductExecutionEnvironment, type PrimarySessionState } from "./primary-session.js";
 import {
@@ -1832,73 +1832,6 @@ const mcpFetchBody = (
   throw new TypeError("managed MCP network request body type is unsupported");
 };
 
-const mcpOpenResponse = async (
-  response: ProductSafeHttpOpenResponse,
-  signal: AbortSignal,
-): Promise<Response> => {
-  const headers = new Headers();
-  for (const [name, value] of Object.entries(response.headers)) {
-    if (value === undefined) continue;
-    if (typeof value === "string") headers.append(name, value);
-    else for (const item of value) headers.append(name, item);
-  }
-  const encoding = headers.get("content-encoding")?.trim().toLowerCase();
-  if (encoding !== undefined && encoding !== "" && encoding !== "identity") {
-    await response.dispose();
-    throw new TypeError("managed MCP response ignored the required identity encoding");
-  }
-  if (response.statusCode < 200) {
-    await response.dispose();
-    throw new TypeError("managed MCP response status is unsupported");
-  }
-  if ([204, 205, 304].includes(response.statusCode)) {
-    await response.dispose();
-    return new Response(null, { headers, status: response.statusCode });
-  }
-  const iterator = response.body[Symbol.asyncIterator]();
-  let disposed = false;
-  let bytes = 0;
-  const dispose = async (): Promise<void> => {
-    if (disposed) return;
-    disposed = true;
-    signal.removeEventListener("abort", abort);
-    try {
-      await iterator.return?.();
-    } finally {
-      await response.dispose();
-    }
-  };
-  const abort = (): void => { void dispose().catch(() => undefined); };
-  signal.addEventListener("abort", abort, { once: true });
-  if (signal.aborted) abort();
-  const body = new ReadableStream<Uint8Array>({
-    async pull(controller) {
-      try {
-        signal.throwIfAborted();
-        const next = await iterator.next();
-        if (next.done) {
-          await dispose();
-          controller.close();
-          return;
-        }
-        if (!(next.value instanceof Uint8Array) || isProxy(next.value)) {
-          throw new TypeError("managed MCP response yielded an invalid byte chunk");
-        }
-        bytes += next.value.byteLength;
-        if (bytes > 1_048_576) throw new TypeError("managed MCP response exceeds its stream bound");
-        controller.enqueue(Uint8Array.from(next.value));
-      } catch (error) {
-        await dispose().catch(() => undefined);
-        controller.error(error);
-      }
-    },
-    async cancel() {
-      await dispose();
-    },
-  });
-  return new Response(body, { headers, status: response.statusCode });
-};
-
 const createManagedMcpNetworkFetch = (composition: DshRootComposition): typeof globalThis.fetch => {
   const root = composition.context;
   let client: ProductSafeHttpClient | undefined;
@@ -1945,7 +1878,10 @@ const createManagedMcpNetworkFetch = (composition: DshRootComposition): typeof g
         timeoutMs: 120_000,
       }) satisfies ProductNetworkPolicy;
       const network = compositionAuthorities.get(root)?.networkTransport;
-      client = new ProductSafeHttpClient(policy, network === undefined ? {} : { proxyTransportFor: network.proxyTransportFor });
+      client = new ProductSafeHttpClient(policy, {
+        destinationPolicy: "host-configured",
+        ...(network === undefined ? {} : { proxyTransportFor: network.proxyTransportFor }),
+      });
     } else if (policyRef !== environment.network.policyRef) {
       throw new ProtocolError("network_policy_denied", "Runtime network policy reference changed");
     }

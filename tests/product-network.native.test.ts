@@ -5,6 +5,7 @@ import { createServer, request as httpRequest } from "node:http";
 import { connect, type Socket } from "node:net";
 import type { Duplex } from "node:stream";
 import { test } from "node:test";
+import { mcpOpenResponse } from "../packages/runtime-product/src/mcp-response.js";
 import type { HostProviderNetworkScope } from "@myagents-dsh/host-ports";
 import { ProductSafeHttpClient } from "@myagents-dsh/tools-web";
 import type { ProviderNetworkPolicy } from "@myagents-dsh/protocol";
@@ -127,6 +128,24 @@ await test("Runtime request-scoped proxy routing uses real loopback HTTP request
           assert.equal(receipts.at(-1), "general");
         } finally { await opened.dispose(); }
       }
+      // Configured local MCP uses the existing transport owner and bypasses
+      // every general proxy, including when the Host did not set NO_PROXY.
+      const configured = new ProductSafeHttpClient({ allowedHosts: [], allowedPorts: [80, 443], deniedHosts: [],
+        maxCompressedBytes: 1_024, maxDecompressedBytes: 1_024, maxCompressionRatio: 1,
+        maxConcurrent: 1, maxQueued: 0, maxRedirects: 0, policyRef: "configured-mcp", timeoutMs: 1_000,
+      }, { destinationPolicy: "host-configured", proxyTransportFor: network.proxyTransportFor });
+      for (const hostname of ["127.0.0.1", "localhost"]) {
+        const receiptCount = receipts.length;
+        const opened = await configured.open(`http://${hostname}:${targetPort}/local-mcp`, {
+          policyRef: "configured-mcp", method: "GET", signal: AbortSignal.timeout(1_000),
+        });
+        try {
+          const chunks: Buffer[] = [];
+          for await (const chunk of opened.body) chunks.push(Buffer.from(chunk));
+          assert.equal(Buffer.concat(chunks).toString(), "/local-mcp");
+          assert.equal(receipts.length, receiptCount);
+        } finally { await opened.dispose(); }
+      }
       // A later request takes new Provider policy without changing general scope.
       assert.equal(await fetchProvider({ httpProxy: providerB, noProxy: "" }, "/changed-policy"), "/changed-policy");
       assert.equal(receipts.at(-1), "provider-b");
@@ -170,4 +189,62 @@ await test("Runtime request-scoped proxy routing uses real loopback HTTP request
       if (target.listening) await close(target);
     } finally { dns.lookup = originalLookup; }
   }
+});
+
+const configuredMcpClient = (): ProductSafeHttpClient => new ProductSafeHttpClient({
+  allowedHosts: [], allowedPorts: [80, 443], deniedHosts: [],
+  maxCompressedBytes: 1_024, maxDecompressedBytes: 1_024, maxCompressionRatio: 1,
+  maxConcurrent: 1, maxQueued: 0, maxRedirects: 0, policyRef: "configured-mcp", timeoutMs: 5_000,
+}, { destinationPolicy: "host-configured" });
+
+await test("configured localhost connects to either single address family without replaying HTTP", { timeout: 10_000 }, async () => {
+  for (const host of ["127.0.0.1", "::1"]) {
+    let requests = 0;
+    const server = createServer((_request, response) => { requests += 1; response.end("once"); });
+    try {
+      await new Promise<void>((resolve, reject) => {
+        server.once("error", reject);
+        server.listen({ port: 0, host, ipv6Only: true }, resolve);
+      });
+      const address = server.address();
+      assert(address && typeof address === "object");
+      const client = configuredMcpClient();
+      const response = await client.open(`http://localhost:${address.port}/mcp`, {
+        method: "POST", body: Buffer.from("one operation"), policyRef: "configured-mcp", signal: AbortSignal.timeout(2_000),
+      });
+      try {
+        const chunks: Buffer[] = [];
+        for await (const chunk of response.body) chunks.push(Buffer.from(chunk));
+        assert.equal(Buffer.concat(chunks).toString(), "once");
+        assert.equal(requests, 1);
+      } finally { await response.dispose(); }
+    } finally { if (server.listening) await close(server); }
+  }
+});
+
+await test("MCP SSE accepted POST cancellation releases an open body and its network slot", { timeout: 10_000 }, async () => {
+  const server = createServer((_request, response) => {
+    response.writeHead(202);
+    response.flushHeaders(); // Intentionally never end: SDK cancels this notification response.
+  });
+  try {
+    const port = await listen(server);
+    const client = configuredMcpClient();
+    for (const mode of ["cancel", "abort"] as const) {
+      const controller = new AbortController();
+      const opened = await client.open(`http://127.0.0.1:${port}/mcp`, {
+        method: "POST", body: Buffer.from("notification"), policyRef: "configured-mcp", signal: controller.signal,
+      });
+      const response = await mcpOpenResponse(opened, controller.signal);
+      // Let ReadableStream's automatic pull enter the pending native body.next().
+      await new Promise<void>(resolve => setImmediate(resolve));
+      const started = performance.now();
+      if (mode === "abort") controller.abort(new Error("cancel preparation"));
+      await response.body?.cancel().catch((error: unknown) => {
+        if (mode !== "abort") throw error;
+      });
+      assert(performance.now() - started < 1_000, "cancellation waited for the server or network deadline");
+      // The next iteration also proves maxConcurrent=1's slot was released.
+    }
+  } finally { if (server.listening) await close(server); }
 });
