@@ -99,7 +99,9 @@ The MyAgents Host owns shared Skill/Command/Agent declaration types and discover
 ## 6. MCP boundary
 
 The managed MCP implementation uses the public MCP SDK. HTTP transports receive the
-composition-owned safe network fetch. Stdio profiles are trusted Host execution authorization:
+composition-owned network fetch. A trusted Host HTTP/SSE descriptor authorizes its configured
+origin, including local/private destinations and custom ports; model-Web public-address restrictions
+do not apply. Both SSE receive and send use the same injected network owner (see [Web/network](web-and-network.md#6-mcp-networking)). Stdio profiles are trusted Host execution authorization:
 prepare resolves the declared executable/argv/cwd, obtains connection-scoped credential material as
 environment, launches through root `ctx.subprocess` and calls `listTools` before commit. This path
 does not use Bash allowed-command references, executable digest verification, a model Tool

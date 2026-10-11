@@ -592,7 +592,7 @@ Host MUST branch on negotiated capability values, not runtime name or version gu
 - Paths are canonicalized and revalidated immediately before side effects.
 - Runtime home, workspace roots, attachment staging, and persistence paths have non-overlapping explicit authorities.
 - Environment inheritance is sealed by allowlist.
-- Runtime safe HTTP and managed remote MCP use composition-owned URL, redirect, byte, timeout and cancellation policy. Direct routes resolve/reject non-public DNS answers and pin an approved address; an explicit proxy owns remote name resolution and never falls back to direct. Host-backed search and model transports have their own network owners. See [Web/network](../boundaries/web-and-network.md).
+- Runtime safe HTTP and managed MCP use composition-owned URL, redirect, byte, timeout and cancellation policy. Model-Web direct routes reject non-public DNS answers; trusted Host-configured MCP permits local/private destinations and custom ports. Both pin their selected valid address; an explicit proxy owns remote name resolution and never falls back to direct. Host-backed search and model transports have their own network owners. See [Web/network](../boundaries/web-and-network.md).
 - Provider and MCP credentials are reverse-port-only and request/connection scoped. The App-owned internal CLI capability is admitted only as the exact `MYAGENTS_INTERNAL_CLI_TOKEN` process-environment key for an internal Agent Shell; its value is never carried in protocol snapshots, events, diagnostics, or persistence. External CLI tokens are not admitted.
 - Every Host response is fenced by generation and current operation/component revision.
 - Model-visible and event-visible text is bounded before serialization.

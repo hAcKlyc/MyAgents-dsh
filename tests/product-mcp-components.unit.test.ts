@@ -275,7 +275,7 @@ describe("generation-owned MCP component compiler", () => {
     expect(close).toHaveBeenCalledOnce();
   });
 
-  it("runs remote HTTP through bounded same-origin requests with connection-scoped headers", async () => {
+  it.each(["https://mcp.example.test/rpc", "http://localhost:3000/rpc", "http://127.0.0.1:45678/rpc", "http://[::1]:3000/rpc", "http://192.168.1.2:8080/rpc", "http://mcp.internal:8080/rpc"])("runs configured HTTP %s with connection-scoped headers", async (endpoint) => {
     const root = new Context();
     contexts.push(root);
     const requests: Array<Readonly<{ method: string; url: string; authorization: string | null }>> = [];
@@ -312,7 +312,7 @@ describe("generation-owned MCP component compiler", () => {
     }));
     const signal = new AbortController().signal;
     const connection = await factory.connect({
-      descriptor: { transport: "http", url: "https://mcp.example.test/rpc" },
+      descriptor: { transport: "http", url: endpoint },
       material: Object.freeze({ Authorization: "Bearer fixture" }),
       serverId: "fixture",
       signal,
@@ -324,7 +324,55 @@ describe("generation-owned MCP component compiler", () => {
     await connection.close();
     expect(requests.map(({ method }) => method)).toEqual(["POST", "POST", "POST", "POST", "DELETE"]);
     expect(requests.every(({ authorization, url }) => authorization === "Bearer fixture"
-      && url === "https://mcp.example.test/rpc")).toBe(true);
+      && url === endpoint)).toBe(true);
+  });
+
+  it.each([false, true])("keeps SSE GET/POST in the injected network owner (cross-origin=%s)", async crossOrigin => {
+    const root = new Context(); contexts.push(root);
+    let stream!: ReadableStreamDefaultController<Uint8Array>;
+    const encoder = new TextEncoder();
+    const methods: string[] = [];
+    const networkFetch = vi.fn((_input: string | URL | Request, init?: RequestInit): Promise<Response> => {
+      const method = init?.method ?? "GET"; methods.push(method);
+      expect(new Headers(init?.headers).get("authorization")).toBe("Bearer synthetic");
+      if (method === "GET") {
+        const body = new ReadableStream<Uint8Array>({ start(controller) {
+          stream = controller;
+          const endpoint = crossOrigin ? "http://elsewhere.local/messages" : "/messages";
+          controller.enqueue(encoder.encode(`event: endpoint\ndata: ${endpoint}\n\n`));
+        } });
+        return Promise.resolve(new Response(body, { headers: { "content-type": "text/event-stream" } }));
+      }
+      if (typeof init?.body !== "string") throw new Error("Expected MCP JSON body");
+      const request = JSON.parse(init.body) as { id?: number; method: string };
+      if (request.id !== undefined) {
+        const result = request.method === "initialize" ? { protocolVersion: LATEST_PROTOCOL_VERSION,
+          capabilities: { tools: {} }, serverInfo: { name: "sse-fixture", version: "1" } }
+          : request.method === "tools/list" ? { tools: [{ name: "echo", inputSchema: { type: "object" } }] }
+          : { content: [{ type: "text", text: "sse result" }] };
+        stream.enqueue(encoder.encode(`event: message\ndata: ${JSON.stringify({ jsonrpc: "2.0", id: request.id, result })}\n\n`));
+      }
+      return Promise.resolve(new Response(null, { status: 202 }));
+    });
+    const ambient = vi.spyOn(globalThis, "fetch").mockRejectedValue(new Error("ambient fetch forbidden"));
+    try {
+      const factory = createManagedMcpConnectionFactory(root, Object.freeze({ networkFetch }));
+      const signal = new AbortController().signal;
+      const connected = factory.connect({ descriptor: { transport: "sse", url: "http://localhost:3000/events" },
+        material: { Authorization: "Bearer synthetic" }, serverId: "fixture", signal });
+      if (crossOrigin) {
+        await expect(connected).rejects.toThrow(/origin/);
+        expect(methods).toEqual(["GET"]);
+      } else {
+        const connection = await connected;
+        try {
+          await expect(connection.listTools(signal)).resolves.toMatchObject([{ name: "echo" }]);
+          await expect(connection.callTool("echo", {}, signal)).resolves.toMatchObject({ content: [{ text: "sse result" }] });
+          expect(methods).toEqual(["GET", "POST", "POST", "POST", "POST"]);
+        } finally { await connection.close(); }
+      }
+      expect(ambient).not.toHaveBeenCalled();
+    } finally { ambient.mockRestore(); stream.close(); }
   });
 
   it("uses the public MCP SDK client over one composition-selected transport", async () => {

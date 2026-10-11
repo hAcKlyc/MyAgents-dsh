@@ -220,6 +220,7 @@ const expectedWorkspaceFiles = new Map([
     "src/extension-snapshot.ts",
     "src/collaboration-policy.ts",
     "src/composition.ts",
+    "src/mcp-response.ts",
     "src/host-interaction.ts",
     "src/host-model.ts",
     "src/network-transport.ts",
