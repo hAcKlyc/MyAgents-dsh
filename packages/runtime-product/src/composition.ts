@@ -2349,8 +2349,8 @@ export const composeDshRootServices = async (
         const persistence = root.get("sessionPersistence");
         if (!(persistence instanceof ProductJsonlSessionPersistence)) return undefined;
         return Object.freeze({
-          commitDelete: (token, clientMutationId, signal) =>
-            persistence.commitDelete(token, clientMutationId, signal),
+          commitDelete: (token, clientMutationId, signal, storageOnly) =>
+            persistence.commitDelete(token, clientMutationId, signal, storageOnly),
           getDelete: (token, signal) => persistence.getDelete(token, signal),
           prepareDelete: (input, signal) => persistence.prepareDelete(input, signal),
           rollbackDelete: (token, clientMutationId, signal) =>
