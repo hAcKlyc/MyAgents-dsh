@@ -14,12 +14,22 @@ describe("verified DSH installation", () => {
       { name: "@deepseek-ai/dsh-session", tarball: "session.tgz" },
       { name: "@deepseek-ai/dsh-agent", tarball: "agent.tgz" },
     ];
-    const result = packageForVerifiedDshInstall(source, packages, "/artifact");
+    const result = packageForVerifiedDshInstall(source, packages, "/artifact", {
+      dependencies: { zod: "4.6.5" },
+    });
 
     expect(result.dependencies?.["@deepseek-ai/dsh-session"]).toBe(`file:${resolve("/artifact/session.tgz")}`);
     expect(result.overrides?.["@deepseek-ai/dsh-session"]).toBe(result.dependencies?.["@deepseek-ai/dsh-session"]);
     expect(result.overrides?.["@deepseek-ai/dsh-agent"]).toBe(`file:${resolve("/artifact/agent.tgz")}`);
     expect(result.overrides?.unrelated).toBe("2.0.0");
+    expect(result.dependencies?.zod).toBe("4.6.5");
     expect(source.dependencies["@deepseek-ai/dsh-session"]).toBe("0.1.7-rc.2");
+    expect(source.dependencies).not.toHaveProperty("zod");
+  });
+
+  it("rejects a floating schema dependency before installing unverified types", () => {
+    expect(() => packageForVerifiedDshInstall({}, [], "/artifact", {
+      dependencies: { zod: "^4.6.5" },
+    })).toThrow("exact Zod version");
   });
 });
