@@ -12,11 +12,11 @@
     "reverseMethodCount": 7
   },
   "outputs": {
-    "host-client.generated.ts": "1f6d36cf55f658f624eaa0c5784e243a835c5a99a56bf8a863b47be8af5ac204",
-    "protocol-fixtures.json": "e0d97cff2715ad6131529e55d976e4cb7b6dd5491149be46a935e0775a26dda9",
-    "protocol-meta.json": "dfc682a3235da5d5a02501510f101a4fbe8d5c03f69267eefe44c7d8bc8ac3da",
-    "protocol.schema.json": "75facbf16c1e3e9c1c4a4613244f0ba9e353d26f744807275986d0ab95c79b5e",
-    "public-contract.generated.ts": "57f0f5298d0ab285fc35542cc46f208ead31ac892f47fdbe8dd173e5973c326a"
+    "host-client.generated.ts": "bd4f42fcc1a1b12b463c529d0129167dc5bc567fba2c58517b4c3b89d8ef681f",
+    "protocol-fixtures.json": "543ec4a15f1754284e7022f2bb0cd20f2037794c6c376095ca9af2ee48aa48b9",
+    "protocol-meta.json": "49c471fce640d620b4e7b4886f0c608d6c6cbe6716de726dcd880c50bda2981f",
+    "protocol.schema.json": "341c84d8885b8a5be48f6c3fe02c4e27224219d9eaf374b139b961e970b7e539",
+    "public-contract.generated.ts": "62322bbdac70682b7ca294a90220ab1f7ab80420f1c5cfd27fa697eb262c7526"
   },
   "protocolVersion": "6.2.0"
 }
