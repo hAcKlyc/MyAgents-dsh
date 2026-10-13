@@ -10,6 +10,8 @@ export type ProductDeletePhase =
 export interface ProductDeletePrepareInput {
   readonly clientMutationId: string;
   readonly runtimeSessionId: string;
+  /** A retired, storage-only primary uses the durable locator without decoding history. */
+  readonly storageOnly?: boolean;
 }
 
 export interface ProductDeleteRecord {
@@ -26,7 +28,7 @@ export interface ProductDeleteRecord {
 
 export interface ProductDeleteStore {
   prepareDelete(input: ProductDeletePrepareInput, signal?: AbortSignal): Promise<ProductDeleteRecord>;
-  commitDelete(token: string, clientMutationId: string, signal?: AbortSignal): Promise<ProductDeleteRecord>;
+  commitDelete(token: string, clientMutationId: string, signal?: AbortSignal, storageOnly?: boolean): Promise<ProductDeleteRecord>;
   purgeDelete(token: string, clientMutationId: string, signal?: AbortSignal): Promise<ProductDeleteRecord>;
   rollbackDelete(token: string, clientMutationId: string, signal?: AbortSignal): Promise<ProductDeleteRecord>;
   getDelete(token: string, signal?: AbortSignal): Promise<ProductDeleteRecord | undefined>;

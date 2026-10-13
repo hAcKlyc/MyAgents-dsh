@@ -118,6 +118,36 @@ const backendWith = (
 ): PrimarySessionBackend => ({ create, resume });
 
 describe("one-primary-session admission", () => {
+  it("reserves storage deletion without creating an Agent and fences foreign identities", async () => {
+    const context = new Context();
+    context.provide("agents", { roots: () => [], setPublicationGuard: () => () => undefined } as never);
+    context.provide("sessions", { list: () => [], setPublicationGuard: () => () => undefined } as never);
+    const create = vi.fn(() => Promise.reject(new Error("create must not run")));
+    const resume = vi.fn(() => Promise.reject(new Error("resume must not run")));
+    const record = { runtimeSessionId: "stored-session", token: "delete-token", phase: "prepared" };
+    const prepareDelete = vi.fn(() => Promise.resolve(record));
+    const commitDelete = vi.fn(() => Promise.resolve({ ...record, phase: "committed" }));
+    const service = new ProductSessionService(context, {
+      backend: backendWith(create, resume),
+      deleteStore: () => ({ prepareDelete, commitDelete, getDelete: () => Promise.resolve(record) } as never),
+    });
+    service.bindWorkspace(workspace);
+    const input = { runtimeSessionId: "stored-session", clientMutationId: "delete-client" };
+    expect(await service.deletePrepare(input)).toEqual({ token: "delete-token", state: "prepared" });
+    expect(service.snapshot()).toMatchObject({ state: "retired", runtimeSessionId: "stored-session", liveRootAgents: 0 });
+    expect(prepareDelete).toHaveBeenCalledWith({ ...input, storageOnly: true }, undefined);
+    expect(() => service.bindCreate(createParams())).toThrow(/cannot admit/u);
+    expect(() => service.bindResume(resumeParams())).toThrow(/cannot admit/u);
+    expect(() => service.deletePrepare({ ...input, runtimeSessionId: "foreign-session" })).toThrow(/unbound/u);
+    await service.deletePrepare(input);
+    expect(await service.deleteCommit({ clientMutationId: input.clientMutationId, token: record.token }))
+      .toEqual({ token: "delete-token", state: "committed" });
+    expect(commitDelete).toHaveBeenCalledWith(record.token, input.clientMutationId, undefined, true);
+    expect(create).not.toHaveBeenCalled();
+    expect(resume).not.toHaveBeenCalled();
+    await context.fiber.dispose();
+  });
+
   it.each(["create", "resume"] as const)("starts recovered execution only after the exact primary is ready (%s)", async (mode) => {
     const handle = fakeHandle("runtime-primary");
     const afterReady = vi.fn((agent: Agent) => {

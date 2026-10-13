@@ -16,6 +16,8 @@ On Windows PowerShell, run `./setup.ps1`. Both call `scripts/setup.mjs` through 
 
 `npm run build` builds source and Reference Web. It does not produce a MyAgents integration handoff. `npm ci` alone also leaves ordinary registry DSH packages in place and is not the completed checked setup.
 
+The verified install also pins the temporary root Zod dependency to the accepted consumer's exact version. Native session schemas cross into Product code, so allowing an unpinned transitive Zod upgrade beside the workspace pin can break source composition even when every DSH tarball is correct. This does not change the committed package manifest or lockfile.
+
 ## Modify DSH and build a local native handoff
 
 After implementation and applicable checks, commit the DSH change. The handoff builder requires a clean checkout and binds the Runtime to that exact HEAD. Choose a new absolute output directory outside this repository:

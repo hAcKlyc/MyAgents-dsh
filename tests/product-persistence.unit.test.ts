@@ -527,6 +527,106 @@ describe("ProductJsonlSessionPersistence", () => {
     await context.fiber.dispose();
   });
 
+  it.each([false, true])("deletes unreadable native history and recovers every phase (legacy prepare: %s)", async (legacyPrepare) => {
+    const runtimeHome = await makeRuntimeHome();
+    const id = SessionId("product-storage-delete-corrupt");
+    let context = await mount(runtimeHome);
+    await createFixtureSession(context.sessionPersistence, header(id));
+    await appendFixtureEvents(context.sessionPersistence, id, turn(0, 1));
+    const input = { runtimeSessionId: id, clientMutationId: "storage-delete-corrupt", storageOnly: true };
+    if (legacyPrepare) await (context.sessionPersistence as ProductJsonlSessionPersistence).prepareDelete({ ...input, storageOnly: false });
+    const path = await nativeLogPath(runtimeHome, id);
+    await context.fiber.dispose();
+    await writeFile(path, "not a native compressed log");
+    context = await mount(runtimeHome);
+    let persistence = context.sessionPersistence as ProductJsonlSessionPersistence;
+    await expect(persistence.inspectRecovery(id)).resolves.toMatchObject({ reason: "persisted_history_invalid" });
+    const prepared = await persistence.prepareDelete(input);
+    await context.fiber.dispose();
+    context = await mount(runtimeHome);
+    persistence = context.sessionPersistence as ProductJsonlSessionPersistence;
+    expect(await persistence.prepareDelete(input)).toEqual(prepared);
+    const committed = await persistence.commitDelete(prepared.token, input.clientMutationId, undefined, true);
+    await context.fiber.dispose();
+    context = await mount(runtimeHome);
+    persistence = context.sessionPersistence as ProductJsonlSessionPersistence;
+    expect(await persistence.prepareDelete(input)).toEqual(committed);
+    const purged = await persistence.purgeDelete(prepared.token, input.clientMutationId);
+    await context.fiber.dispose();
+    context = await mount(runtimeHome);
+    persistence = context.sessionPersistence as ProductJsonlSessionPersistence;
+    expect(await persistence.prepareDelete(input)).toEqual(purged);
+    expect(await persistence.purgeDelete(prepared.token, input.clientMutationId)).toEqual(purged);
+    await expect(readFile(path)).rejects.toMatchObject({ code: "ENOENT" });
+    expect(await persistence.prepareDelete({ ...input, storageOnly: false })).toEqual(purged);
+  });
+
+  it("storage delete preserves an active writer and competing delete journal", async () => {
+    const runtimeHome = await makeRuntimeHome();
+    const context = await mount(runtimeHome);
+    const persistence = context.sessionPersistence as ProductJsonlSessionPersistence;
+    const id = SessionId("storage-delete-owner");
+    const writer = await persistence.create(header(id));
+    await writer.append(turn(0, 1));
+    await writer.flush();
+    const input = { runtimeSessionId: id, clientMutationId: "storage-delete-owner", storageOnly: true };
+    await expect(persistence.prepareDelete(input)).rejects.toThrow();
+    await writer.close();
+    const prepared = await persistence.prepareDelete(input);
+    await expect(persistence.prepareDelete({ ...input, clientMutationId: "competing" })).rejects.toThrow(/settlement/u);
+    await expect(persistence.commitDelete(prepared.token, "foreign", undefined, true)).rejects.toThrow();
+    expect(await persistence.getDelete(prepared.token)).toEqual(prepared);
+  });
+
+  it.each(["rewind", "fork"] as const)("preserves outstanding %s on historical committed delete replay", async (kind) => {
+    const runtimeHome = await makeRuntimeHome();
+    let context = await mount(runtimeHome);
+    let persistence = context.sessionPersistence as ProductJsonlSessionPersistence;
+    const id = SessionId(`legacy-delete-${kind}`);
+    await createFixtureSession(persistence, header(id));
+    const first = turn(0, 1);
+    const second = turn(2, 2);
+    await appendFixtureEvents(persistence, id, first);
+    const boundary = (await persistence.readSession({ maxResultBytes: 65_536, runtimeGeneration: "legacy", runtimeSessionId: id })).durableHead.stableBoundaryId;
+    if (boundary === undefined) throw new Error("fixture has no stable boundary");
+    await appendFixtureEvents(persistence, id, second);
+    const outstanding = kind === "rewind"
+      ? await persistence.prepareRewind({ clientMutationId: "outstanding", runtimeSessionId: id, targetStableBoundaryId: boundary, sourceTranscriptPostcondition: productTranscriptPostcondition([...first, ...second]), targetTranscriptPostcondition: productTranscriptPostcondition(first) })
+      : await persistence.prepareFork({ clientMutationId: "outstanding", runtimeSessionId: id, sourceStableBoundaryId: boundary, targetRuntimeHome: await makeRuntimeHome(), targetRuntimeSessionId: "retained-fork-target", targetWorkspaceIdentity: "retained-workspace", targetPersistenceRef: "retained-target" });
+    const input = { runtimeSessionId: id, clientMutationId: "legacy-delete" };
+    const deletion = await persistence.prepareDelete(input);
+    await persistence.commitDelete(deletion.token, input.clientMutationId);
+    await context.fiber.dispose();
+    context = await mount(runtimeHome);
+    persistence = context.sessionPersistence as ProductJsonlSessionPersistence;
+    expect((await persistence.prepareDelete({ ...input, storageOnly: true })).phase).toBe("committed");
+    await expect(persistence.purgeDelete(deletion.token, input.clientMutationId)).rejects.toThrow(/settlement/u);
+    expect(await (kind === "rewind" ? persistence.getRewind(outstanding.token) : persistence.getFork(outstanding.token))).toEqual(outstanding);
+    expect((await persistence.getDelete(deletion.token))?.phase).toBe("committed");
+  });
+
+  it.skipIf(!supportsDirectorySymlinks)("storage purge rejects a replaced generation directory", async () => {
+    const runtimeHome = await makeRuntimeHome();
+    const context = await mount(runtimeHome);
+    const persistence = context.sessionPersistence as ProductJsonlSessionPersistence;
+    const id = SessionId("storage-delete-symlink");
+    await createFixtureSession(persistence, header(id));
+    await appendFixtureEvents(persistence, id, turn(0, 1));
+    const prepared = await persistence.prepareDelete({ runtimeSessionId: id, clientMutationId: "symlink", storageOnly: true });
+    await persistence.commitDelete(prepared.token, "symlink", undefined, true);
+    const generation = join(runtimeHome, "sessions", prepared.sourceGenerationId);
+    const retained = join(runtimeHome, "retained-generation");
+    await rename(generation, retained);
+    await symlink(retained, generation, "dir");
+    await expect(persistence.purgeDelete(prepared.token, "symlink")).rejects.toThrow();
+    // The database purge receipt is durable before physical collection; replay
+    // must retry collection even when status already says purged.
+    expect((await persistence.getDelete(prepared.token))?.phase).toBe("purged");
+    await rm(generation);
+    await rename(retained, generation);
+    expect((await persistence.purgeDelete(prepared.token, "symlink")).phase).toBe("purged");
+  });
+
   it("rejects delete commit after the prepared Session revision changes", async () => {
     const runtimeHome = await makeRuntimeHome();
     const context = await mount(runtimeHome);

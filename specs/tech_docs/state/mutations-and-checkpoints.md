@@ -51,6 +51,19 @@ rewind and delete retire the generation and drain native subagents/jobs; only re
 postconditions, excluded-child plans and governed-file hashes. Wire results may fold internal
 `committing`, `rolling_back` or `aborting` phases into their public status vocabulary.
 
+Storage-only delete is admitted by `session/delete/prepare` with an explicit
+`runtimeSessionId` (protocol 6.2). It reserves an unbound process for that exact
+identity in the retired state without constructing an Agent. The Host first
+fences its Session owners. Prepare and commit acquire the native writer lease,
+use the canonical locator/revision and existing delete journal, and never decode
+the native conversation. Replaying prepare after a lost response returns the
+original token, including historical prepared, committed and purged journals.
+Purge still requires the exact tombstone and canonical, non-symlink generation
+directories. Outstanding fork/rewind journals must settle through their existing
+owners before deletion; storage delete cannot discard workspace rollback plans
+or another Session's publication. A corrupt coordination database is outside
+this recovery path.
+
 ## 5. Rewind
 
 Rewind selects one exact completed-turn boundary or the materialized genesis boundary. It creates a

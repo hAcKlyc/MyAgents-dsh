@@ -32,6 +32,7 @@ try {
   // tarballs at the root leaves registry DSH copies nested under workspaces.
   const temporaryPackage = packageForVerifiedDshInstall(
     JSON.parse(packageBytes.toString("utf8")), manifest.packages, artifact,
+    JSON.parse(readFileSync(resolve(artifact, "consumer/package.json"), "utf8")),
   );
   writeFileSync(packagePath, `${JSON.stringify(temporaryPackage, null, 2)}\n`);
   const install = childCli("npm", ["install", "--no-save", "--package-lock=false", "--ignore-scripts",

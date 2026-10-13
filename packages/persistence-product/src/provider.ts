@@ -371,8 +371,8 @@ export class ProductJsonlSessionPersistence extends SessionPersistence {
     return stateOf(this).store.prepareDelete(input, signal);
   }
 
-  commitDelete(token: string, clientMutationId: string, signal?: AbortSignal): Promise<ProductDeleteRecord> {
-    return stateOf(this).store.commitDelete(token, clientMutationId, signal);
+  commitDelete(token: string, clientMutationId: string, signal?: AbortSignal, storageOnly = false): Promise<ProductDeleteRecord> {
+    return stateOf(this).store.commitDelete(token, clientMutationId, signal, storageOnly);
   }
 
   purgeDelete(token: string, clientMutationId: string, signal?: AbortSignal): Promise<ProductDeleteRecord> {

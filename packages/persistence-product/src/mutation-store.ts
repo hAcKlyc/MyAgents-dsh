@@ -1134,11 +1134,9 @@ export class ProductMutationStore implements ProductCheckpointStore,
     signal?: AbortSignal,
   ): Promise<ProductDeleteRecord> {
     this.#validateDeleteIdentity(input.runtimeSessionId, input.clientMutationId);
-    return this.#locks.run(input.runtimeSessionId as SessionId, signal, async () => {
+    const prepare = async (): Promise<ProductDeleteRecord> => {
       signal?.throwIfAborted();
       this.#assertSchema();
-      const active = await this.#readActiveSession(input.runtimeSessionId as SessionId, false);
-      if (active === undefined) throw new Error("delete source Session is unavailable");
       const fingerprint = createHash("sha256")
         .update("myagents-delete-request-v1\0", "utf8")
         .update(input.clientMutationId).update("\0").update(input.runtimeSessionId)
@@ -1150,6 +1148,11 @@ export class ProductMutationStore implements ProductCheckpointStore,
         }
         return existing;
       }
+      const active = input.storageOnly === true
+        ? this.#readLocator(input.runtimeSessionId as SessionId, false, true)
+        : await this.#readActiveSession(input.runtimeSessionId as SessionId, false);
+      if (active === undefined) throw new Error("delete source Session is unavailable");
+      if (input.storageOnly === true) this.#assertDeleteHasNoCompetingMutation(active.sessionId);
       this.#assertPendingMutationCapacity(active.sessionId);
       const now = Date.now();
       const token = `del_${randomUUID()}`;
@@ -1162,13 +1165,19 @@ export class ProductMutationStore implements ProductCheckpointStore,
       `).run(token, input.clientMutationId, fingerprint, active.sessionId,
         active.activeGenerationId, String(this.#revision(active)), now, now);
       return this.#requireDeleteIdentity(token, input.clientMutationId);
-    });
+    };
+    // A management process must not prepare a tombstone while a native writer
+    // owns this Session. Ordinary live prepare keeps its existing Agent lease.
+    return input.storageOnly === true
+      ? this.#mutationLock(input.runtimeSessionId as SessionId, [input.runtimeSessionId as SessionId], signal, prepare)
+      : this.#locks.run(input.runtimeSessionId as SessionId, signal, prepare);
   }
 
   commitDelete(
     token: string,
     clientMutationId: string,
     signal?: AbortSignal,
+    storageOnly = false,
   ): Promise<ProductDeleteRecord> {
     this.#validateDeleteIdentity(token, clientMutationId);
     const known = this.#readDelete(token);
@@ -1180,11 +1189,14 @@ export class ProductMutationStore implements ProductCheckpointStore,
       if (record.phase !== "prepared" && record.phase !== "committing") {
         throw new Error(`delete cannot commit from ${record.phase}`);
       }
-      const active = await this.#readActiveSession(record.runtimeSessionId as SessionId, false);
+      const active = storageOnly
+        ? this.#readLocator(record.runtimeSessionId as SessionId, false, true)
+        : await this.#readActiveSession(record.runtimeSessionId as SessionId, false);
       if (active?.activeGenerationId !== record.sourceGenerationId
         || String(this.#revision(active)) !== record.sourceRevision) {
         throw new Error("delete source locator or revision changed before commit");
       }
+      if (storageOnly) this.#assertDeleteHasNoCompetingMutation(active.sessionId, token);
       const receipt = Object.freeze({
         deletedGenerationId: record.sourceGenerationId,
         durableSequence: active.eventCount,
@@ -1260,15 +1272,9 @@ export class ProductMutationStore implements ProductCheckpointStore,
         || row.generation_head_hash !== receipt.headHash) {
         throw new Error("delete tombstone was replaced before purge");
       }
-      const competing = rowInteger(asRecord(database.prepare(`
-        SELECT count(*) AS count FROM delete_journals
-         WHERE session_id = ? AND token <> ?
-           AND phase NOT IN ('rolled_back', 'purged')
-      `).get(record.runtimeSessionId, token), "delete purge competing journal aggregate"),
-      "count", "delete purge competing journal aggregate");
-      if (competing !== 0) {
-        throw new Error("delete purge is blocked by another non-terminal delete journal");
-      }
+      // Historical committed deletes may coexist with an unfinished rewind or
+      // fork. Purge is the destructive boundary, including cold replay.
+      this.#assertDeleteHasNoCompetingMutation(record.runtimeSessionId, token);
       const purgedReceipt = Object.freeze({
         ...receipt,
         collectedCheckpointBlobs: 0,
@@ -2900,6 +2906,19 @@ export class ProductMutationStore implements ProductCheckpointStore,
     }
   }
 
+  #assertDeleteHasNoCompetingMutation(sessionId: string, token = ""): void {
+    const database = this.#requireDatabase();
+    const competing = database.prepare(`
+      SELECT 1 FROM mutation_journals WHERE session_id = ?
+        AND phase NOT IN ('committed', 'rolled_back')
+      UNION ALL SELECT 1 FROM fork_journals WHERE source_session_id = ?
+        AND phase NOT IN ('committed', 'aborted')
+      UNION ALL SELECT 1 FROM delete_journals WHERE session_id = ? AND token <> ?
+        AND phase NOT IN ('rolled_back', 'purged') LIMIT 1
+    `).get(sessionId, sessionId, sessionId, token);
+    if (competing !== undefined) throw new Error("delete requires settlement of the existing mutation journal");
+  }
+
   #readDelete(token: string): ProductDeleteRecord | undefined {
     if (this.#database === undefined) return undefined;
     const value = this.#requireDatabase().prepare(
@@ -2966,7 +2985,18 @@ export class ProductMutationStore implements ProductCheckpointStore,
   async #purgeReceiptGenerations(record: ProductDeleteRecord): Promise<void> {
     const generations = record.receipt?.nativeGenerationIds;
     if (!Array.isArray(generations) || generations.some((id: unknown) => typeof id !== "string")) throw new Error("purge receipt lacks native generation identities");
-    for (const generationId of generations as string[]) await this.nativeLogs.purge(generationId);
+    for (const generationId of generations as string[]) {
+      // Storage deletion intentionally never opens a log, so validate directory
+      // authority here instead of relying on the native reader's path checks.
+      try {
+        await this.#validateDirectory(resolve(this.#options.runtimeHome, "sessions"), "native sessions root");
+        await this.#validateDirectory(this.nativeLogs.root(generationId), "native generation root");
+      } catch (error) {
+        if (error instanceof Error && "code" in error && error.code === "ENOENT") continue;
+        throw error;
+      }
+      await this.nativeLogs.purge(generationId);
+    }
   }
 
   #deleteReceipt(record: ProductDeleteRecord): Readonly<{

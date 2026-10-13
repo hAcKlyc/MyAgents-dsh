@@ -12,7 +12,7 @@ export { ToolCatalogSchema } from "./tool-catalog.js";
 export { RUNTIME_VERSION } from "./runtime-version.generated.js";
 export type { CanonicalToolName } from "../generated/canonical-tools.generated.js";
 
-export const PROTOCOL_VERSION = "6.1.0" as const;
+export const PROTOCOL_VERSION = "6.2.0" as const;
 export const DSH_ENGINE_VERSION = "0.2.0-rc.2.myagents.639ed0153972.56bce4eb7e07" as const;
 export const SESSION_FORMAT = "dsh-session-events-v2" as const;
 export const DEEPSEEK_WEB_SEARCH_ADAPTER_ID = "deepseek-official-native-web-search" as const;
@@ -977,7 +977,7 @@ export const RPC_METHODS = {
   "session/read": method("host_to_runtime", strictObject({ cursor: Type.Optional(identifier) }), SessionReadResultSchema),
   "session/close": method("host_to_runtime", operationParams, okResult),
   "session/compact": method("host_to_runtime", operationParams, strictObject({ state: Type.Union([Type.Literal("accepted"), Type.Literal("already_known")]) })),
-  "session/delete/prepare": method("host_to_runtime", strictObject({ clientMutationId: identifier }), mutationResult),
+  "session/delete/prepare": method("host_to_runtime", strictObject({ clientMutationId: identifier, runtimeSessionId: Type.Optional(identifier) }), mutationResult),
   "session/delete/commit": method("host_to_runtime", mutationParams, mutationResult),
   "session/delete/purge": method("host_to_runtime", mutationParams, mutationResult),
   "session/delete/rollback": method("host_to_runtime", mutationParams, mutationResult),

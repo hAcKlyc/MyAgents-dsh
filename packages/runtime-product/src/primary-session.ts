@@ -862,6 +862,7 @@ class PrimaryRootPublicationFence {
 
 export class PrimarySessionAdmission {
   #state: PrimarySessionState = "unbound";
+  #storageDeleteSessionId: string | undefined;
   #record: AdmissionRecord | undefined;
   #binding: PrimarySessionBinding | undefined;
   #handle: AgentHandle | undefined;
@@ -927,6 +928,7 @@ export class PrimarySessionAdmission {
     const desiredConfigRevision = binding?.desiredConfigRevision ?? record?.configRevision;
     return Object.freeze({
       state: this.#state,
+      ...(this.#storageDeleteSessionId === undefined ? {} : { runtimeSessionId: this.#storageDeleteSessionId }),
       ...(owner === undefined ? {} : {
         clientOperationId: owner.clientOperationId,
         ...(desiredConfigRevision === undefined ? {} : { desiredConfigRevision }),
@@ -946,6 +948,22 @@ export class PrimarySessionAdmission {
     const params = validateMethodParams("session/create", value);
     const runtimeSessionId = SessionId(params.runtimeSessionId ?? generatedRuntimeSessionId(params));
     return this.#bind("create", params, runtimeSessionId, signal);
+  }
+
+  /** Reserve this generation for one stored identity without publishing an Agent. */
+  reserveStorageDelete(runtimeSessionId: string): void {
+    boundedIdentifier(runtimeSessionId, "storage delete Session identity");
+    if (this.#state === "retired" && this.#storageDeleteSessionId === runtimeSessionId) return;
+    if (this.#state !== "unbound" || this.#retiring) {
+      throw new ProtocolError("primary_session_conflict", "storage deletion requires an unbound Runtime generation");
+    }
+    this.#storageDeleteSessionId = runtimeSessionId;
+    this.#retiring = true;
+    this.#state = "retired";
+  }
+
+  isStorageDelete(): boolean {
+    return this.#storageDeleteSessionId !== undefined;
   }
 
   bindResume(value: unknown, signal?: AbortSignal): Promise<PrimarySessionBinding> {
@@ -2187,11 +2205,15 @@ export class ProductSessionService extends Service {
     const owner = productSessionServiceOwner(this);
     if (owner !== this) return owner.deletePrepare(value, signal);
     const params = validateMethodParams("session/delete/prepare", value);
-    const snapshot = this.snapshot();
-    const runtimeSessionId = assertMutationPrepareAdmission(snapshot, "delete");
+    if (params.runtimeSessionId !== undefined) {
+      if (this.admissionValue === undefined) throw new ProtocolError("primary_session_not_ready", "Runtime workspace is not initialized");
+      this.admissionValue.reserveStorageDelete(params.runtimeSessionId);
+    }
+    const runtimeSessionId = params.runtimeSessionId ?? assertMutationPrepareAdmission(this.snapshot(), "delete");
     return this.#requireDeleteStore().prepareDelete(Object.freeze({
       clientMutationId: params.clientMutationId,
       runtimeSessionId,
+      ...(params.runtimeSessionId === undefined ? {} : { storageOnly: true }),
     }), signal).then((record) => this.#projectDelete(record));
   }
 
@@ -2211,7 +2233,9 @@ export class ProductSessionService extends Service {
       if (record.phase !== "committed") {
         signal?.throwIfAborted();
         await this.retire();
-        return this.#projectDelete(await store.commitDelete(params.token, params.clientMutationId));
+        return this.#projectDelete(await store.commitDelete(
+          params.token, params.clientMutationId, undefined, this.admissionValue?.isStorageDelete(),
+        ));
       }
       return this.#projectDelete(record);
     });
