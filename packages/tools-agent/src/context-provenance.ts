@@ -1,5 +1,6 @@
 import type {} from "@deepseek-ai/dsh-subagent";
 import { z } from "zod";
+import { isDeepStrictEqual } from "node:util";
 import type { Context } from "@deepseek-ai/cordis";
 import type { ProjectionDefinition } from "@deepseek-ai/dsh-session-projection";
 import type { Session, SessionEvent } from "@deepseek-ai/dsh-session";
@@ -29,9 +30,17 @@ export const ownsRootContextMessage = (
   ctx: Context,
 ): boolean => {
   const kind: string | undefined = source?.kind;
-  const events = kind === "tool-jobs" || kind === "agent-message" || kind === "subagent-settled"
+  const events = kind === "tool-jobs" || kind === "agent-message" || kind === "subagent-settled" || kind === "agent-instructions"
     ? ctx.sessionProjections.stateOf(session, "myagentsContextProvenance")?.events ?? [] : [];
   if (ownsOfficialJobNotice(events, source, messageId)) return true;
+  // Native instruction reconciliation can discard a queued delta and inject its
+  // replacement directly. Its exact persisted Inbox source owns that lifecycle,
+  // not the Product operation ledger (including historical crash recovery).
+  if (kind === "agent-instructions") {
+    return events.some((event) => event.type === "agent/inbox/spliced"
+      && event.data.inserted.some((message) => message.id === messageId
+        && isDeepStrictEqual(message.source, source)));
+  }
   // DSH owns native relay/settlement provenance through the parent catalog and Inbox.
   // Native messages use the parent catalog and exact Inbox insertion.
   if ((source?.kind === "agent-message" || source?.kind === "subagent-settled")

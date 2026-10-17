@@ -176,7 +176,7 @@ The official profile directly consumes pinned public DSH packages for:
 - the concrete DSH AgentLoop;
 - `ctx.tools` registration, policy, dispatch, results, and presentation;
 - system-prompt assembly;
-- DSH-owned primary project-instruction discovery and durable reconciliation;
+- DSH-owned primary project-instruction discovery and durable reconciliation, with exact native Inbox provenance shared by live and cold Product validation (see [system context](./tech_docs/execution/system-context-and-instructions.md));
 - LLM adapter routing;
 - selected persistence, Skills, compaction, subagent and Jobs providers; managed MCP uses the Product component compiler.
 

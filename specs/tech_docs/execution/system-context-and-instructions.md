@@ -102,7 +102,10 @@ AGENTS.md
 
 This three-file choice is mutual exclusion at each project root or nested directory, not one
 repository-wide winner and not an exclusion of the user-global instruction. DSH
-owns baseline discovery, durable replacement/tombstone events, resume and compaction replay. A
+owns baseline discovery, durable replacement/tombstone events, resume and compaction replay.
+Its queued deltas may be canceled when pre-step reconciliation substitutes fresh context. Product
+operation validation recognizes the exact native Inbox provenance in both live and cold paths,
+so existing histories recover without rewriting instruction or operation events. A
 successful native `read`, `read_image`, `write` or `edit` carrying `file_path` triggers its existing nested
 reconciliation. A transiently unavailable higher-priority candidate preserves the last-known-good
 winner; confirmed change or removal produces one atomic DSH change batch.

@@ -1,4 +1,5 @@
 import type {} from "@deepseek-ai/dsh-subagent";
+import type {} from "@deepseek-ai/dsh-agent-instructions";
 import { installNativeRootContext } from "@myagents-dsh/runtime-product";
 import { installProductContextProjection, ownsRootContextMessage } from "@myagents-dsh/tools-agent";
 import { SessionProjectionRegistry } from "@deepseek-ai/dsh-session-projection";
@@ -509,6 +510,45 @@ describe("durable product-operation fold", () => {
         ?? "missing-message",
       dshTurn: 1,
     }), fixture.agent.id)).toThrow("open DSH turn boundary");
+  });
+
+  it.each(["claim", "cancel"] as const)("preserves native instruction reconciliation through live and cold operation validation (%s)", async (action) => {
+    const owner = (agent: Agent, source: MessageSource | undefined, id: string) =>
+      ownsRootContextMessage(agent.session, source, id, agent.ctx);
+    const fixture = await mountService(undefined, undefined, undefined, undefined, undefined, true, undefined, undefined, owner);
+    await fixture.context.plugin(SessionProjectionRegistry);
+    installProductContextProjection(fixture.context);
+    await fixture.service.start(params());
+    fixture.agent.session.append("turn/start", { turn: 1 });
+    fixture.inbox.claim("next-turn", 1);
+    const message = freezeMessage({
+      id: MessageId("native-instruction-delta"), role: "user",
+      source: { kind: "agent-instructions", form: "instructions", changes: [
+        { action: "replace", scope: ".\0CLAUDE.md", path: "CLAUDE.md", digest: digest("e") },
+      ] },
+      content: [{ type: "text", text: "Updated project instructions" }],
+    });
+    expect(owner(fixture.agent, message.source, message.id)).toBe(false);
+    fixture.agent.steer(message);
+    expect(owner(fixture.agent, message.source, message.id)).toBe(true);
+    expect(owner(fixture.agent, { kind: "agent-instructions", form: "instructions", changes: [] }, message.id)).toBe(false);
+    expect(owner(fixture.agent, message.source, "unrelated-id")).toBe(false);
+    if (action === "claim") fixture.inbox.claim("next-step", 1);
+    else expect(fixture.inbox.remove(message.id)).toBe(true);
+    // Reconciliation may remove a stale queued delta before injecting a fresh
+    // native instruction message. It is not a Product-operation cancellation.
+    fixture.agent.session.append("user/message", message, { surfaceOp: "append" });
+    fixture.agent.session.append("turn/end", { turn: 1, reason: { kind: "aborted", reason: { kind: "disposed" } } });
+    expect(() => fixture.service.validatePersisted(fixture.agent)).not.toThrow();
+    const events = [...fixture.events];
+    const recovered = await mountService(undefined, events, undefined, undefined, undefined, true, undefined, undefined, owner);
+    await recovered.context.plugin(SessionProjectionRegistry);
+    installProductContextProjection(recovered.context);
+    expect(() => recovered.service.validatePersisted(recovered.agent)).not.toThrow();
+    expect(recovered.service.snapshot().operations).toHaveLength(1);
+    expect(recovered.service.snapshot().recoveryRequired).toBe(false);
+    expect(events.filter((event) => event.type === "myagents/operation/claimed")).toHaveLength(1);
+    expect(() => foldProductOperations(events, fixture.agent.id)).toThrow();
   });
 
   it("keeps owned root-context Inbox changes outside the operation fold through one terminal", async () => {
