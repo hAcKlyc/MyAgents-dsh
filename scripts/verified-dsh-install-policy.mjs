@@ -11,9 +11,18 @@ export function packageForVerifiedDshInstall(sourcePackage, packages, artifactRo
     throw new Error("Verified DSH consumer must pin an exact Zod version");
   }
   temporaryPackage.dependencies ??= {};
-  temporaryPackage.dependencies.zod = zod;
+  // The verified consumer also pins Cordis plugins and other external peers.
+  // Reuse those pins: resolving their ranges again can select a newer plugin
+  // requiring a different Cordis version even though DSH bytes are unchanged.
+  const patchedNames = new Set(packages.map(({ name }) => name));
+  for (const [name, version] of Object.entries(consumerPackage.dependencies)) {
+    if (!patchedNames.has(name)) temporaryPackage.dependencies[name] = version;
+  }
   for (const { name, tarball } of packages) {
     const localSpec = `file:${resolve(artifactRoot, tarball)}`;
+    // The post-install verifier checks the complete accepted inventory, including
+    // packages not imported by the source workspace's ordinary root manifest.
+    temporaryPackage.dependencies[name] = localSpec;
     for (const section of ["dependencies", "devDependencies", "optionalDependencies"]) {
       if (Object.hasOwn(temporaryPackage[section] ?? {}, name)) {
         temporaryPackage[section][name] = localSpec;
