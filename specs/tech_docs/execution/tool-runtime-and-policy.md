@@ -84,9 +84,7 @@ Native Glob/Grep return its complete-result locator and retrieval hint; Read use
 filesystem/sandbox path for that absolute file. There is no additional search store or transcript.
 Invalid regex errors quote the submitted pattern and parser reason rather than the internal wrapper.
 
-Each assembled Agent context identifies its native DSH Agent id, allowing children to recognize shared
-offers without exposing unrelated personal lists. This runtime identity is separate from MyAgents CLI's
-configured workspace Agent ids; the context directs callers to `myagents agent list` for that namespace.
+Generic context keeps the root Runtime Session ID internal. Task personal lists and claims resolve the caller from execution context; native child controls consume IDs returned by Agent tools. Product Agent and Session identities belong to the Host.
 Native interrupt requests reject unknown ids using
 DSH's live registry and durable descendant catalog; known inactive children retain native no-op semantics.
 Unresolved dependency errors identify only visible blockers and their status, explain reopen/delete,

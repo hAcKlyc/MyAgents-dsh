@@ -10,7 +10,7 @@ When the fixed upstream checkout is available at the documented sibling path, `n
 
 - Source/design evidence is `deepseek-harness@639ed015397290b3745d163aafe02ffee4aa3f84` (tree `ac66a6a3e77f6fa396509ddfecc7beacf0cf642a`), declaring `0.2.0-rc.2`.
 - Development dependency resolution is exact public npm `0.2.0-rc.2` plus Cordis `4.0.4`, independently pinned by package-lock tarball URLs and integrities.
-- Executable candidates are source-built with eleven audited core patches. The separately patched pi-ai `0.87.1` remains an independent dependency authority. The accepted 105-package patched-artifact manifest is the exact package-byte authority; later Product/lock/builder changes require fresh verification and do not inherit prior acceptance.
+- Executable candidates are source-built with twelve audited core patches. The separately patched pi-ai `0.87.1` remains an independent dependency authority. The accepted 105-package patched-artifact manifest is the exact package-byte authority; later Product/lock/builder changes require fresh verification and do not inherit prior acceptance.
 
 The public registry manifests omit `gitHead`. Their exact association with the tagged source remains `unproven`; the project therefore does not claim that the fixed source commit produced those registry tarballs. The custom executable artifact is independently tied to source, patch, builder, lock, package and consumer bytes.
 
@@ -33,7 +33,7 @@ recovery. Product mutations retain only metadata/checkpoint coordination and loc
 Seam 003 is reduced to the missing trusted event-validation hook; seam 004 remains public
 composition. No old SQLite Session backend or development-history migration remains.
 
-`seam-decisions-v1.json` records thirteen seams. Eleven core patches remain; the old Coordinator
+`seam-decisions-v1.json` records fourteen seams. Twelve core patches remain; the old Coordinator
 predicate and translator patch are removed. The JSONL hook replaces the old predicate seam.
 The source gate verifies every exact upstream blob, applies the ordered series only in a detached
 worktree and runs the selected source regressions. The patchless seam 004 still requires fresh

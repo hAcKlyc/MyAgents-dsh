@@ -21,7 +21,7 @@ This table records the current source boundaries. Exact artifact evidence and th
 
 | Surface | State | Exact current boundary |
 | --- | --- | --- |
-| DSH source distribution | Fixed official source plus required isolated patches | The [source baseline](./dsh/dsh-baseline-v1.json) pins DSH `0.2.0-rc.2` at `639ed015397290b3745d163aafe02ffee4aa3f84`; the [seam registry](./dsh/seam-decisions-v1.json) lists eleven ordered core patches. pi-ai is separately pinned and patched. |
+| DSH source distribution | Fixed official source plus required isolated patches | The [source baseline](./dsh/dsh-baseline-v1.json) pins DSH `0.2.0-rc.2` at `639ed015397290b3745d163aafe02ffee4aa3f84`; the [seam registry](./dsh/seam-decisions-v1.json) lists the ordered core patches. pi-ai is separately pinned and patched. |
 | Standalone Runtime and native RPC | Source implements protocol `6.2.0`; artifact acceptance is tied to exact handoff bytes | Native V4 durable Session events, explicit live assistant-stream boundaries and declared per-model system-prompt/tool-update capabilities. Exact vocabulary and shapes come from the generated contract. |
 | Batch 3 integration handoff | Ingested by the MyAgents Host | The MyAgents `dsh-release.json` selects the Release version; build preparation derives an effective lock recording the exact installed Runtime, contracts and platform evidence. `dsh-lock.json` is the source-mode development fallback. [Release delivery](./tech_docs/assurance/verification-artifacts-and-handoff.md) packages accepted target handoffs under fixed asset names; publication requires all four target gates. |
 | Reference Web Host | Browser and Host implementation present; no current verified delivery pair | Its configured Runtime digest is stale against the generated protocol; current startup requires rebinding and fresh browser/native evidence. See [Reference Web Host](./tech_docs/hosts/reference-web-host.md). |
@@ -107,7 +107,7 @@ The detailed current implementation is divided by authority and lifecycle domain
 | Assurance | [Compatibility/capability truth](./tech_docs/assurance/compatibility-and-capability-truth.md), [Security/trust boundaries](./tech_docs/assurance/security-and-trust-boundaries.md), [Verification/artifacts/handoff](./tech_docs/assurance/verification-artifacts-and-handoff.md) |
 | Host implementations | [Reference Web Host](./tech_docs/hosts/reference-web-host.md) |
 
-The existing tool guide also owns native search spill retrieval and native Agent identity/interrupt semantics; the reverse-port guide owns PNG admission/request normalization.
+The existing tool guide also owns native search spill retrieval and child-control identity/interrupt semantics; the reverse-port guide owns PNG admission/request normalization.
 
 These guides own module-level current explanation. The sections below retain the cross-module boundaries and authority model.
 
@@ -522,3 +522,5 @@ The early seam review identified authoritative PreToolUse input rewriting, exact
 - Product profiles and canonical tool contracts have independent revisions and digests.
 - Future Agent SDK compatibility is versioned by manifest, not inferred from package version alone.
 - The native contract currently identifies protocol `6.2.0` and history `dsh-session-events-v2`. It accepts that version only and does not emulate earlier protocols. Exact types and digests are generated from one contract source.
+
+Runtime generic context keeps root continuation identity internal. The [system context guide](./tech_docs/execution/system-context-and-instructions.md#host-neutral-runtime-facts) describes host-neutral native time policy and workspace/permission separation.

@@ -1,6 +1,6 @@
 # Current DSH seam and patch inventory
 
-This maintenance projection covers all thirteen entries in `specs/dsh/seam-decisions-v1.json`.
+This maintenance projection covers all fourteen entries in `specs/dsh/seam-decisions-v1.json`.
 The generated registry owns exact source blobs, patch hashes, ordering and removal conditions.
 UPG17 dispositions require the owning Product, artifact, native and Host gates before final acceptance.
 
@@ -8,7 +8,7 @@ UPG17 dispositions require the owning Product, artifact, native and Host gates b
 
 - Fixed DSH `0.2.0-rc.2`, commit `639ed015397290b3745d163aafe02ffee4aa3f84`, tree `ac66a6a3e77f6fa396509ddfecc7beacf0cf642a`.
 - Registry source association is unproven; source authority and npm resolution are separate facts.
-- Eleven core patches produce 105 required DSH packages. The artifact builder compares two independent packing passes byte-for-byte; later source/lock/build-policy changes require fresh acceptance.
+- Twelve core patches produce 105 required DSH packages. The artifact builder compares two independent packing passes byte-for-byte; later source/lock/build-policy changes require fresh acceptance.
 - pi-ai `0.87.1`, commit `f07218c4d4bbc12bef056a7058c3dd49dfe41abe`, has a separately verified Provider-content patch.
 - Verify original blobs, apply only to isolated worktrees, compile and pack content-addressed artifacts. Never edit sibling upstream, registry archives or installed dependencies in place.
 
@@ -34,6 +34,8 @@ Patch filenames retain historical numbers; patch order is the registry's dense o
 | 012 / 0012 | reduce / 0011-file-tool-composition | Public official tool factories, stored-edit preview and publication callback preserve BOM/CRLF, atomic writes, parent creation, image dimensions and platform ACL behavior. |
 | 013 / 0009 | rebase / 0012-literal-runtime-context | Native literal PromptSection is reused; PromptContext remains strict upstream, so the patch adds explicit literal handling for Host and Skill context bodies. |
 
+| 014 / 0013 | rebase / 0013-host-neutral-time-context | Native time and elapsed remain available without browser-only clarification; old unavailable readings remain valid, resolved/mixed policies remain enforced. |
+
 ## Dependencies and retirement boundaries
 
 - Apply in registry order. Later Agent-loop and subagent changes can depend on earlier post-images.
@@ -50,7 +52,7 @@ Patch filenames retain historical numbers; patch order is the registry's dense o
 
 | Concern | Source |
 | --- | --- |
-| Seam decisions / exact registry | `scripts/dsh-seam-decisions.ts`, `specs/dsh/seam-decisions-v1.json`, ADRs 0001–0012 |
+| Seam decisions / exact registry | `scripts/dsh-seam-decisions.ts`, `specs/dsh/seam-decisions-v1.json`, ADRs 0001–0013 |
 | DSH baseline / patches | `specs/dsh/dsh-baseline-v1.json`, `specs/dsh/README.md`, `specs/dsh/patches/` |
 | pi-ai seam | `specs/pi-ai/seam-evidence-v1.json`, `specs/pi-ai/README.md` |
 | Runtime/Host acceptance | `specs/tech_docs/assurance/verification-artifacts-and-handoff.md`, exact artifact manifests and the trusted Host release record |

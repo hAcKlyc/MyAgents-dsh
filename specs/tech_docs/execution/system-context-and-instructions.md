@@ -23,7 +23,7 @@ DSH assembles four distinct contribution planes for each model request:
 
 The Runtime does not enforce one global order across those planes or reserve Host order ranges. The
 MyAgents profile uses stable numeric conventions inside the relevant collection—for example Plan
-policy at system-section order `50`, Workspace context at `90`, Agent identity at `92`, and Skill
+policy at system-section order `50`, Workspace context at `90`, native Task guidance at `92`, and Skill
 catalog at `105`—but those numbers do not move project instructions or tools into that same list.
 DSH reassembles the effective request after owner changes. Stable byte prefixes may still benefit
 Provider caching, but the protocol exposes no Provider-specific cache API and the Runtime makes no
@@ -169,4 +169,10 @@ justify a Provider-specific cache seam. A future seam requires new evidence of a
 - child literal persona: DSH subagent descriptor and `packages/runtime-product/src/composition.ts`;
 - DSH seams: `specs/dsh/patches/0008-*`, `0009-*`, `0012-*`.
 
-The composition contributes `runtime:agent-identity` as literal context for each live Agent, distinguishing its DSH id from MyAgents workspace Agent ids. Native child descriptors and parent catalogs own child identity and lineage; admitted profiles and execution limits govern model selection and delegation depth. See [child work](./child-agents-and-background-work.md) for recovery and completion delivery.
+The composition contributes `runtime:agent-identity` as generic literal Task guidance, without exposing the current native Agent ID. Native child descriptors and parent catalogs own child identity and lineage; admitted profiles and execution limits govern model selection and delegation depth. See [child work](./child-agents-and-background-work.md) for recovery and completion delivery.
+
+## Host-neutral runtime facts
+
+The generic native Task guidance does not publish the root Agent/Runtime Session ID. Personal Task operations resolve their caller internally; native child controls use IDs returned by those tools. Product identity belongs to the Host. Workspace context describes the default directory without implying access restrictions; the active sandbox and tool policy own permissions.
+
+Native TimeContext remains the sole clock/elapsed/projection owner. Patch 0013 omits browser-only policy when no browser zone exists, retains resolved/mixed request policy, and accepts historical unavailable readings without rewriting them. Computer timezone is not a claim about a remote participant's timezone.

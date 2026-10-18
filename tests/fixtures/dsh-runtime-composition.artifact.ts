@@ -2628,7 +2628,7 @@ const runtimeContext = runtimeContexts[0];
 assert.ok(runtimeContext);
 const contextText = runtimeContext.content.flatMap((block) => block.type === "text" ? [block.text] : []).join("\n");
 assert.ok(contextText.includes(fixtureWorkspace));
-assert.ok(contextText.includes(`Your Agent id is "${String(primaryAgent.id)}"`));
+assert.ok(!contextText.includes(String(primaryAgent.id)), "internal root Session identity stays out of generic context");
 assert.ok(contextText.includes("fixture-audit") && contextText.includes("release-audit"));
 assert.ok(contextText.includes("Approval policy: ask."));
 const approvalContextMessage = { role: runtimeContext.role, content: runtimeContext.content };
@@ -2638,6 +2638,11 @@ const primarySystemMessage = {
 };
 const timeReadings = primaryAgent.session.deriveMessages().filter(({ source }) => source.kind === "time-context");
 assert.ok(timeReadings.length >= 1, "official time context must enter durable model history");
+for (const reading of timeReadings) {
+  const text = reading.content.flatMap(block => block.type === "text" ? [block.text] : []).join("\n");
+  assert.ok(!text.includes("Browser time zone"), "MyAgents operations have no browser-zone policy");
+  assert.ok(!text.includes("Ask the user to clarify"));
+}
 assert.ok(timeReadings.every(({ content }) => content.some((block) =>
   block.type === "text" && block.text.startsWith("Time sampled while preparing turn "))));
 assert.deepEqual(primaryAgent.session.deriveMessages()

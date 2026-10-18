@@ -15,6 +15,10 @@ export const DSH_SEAM_SOURCE = Object.freeze({
   declaredRelease: "0.2.0-rc.2",
   executablePackageAssociation: "unproven",
   files: Object.freeze([
+    Object.freeze({"path": "packages/context/time-context/src/index.ts", "blob": "493630a8118206fade80d7229dd049f2b83f12f9", "sha256": "0f16394ee0b010b888498216728efc86e06b3e9eec282eed036b70b5416f8d72"}),
+    Object.freeze({"path": "packages/context/time-context/src/invariant.ts", "blob": "e9f362c7e4453787d748ae35abfe79f6d2c2c5f1", "sha256": "b86a63f7afa2431131eb8acf55ee111dfa338fac4de7674e3062904c255147a3"}),
+    Object.freeze({"path": "packages/context/time-context/tests/invariant.spec.ts", "blob": "cba6fc48d00483db4eeda6818613e13c12194d3b", "sha256": "3293eaca090e2e3e198cb5eb2d9567a8436544c7643410a04e33f871e447a929"}),
+    Object.freeze({"path": "packages/context/time-context/tests/time-context.spec.ts", "blob": "92499007d1abfad8b1e08dcc37d353a9229bee3d", "sha256": "8fe1362d2dd0035e8ef6a4d4a78d842b56167ab3b215727a7173e2d8ca525105"}),
     Object.freeze({ path: "packages/session/session-persistence-jsonl/src/index.ts", blob: "1a89b76d29e920772175950e25ffe943f4014b90", sha256: "6c56c465034c7673dd167f2ad7270ad8ce9ae7536457a291dc6a7abb81328436" }),
     Object.freeze({
       path: ".agents/notes/implemented/architecture/2026-08-31-explicit-agent-runtime-identity.i18n.yaml",
@@ -795,6 +799,10 @@ export const DSH_SEAM_SOURCE = Object.freeze({
 });
 
 export const PATCHED_SOURCE_TESTS = Object.freeze([
+  "packages/context/time-context/tests/time-context.spec.ts",
+  "packages/context/time-context/tests/invariant.spec.ts",
+  "packages/context/time-context/tests/request-zone.spec.ts",
+  "packages/context/time-context/tests/time-context.e2e.ts",
   "packages/fs/fs-local/tests/product-composition.spec.ts",
   "packages/fs/fs-local/tests/fsio.spec.ts",
   "packages/fs/fs-local/tests/filesystem.spec.ts",
@@ -835,6 +843,7 @@ const AGENT_INSTRUCTION_SELECTION_PATCH = "specs/dsh/patches/0009-agent-instruct
 const PI_AI_PROVIDER_CONTENT_PATCH = "specs/dsh/patches/0010-pi-ai-provider-content.patch";
 const FILE_TOOL_COMPOSITION_PATCH = "specs/dsh/patches/0011-file-tool-composition.patch";
 const LITERAL_RUNTIME_CONTEXT_PATCH = "specs/dsh/patches/0012-literal-runtime-context.patch";
+const HOST_NEUTRAL_TIME_PATCH = "specs/dsh/patches/0013-host-neutral-time-context.patch";
 export const DSH_SEAM_PATCHES = Object.freeze([
   WAKE_PATCH,
   PRE_ASSISTANT_COMMIT_PATCH,
@@ -847,6 +856,7 @@ export const DSH_SEAM_PATCHES = Object.freeze([
   PI_AI_PROVIDER_CONTENT_PATCH,
   FILE_TOOL_COMPOSITION_PATCH,
   LITERAL_RUNTIME_CONTEXT_PATCH,
+  HOST_NEUTRAL_TIME_PATCH,
 ] as const);
 
 export interface DshSeamPatchSnapshot {
@@ -902,6 +912,16 @@ export function buildDshSeamDecisions(): object {
     candidateIntegration: "0.2.0 RC2 upgrade; exact acceptance requires rebuilt artifact, Runtime composition and Host gates",
     patchSeries: DSH_SEAM_PATCHES.map((path, index) => patchEvidence(path, index + 1)),
     decisions: [
+      {
+        id: "DSH-SEAM-014", upgradeDisposition: "rebase", seam: "host-neutral-time-context",
+        status: "candidate_patch_pending_product_validation",
+        adr: "specs/adr/0013-host-neutral-time-context.md",
+        rejected: "post-process native snapshot text or replace the time/projection owner",
+        selectedPublicApi: "native TimeContext; omit unavailable browser policy for non-browser input",
+        patch: patch(HOST_NEUTRAL_TIME_PATCH),
+        executableEvidence: ["non-browser time and elapsed without browser clarification", "old missing-zone readings restore", "resolved and mixed browser policies remain enforced"],
+        removalCondition: "installed native TimeContext omits inapplicable browser policy while accepting historical readings",
+      },
       {
         id: "DSH-SEAM-001",
         upgradeDisposition: "rebase",
@@ -1157,6 +1177,7 @@ function git(sourceRoot: string, args: string[], env?: NodeJS.ProcessEnv, input?
 export const DSH_SEAM_INSTALL_FILTERS = Object.freeze([
   "--filter", "@deepseek-ai/dsh-system-prompt...",
   "--filter", "@deepseek-ai/dsh-agent-instructions...",
+  "--filter", "@deepseek-ai/dsh-time-context...",
   "--filter", "@deepseek-ai/dsh-agent-loop...",
   "--filter", "@deepseek-ai/dsh-session-persistence...",
   "--filter", "@deepseek-ai/dsh-session-persistence-jsonl...",
@@ -1250,6 +1271,7 @@ export function verifyDshSeamSource(
       "pnpm", "exec", "tsc", "-b",
       "packages/core/system-prompt/tsconfig.json",
       "packages/context/agent-instructions/tsconfig.json",
+      "packages/context/time-context/tsconfig.json",
       "packages/core/agent/tsconfig.json",
       "packages/core/agent-loop/tsconfig.json",
       "packages/core/session/tsconfig.json",

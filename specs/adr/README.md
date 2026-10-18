@@ -21,3 +21,5 @@ The current DSH `0.1.7-rc.2` [seam registry](../dsh/seam-decisions-v1.json) reco
 | [ADR 0009](./0009-literal-prompt-contributions.md) literal runtime context | retained for context only; native literal sections used | `DSH-SEAM-013`, patch 0012 |
 
 An official DSH update does not silently carry these decisions forward. Use the repository maintenance skill, inspect the exact current upstream seam, and classify every patch as retire, reduce, or rebase. Update the ADR disposition, generated seam registry, patch bytes, artifacts, Runtime/platform evidence, and Host handoff as one attributable chain.
+
+- [0013 — Host-neutral time context](0013-host-neutral-time-context.md): omit inapplicable browser policy while preserving native time and historical readings.
