@@ -336,6 +336,24 @@ describe("dynamic E2E harness", () => {
     })).toThrow(/bounded ordinary arrays/u);
   });
 
+  it("preserves native JSON scalar values without weakening secrecy or policy bounds", () => {
+    const policy = { privatePaths: { "/private/source": "$REPOSITORY" }, secretCanaries: ["canary-secret-value"] };
+    expect(sanitizeEvidence({ scope: "/private/source\0CLAUDE.md", costUsd: 0.00012 }, policy))
+      .toEqual({ scope: "$REPOSITORY\0CLAUDE.md", costUsd: 0.00012 });
+    expect(sanitizeEvidence(1e20, policy)).toBe(1e20);
+    for (const value of [NaN, Infinity, -Infinity]) {
+      expect(() => sanitizeEvidence(value, policy)).toThrow(/finite/u);
+    }
+    for (const value of ["\0canary-secret-value", "canary-secret-value\0"]) {
+      expect(() => sanitizeEvidence(value, policy)).toThrow(/secret canary/u);
+    }
+    expect(() => sanitizeEvidence({ ["scope\0key"]: "value" }, policy)).toThrow(/own-data/u);
+    expect(() => sanitizeEvidence("value", { privatePaths: { ["/private\0source"]: "$SOURCE" }, secretCanaries: [] }))
+      .toThrow(/private path/u);
+    expect(() => sanitizeEvidence("value", { privatePaths: {}, secretCanaries: ["canary\0secret"] }))
+      .toThrow(/secret canaries/u);
+  });
+
   it("loads an approved route without placing credential material in its config bytes", async () => {
     const root = await temporaryRoot("myagents-dynamic-route-");
     const path = resolve(root, "route.json");
@@ -444,8 +462,10 @@ describe("dynamic E2E harness", () => {
   it("keeps diagnostics closed until terminal and detects sealed-evidence tampering", async () => {
     const root = await temporaryRoot("myagents-dynamic-evidence-");
     const recorder = new DynamicEvidenceRecorder();
-    recorder.recordPublicEvent({ sequence: 1, kind: "turn" });
-    recorder.recordDiagnosticFact({ sequence: 1, kind: "dsh_turn" });
+    recorder.recordPublicEvent({ sequence: 1, kind: "turn", costUsd: 0.00012 });
+    recorder.recordDiagnosticFact({ sequence: 1, kind: "dsh_turn", data: {
+      source: { kind: "agent-instructions", changes: [{ scope: "/private/source\0CLAUDE.md" }] },
+    } });
     expect(() => recorder.diagnosticFactsForTester()).toThrow(/unavailable/u);
     recorder.markTerminal();
     expect(recorder.diagnosticFactsForTester()).toHaveLength(1);
@@ -468,6 +488,14 @@ describe("dynamic E2E harness", () => {
     await expect(verifySealedDynamicEvidence(root, sealed.manifestSha256)).resolves.toMatchObject({
       manifestSha256: sealed.manifestSha256,
     });
+    const diagnostics = await readFile(resolve(root, "diagnostic-facts.json"), "utf8");
+    expect(diagnostics).toContain("$REPOSITORY\\u0000CLAUDE.md");
+    expect(diagnostics).not.toContain("\0");
+    expect(JSON.parse(diagnostics)).toMatchObject([{ data: {
+      source: { changes: [{ scope: "$REPOSITORY\0CLAUDE.md" }] },
+    } }]);
+    expect(JSON.parse(await readFile(resolve(root, "public-events.ndjson"), "utf8")))
+      .toMatchObject({ costUsd: 0.00012 });
     await chmod(resolve(root, "run.json"), 0o600);
     await writeFile(resolve(root, "run.json"), "{}\n");
     await expect(verifySealedDynamicEvidence(root, sealed.manifestSha256)).rejects.toThrow(/identity|bytes/u);
@@ -489,7 +517,16 @@ describe("dynamic E2E harness", () => {
       artifactRoot: artifact.root,
       expectedArtifactManifestSha256: artifact.manifestSha256,
       scenario,
-      driver: passingDriver,
+      driver: {
+        kind: "fixture",
+        execute: (input) => {
+          input.evidence.recordDiagnosticFact({ kind: "event", data: {
+            source: { kind: "agent-instructions", changes: [{ scope: `${repositoryRoot}\0CLAUDE.md` }] },
+          } });
+          input.evidence.recordPublicEvent({ kind: "usage", costUsd: 0.00012 });
+          return passingDriver.execute(input);
+        },
+      },
     });
     expect(result.outcome).toBe("passed");
     await expect(verifySealedDynamicEvidence(result.evidence.root, result.evidence.manifestSha256))

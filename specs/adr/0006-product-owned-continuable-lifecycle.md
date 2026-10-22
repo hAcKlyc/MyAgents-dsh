@@ -2,11 +2,13 @@
 
 Status: accepted; revised for DSH `0.2.1-rc.2` on 2026-10-23.
 
-The [seam registry](../dsh/seam-decisions-v1.json) owns exact patch bytes and source identities. `DSH-SEAM-006` is reduced to historical descriptor compatibility. The previous ProductWork execution contract is superseded: its execution owner was already removed, and its old setup, external-settlement, exact-retirement, quiet-ancestor and pending-wake APIs have no current Product caller.
+The [seam registry](../dsh/seam-decisions-v1.json) owns exact patch bytes and source identities. `DSH-SEAM-006` is reduced to historical descriptor compatibility and truthful delegation context. The previous ProductWork execution contract is superseded: its execution owner was already removed, and its old setup, external-settlement, exact-retirement, quiet-ancestor and pending-wake APIs have no current Product caller.
 
 ## Decision
 
 DSH's public `startActivation`, `waitForChildren`, `drainDescendants`, `prompt` and `interruptByParent` own current execution. Native delegation returns a child ID immediately. The manager owns child creation, FIFO input, ancestry, capacity, cleanup and parent result delivery. MyAgents retains its Host permissions, operation admission and truthful terminal projection through existing public composition.
+
+The native delegation context describes the child's identity and inability to grant itself permissions. It does not predict approval outcomes: the existing effective approval and sandbox context providers own those facts. The upstream static claim that every child approval is rejected contradicts Host-composed `ask`, even when a real Host approval succeeds. The native child scope automatically registers this contribution and rejects another registration under the same name, so public composition cannot replace it in that scope. The patch changes only its text; native default `never`, Host publication policy, and actual approval execution remain unchanged.
 
 Released MyAgents-dsh wrote descriptor version 5. The native candidate writes version 3 and recognizes only version 3 without this patch. Version 5 therefore remains readable through DSH's own descriptor fold, retaining its original version, route, label, tools and settlement-owner fields. Parent-owned and omitted-owner v5 children cold-resume through the same native manager with unchanged ID, lineage and log. New children use native v3; no Product descriptor writer or migration store is added. The native identity projection is versioned again so previously unknown v5 checkpoint states refold.
 
@@ -22,4 +24,6 @@ A quiescent mutation obtains a fresh native observation outside admission serial
 
 `legacy-descriptor.spec.ts` exercises official JSONL cold reads, parent/default v5 continuation, unchanged descriptor/lineage, native v3 new writes and external-owner read-only refusal. Native continuation, parent-result, parked-wait and lifecycle regressions cover the adopted owner. Product `native-operation-settlement.unit.test.ts` covers delayed terminals, sequence races, admission reentrancy, mutation cancellation and native failure.
 
-Remove the remaining patch when official native descriptor parsing and cold materialization provide the same released v5 compatibility and external-owner refusal. Do not restore old ProductWork execution APIs or infer permission to delete released history. Native v3 new writes are not understood by the previous MyAgents v5-only reader, so downgrading a candidate-written child does not promise continuation compatibility.
+`activation-policy.spec.ts` verifies model-visible context and an actual child Write approval under both native `never` and Host-composed `ask`: the former refuses before consulting a granting answerer; the latter consults it and writes only after approval. Both retain the effective policy description and exclude the contradictory unconditional-rejection sentence. The packed Host permission fixture retains the same prompt regression alongside shared grants, child lineage, successful terminal and recovered history.
+
+Remove the remaining patch when official native descriptor parsing and cold materialization provide the same released v5 compatibility and external-owner refusal, and delegation context leaves approval outcomes to effective policy. Do not restore old ProductWork execution APIs or infer permission to delete released history. Native v3 new writes are not understood by the previous MyAgents v5-only reader, so downgrading a candidate-written child does not promise continuation compatibility.

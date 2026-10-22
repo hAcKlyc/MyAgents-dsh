@@ -167,6 +167,7 @@ export const DSH_SEAM_SOURCE = Object.freeze({
     Object.freeze({"path": "packages/subagent/subagent/src/manager.ts", "blob": "b89732c29efa589f02d3f363a84cf0e93ce780fa", "sha256": "87298342da27dd567897bd23145fdec7d841e1f26a4e6b5dfa9a48b0b477d03e"}),
     Object.freeze({"path": "packages/subagent/subagent/src/projection.ts", "blob": "541721f2c17948ba68cadf0c5c4a0a2cf7f5d427", "sha256": "33936ce7c4f16f0007162388324f6ff17ab3c9f96d5465173c9da6a936bde729"}),
     Object.freeze({"path": "packages/subagent/subagent/src/types.ts", "blob": "2a99fef1bde122336154617efdbee55314f3c212", "sha256": "9150cb7c1c7059843d932be465bd4ddf869b5df08cdfa099e01023f681865920"}),
+    Object.freeze({"path": "packages/subagent/subagent/tests/activation-policy.spec.ts", "blob": "38d9d44005a9388664de93ee0911a9554fa3944a", "sha256": "5fb0479c3336279247e828501c3e47a3d88a03f1528ba1b11b30535bf548676e"}),
     Object.freeze({"path": "packages/subagent/subagent/tests/continuation.spec.ts", "blob": "afe176af9ba35a62e265fd03ad389a6f2cd41809", "sha256": "9debef08076f37045a261051ed1f8f9148befd319ee6dc0cd4dee547c52f7739"}),
     Object.freeze({"path": "packages/subagent/subagent/tests/service.spec.ts", "blob": "fb105074c8553c6371ea707dc073ea193c47f810", "sha256": "2769f9dc22c80aa144e376145cf7f1303548e942335abb300c076f4e6b071302"}),
     Object.freeze({"path": "packages/util/output-retention/src/index.ts", "blob": "9d90d6b7013331662f79eabab1ca1105e9cf22c1", "sha256": "fbe1c6ff8c6fc09e62c5b90fb98bcaba2ccddfd4cfe1c8e717a97a085ed405d4"}),
@@ -437,16 +438,17 @@ export function buildDshSeamDecisions(): object {
         status: "candidate_patch_pending_product_validation",
         adr: "specs/adr/0006-product-owned-continuable-lifecycle.md",
         rejected: "resurrect removed ProductWork lifecycle or reinterpret historical external ownership as native parent delivery",
-        selectedPublicApi: "native startActivation, waitForChildren, drainDescendants and prompt; patched read compatibility for released descriptor version 5",
+        selectedPublicApi: "native startActivation, waitForChildren, drainDescendants and prompt; patched version 5 read compatibility and policy-neutral delegation context",
         patch: patch(PRODUCT_CONTINUABLE_LIFECYCLE_PATCH),
         executableEvidence: [
           "new children write native version 3; released version 5 preserves lineage and parent settlement on cold restore",
           "historical external settlement remains readable and explicitly refuses continuation",
+          "delegation context defers to effective approval policy: native never rejects without consulting answerers, Host ask accepts an actual approved child operation",
           "old version 5-only reader refuses new version 3 instead of claiming downgrade support",
           "operation terminal waits outside its serialization lock for native children and stable parent sequence",
           "abort, disposal, wait failure and child notification reentrancy retain one operation owner"
         ],
-        removalCondition: "official descriptor admission preserves released version 5 history and its settlement authority; active scheduling and child lifecycle are already stock",
+        removalCondition: "official descriptor admission preserves released version 5 history and its settlement authority, and delegation context does not contradict effective approval policy; active scheduling and child lifecycle are already stock",
       },
       {
         id: "DSH-SEAM-007",

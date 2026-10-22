@@ -98,6 +98,8 @@ Verification is deliberately layered:
 
 `packages/dynamic-e2e` is test-only. Fresh external Tester Agents operate its CLI and evaluate observable scenarios; the packed DSH Root Agent is the system under test. Test rubrics, expected tool order and credential fixtures are never installed into the Runtime artifact.
 
+Evidence preserves native JSON data values, including NUL-separated instruction scopes and fractional usage costs. JSON serialization escapes control characters; the evidence layer must not reject valid records or impose integer-only metric semantics. Credential-canary checks, private-path redaction, policy/key validation and trap-safe tree bounds remain independent checks. Nonfinite numbers are rejected because JSON cannot preserve them. Failed unsealed attempts require fresh runs; they are never relabeled as accepted evidence.
+
 Cross-release history acceptance is explicit and separate from same-version restart tests. Run
 `node --import tsx scripts/verify-released-history.mjs` with `--old-artifact` and its trusted
 `--old-manifest-sha256`, the checked repository `--candidate-root`, verified

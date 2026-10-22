@@ -21,7 +21,7 @@ their source association. The source-built artifact independently binds executab
 | Native asynchronous child lifecycle | DSH now owns activation, child waiting, continuation and descendant draining through public APIs. | Replace the former Product lifecycle additions. Product operation settlement waits outside its serialization lock, then rechecks the exact root, idle state and Session sequence. Preserve old descriptor reading separately. |
 | Native JSONL plugin lifecycle | DSH owns private tracker allocation, handles, buffering, flush and consumer-before-tracker teardown. | Adopt current plugin composition. Rebase trusted Product payload validation as `withStoredEventValidation`; retain native V4 storage, required-event refusal and fault propagation. |
 | Public projection registration types | A client can import wire types without loading private host fold states. | Repair the native registration key constraint exposed by clean packed consumer compilation. Keep state/wire validation without private imports or a runtime change. |
-| Released child descriptors and literal persona | Existing histories retain lineage, routing, tools, persona and settlement authority. | Reduce seams 006/009 to version 5 admission and historical persona restoration. New children write native version 3. Historical external ownership stays readable but cannot be continued by the native parent. |
+| Released child descriptors and literal persona | Existing histories retain lineage, routing, tools, persona and settlement authority. | Reduce seams 006/009 to version 5 admission and historical persona restoration. Delegation context refers to the effective approval policy instead of claiming that every approval is rejected. New children write native version 3. Historical external ownership stays readable but cannot be continued by the native parent. |
 | Literal dynamic context | Official `PromptContext.interpolate` and context refresh now cover literal Host/Skill content. | Retire seam 013 and use the public native path. Ordinary contexts retain strict interpolation. |
 | Model-specific dynamic prompt/tools | Native model metadata and actual Provider serialization must use the same model facts. | Add seam 016 at the pi-ai configuration owner: admit the five supported conversation flags only on exact models, including catalog overrides. Reject route-wide and wrong-family declarations; preserve explicit false and independent sibling models. Omission preserves existing catalog facts and enables nothing on an unknown model. |
 | Shared public schema types | Product schemas cross native tool and projection public APIs. | Align Product/root Zod to DSH's exact `4.4.3` and one locked installation. Preserve inferred public APIs and strict checking instead of masking duplicate-version type failures. |
@@ -44,7 +44,7 @@ The generated registry is the exact patch and executable-evidence authority.
 | 003 — required Product event admission | Native JSONL now exposes a plugin and private tracker; trusted Product payload admission is absent. | rebase | Add public validator plugin factory; retain stock lifecycle and native validation. Test cold required/ignorable events, malformed data and stock/factory teardown. | Equivalent native trusted extension validation. |
 | 004 — persistence mutations | Public native handles remain sufficient; product generation/locator/checkpoint transactions remain Product-owned. | keep public composition | Retain public SessionPersistence/SessionHandle coordination. Test append/mutation contention, rewind/fork/delete recovery, stale revisions and close failures. | Native APIs cover complete Product transaction semantics. |
 | 005 — root publication admission | Session/Agent registries still lack synchronous pre-publication Product guards. | rebase | Retain exact-object permits, exclusive registration and effect cleanup. Test rejection before visibility and reentrant publication. | Equivalent native guards before publication. |
-| 006 — child lifecycle/history | Public activation, wait, drain and prompt cover live scheduling; released version 5 admission is absent. | reduce | Remove old scheduling additions; retain descriptor reading and explicit external-owner refusal. Test cold lineage, parent settlement, interruption and operation terminal ordering. | Native admission preserves released descriptor identity and settlement authority. |
+| 006 — child lifecycle/history | Public activation, wait, drain and prompt cover live scheduling; released version 5 admission is absent and static delegation text contradicts Host approval policy. | reduce | Remove old scheduling additions; retain descriptor reading and explicit external-owner refusal. Delegation context defers to effective approval/sandbox context. Test cold lineage, parent settlement, interruption, operation terminal ordering and actual never/ask behavior. | Native admission preserves released descriptor identity and settlement authority; delegation text respects effective policy. |
 | 007 — streamed tool identity | Stock DeepSeek adapter preserves established call IDs/names across empty continuation fields. | retire, retained decision | No patch. Retain native streamed identity and Product streaming regressions. | Satisfied by official semantics; reverify candidate. |
 | 008 — capacity-safe compaction | Native TokenMeter and BasicCompactionEngine exist; complete capacity fitting, structured repair and provenance remain missing. | rebase | Keep semantic additions inside native engine/validator. Test request budgets, balanced ranges, bounded repair, usage and old one-call history. | Equivalent tested native compaction semantics. |
 | 009 — literal persona history | Stock prompt sections/contexts support literal text; released descriptor persona field is absent from restore. | reduce | Retain only historical `personaInterpolate` validation/restoration; no new-start persona policy. Test literal version 5 and strict defaults. | Official restore preserves released literal-persona semantics. |
@@ -135,23 +135,28 @@ original source/lock/artifact scope; they do not accept the final thirteen-patch
   contract tests and the official shell-definition check. Shell results now require native `cwd`.
 
 The final accepted patched artifact is version
-`0.2.1-rc.2.myagents.687f282e8625.06b59a80661a`. Independent builds `artifact-k` and
-`artifact-l` both pass, and all 108 inventoried files are byte-for-byte identical, including
+`0.2.1-rc.2.myagents.687f282e8625.fd9ed793f1e9`. Independent builds `artifact-m` and
+`artifact-n` both pass, and all 108 inventoried files are byte-for-byte identical, including
 104 DSH packages. Both clean consumers pass strict public compilation and dependency-closure
 verification. The manifest SHA-256 is
-`f502b43c69eaac063fab840341de163d7a4ca77d8fc0990952623058096b3af1`; the consumer lock is
-`7e4c4b2944e728f9e009254b9c75fe862608242901eabd7b0fc770df43a660d2`. The local paired-build receipt
-is `MyAgents-dsh-release-work/upgrade-021-rc2/double-build-accepted-evidence.json`.
+`f8daf393b0c206bf9290b2e6567baf721685f185a83b098523f86e705398cc18`; the consumer lock is
+`5dd86954c4cc36aaa571cda374ecc77d0e03660671a4283cc742ec3498a9c083`. The local paired-build receipt
+is `MyAgents-dsh-release-work/upgrade-021-rc2/double-build-policy-final-evidence.json`.
 Earlier builds are superseded; neither failed builds nor old-byte receipts accept this identity.
 
-The final ordered source matrix passes 40 suites / 1,503 tests, with 3 platform skips.
+The final ordered source matrix passes 40 suites / 1,504 tests, with 3 platform skips.
 Fresh requirements and adversarial reviews found no implementation blocker; a focused follow-up
 confirmed the shared-image dependency repair above. Packed acceptance then exposed a native
 child dependency-scope defect: the Host-configured Cordis function plugin had to forward
 `SubagentRuntime.inject`, even though the working-directory service was already installed.
 That repair retains the same native service and live Host limits; packed spawn and fork regressions
 verify the child workspace, asynchronous result join, and request-scoped credentials. The final
-installed Product typecheck, lint, build and 900 tests pass, with 2 platform skips. Clean-commit
+installed Product typecheck, lint, build and 901 tests pass, with 2 platform skips. Native Host
+acceptance additionally exposed child delegation text that contradicted effective Host approval;
+the final patch removes that duplicate policy claim and verifies real never/ask behavior. The
+test-only evidence sanitizer now preserves native NUL-separated instruction scopes and finite
+usage numbers instead of rejecting valid records; credential and path checks remain independent.
+Focused requirements, adversarial and final architecture follow-ups pass. Clean-commit
 Runtime/native/Host/application acceptance is recorded separately in the external integration
 evidence. The native handoff must bind the final source commit; source
 or patched-artifact results alone do not claim application acceptance.

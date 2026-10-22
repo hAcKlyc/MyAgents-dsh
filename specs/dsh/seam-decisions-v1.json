@@ -769,6 +769,11 @@
         "sha256": "9150cb7c1c7059843d932be465bd4ddf869b5df08cdfa099e01023f681865920"
       },
       {
+        "path": "packages/subagent/subagent/tests/activation-policy.spec.ts",
+        "blob": "38d9d44005a9388664de93ee0911a9554fa3944a",
+        "sha256": "5fb0479c3336279247e828501c3e47a3d88a03f1528ba1b11b30535bf548676e"
+      },
+      {
         "path": "packages/subagent/subagent/tests/continuation.spec.ts",
         "blob": "afe176af9ba35a62e265fd03ad389a6f2cd41809",
         "sha256": "9debef08076f37045a261051ed1f8f9148befd319ee6dc0cd4dee547c52f7739"
@@ -866,7 +871,7 @@
     {
       "order": 5,
       "path": "specs/dsh/patches/0005-product-owned-continuable-lifecycle.patch",
-      "sha256": "60df59c4935cf45ed18eed1c2bc2d8f133daca14d489f6a5ac31c31ef6399232"
+      "sha256": "c334ec8ad588fcdb66bd3760ff1b554d1f8dcdd71d95fa5f9c3a447f00b52346"
     },
     {
       "order": 6,
@@ -1081,20 +1086,21 @@
       "status": "candidate_patch_pending_product_validation",
       "adr": "specs/adr/0006-product-owned-continuable-lifecycle.md",
       "rejected": "resurrect removed ProductWork lifecycle or reinterpret historical external ownership as native parent delivery",
-      "selectedPublicApi": "native startActivation, waitForChildren, drainDescendants and prompt; patched read compatibility for released descriptor version 5",
+      "selectedPublicApi": "native startActivation, waitForChildren, drainDescendants and prompt; patched version 5 read compatibility and policy-neutral delegation context",
       "patch": {
         "order": 5,
         "path": "specs/dsh/patches/0005-product-owned-continuable-lifecycle.patch",
-        "sha256": "60df59c4935cf45ed18eed1c2bc2d8f133daca14d489f6a5ac31c31ef6399232"
+        "sha256": "c334ec8ad588fcdb66bd3760ff1b554d1f8dcdd71d95fa5f9c3a447f00b52346"
       },
       "executableEvidence": [
         "new children write native version 3; released version 5 preserves lineage and parent settlement on cold restore",
         "historical external settlement remains readable and explicitly refuses continuation",
+        "delegation context defers to effective approval policy: native never rejects without consulting answerers, Host ask accepts an actual approved child operation",
         "old version 5-only reader refuses new version 3 instead of claiming downgrade support",
         "operation terminal waits outside its serialization lock for native children and stable parent sequence",
         "abort, disposal, wait failure and child notification reentrancy retain one operation owner"
       ],
-      "removalCondition": "official descriptor admission preserves released version 5 history and its settlement authority; active scheduling and child lifecycle are already stock"
+      "removalCondition": "official descriptor admission preserves released version 5 history and its settlement authority, and delegation context does not contradict effective approval policy; active scheduling and child lifecycle are already stock"
     },
     {
       "id": "DSH-SEAM-007",

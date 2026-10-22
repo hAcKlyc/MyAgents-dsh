@@ -188,7 +188,7 @@ The official profile directly consumes pinned public DSH packages for:
 
 No package-private DSH imports are allowed.
 
-The candidate adopts native child scheduling and removes the superseded Product lifecycle patch. The remaining child patches only read released version 5 descriptors and preserve their literal-persona field; new children use the native version 3 format. Working-directory composition does not expose directory-switching or worktree tools or expand admitted roots. See [Child agents/background work](./tech_docs/execution/child-agents-and-background-work.md) and [Tool Runtime and policy](./tech_docs/execution/tool-runtime-and-policy.md).
+The candidate adopts native child scheduling and removes the superseded Product lifecycle patch. The remaining child patches read released version 5 descriptors, preserve their literal-persona field, and keep delegation text consistent with the effective policy context; new children use the native version 3 format. Working-directory composition does not expose directory-switching or worktree tools or expand admitted roots. See [Child agents/background work](./tech_docs/execution/child-agents-and-background-work.md) and [Tool Runtime and policy](./tech_docs/execution/tool-runtime-and-policy.md).
 
 The official composition installs the public `BasicCompactionEngine` with
 automatic compaction enabled. DSH remains the sole compaction authority: before
@@ -225,6 +225,8 @@ assets and other-target node-pty binaries are excluded, while target native modu
 data remain. MyAgents consumes that sealed projection without post-download dependency pruning.
 
 Dynamic acceptance has four deliberately separate Agent roles. The Development Main Agent, currently Codex, owns implementation and final finding adjudication. External independent Tester Agents operate test-only scenarios through the Standard Test Host and generated client. The packed Runtime's DSH Root Agent is the system under test. DSH child/subagents are nested Runtime capabilities under test. Tester Agents never enter the Runtime protocol, Session, child catalog, artifact, or product distribution, and Runtime Agents never receive hidden test rubrics or prior reports.
+
+The test-only [evidence owner](./tech_docs/assurance/verification-artifacts-and-handoff.md#4-verification-layers) preserves native JSON data values while redacting private paths and rejecting credential material; it does not redefine Runtime instruction identities or numeric metrics.
 
 ### 4.7 Platform adaptation
 

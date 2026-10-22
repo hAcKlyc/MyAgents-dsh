@@ -41,8 +41,9 @@ only its payload validator, while DSH owns the private tracker and teardown orde
 public composition. No old SQLite Session backend or development-history migration remains.
 
 `seam-decisions-v1.json` records sixteen seams and thirteen DSH patches. Native asynchronous child
-lifecycle replaces the former Product lifecycle additions: seams 006 and 009 now retain only
-released descriptor version 5 admission and literal-persona restoration. Native dynamic
+lifecycle replaces the former Product lifecycle additions: seams 006 and 009 retain
+released descriptor version 5 admission, literal-persona restoration and delegation text that
+defers to the effective approval policy. Native dynamic
 `PromptContext.interpolate` replaces seam 013; seam 007 remains retired. Seam 015 repairs the
 public projection registration type constraint exposed by clean consumer compilation, without
 changing runtime behavior or exposing private fold state. Seam 016 admits exact-model conversation

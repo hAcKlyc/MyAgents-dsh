@@ -1,3 +1,27 @@
+diff --git a/packages/subagent/subagent/src/child-agent.ts b/packages/subagent/subagent/src/child-agent.ts
+index f9bd96125d871977bf318846905eb1f56ed238aa..aabe90389e67c17b76c5e046fa65ba7a3d973e6f 100644
+--- a/packages/subagent/subagent/src/child-agent.ts
++++ b/packages/subagent/subagent/src/child-agent.ts
+@@ -164,15 +164,14 @@ export interface ChildComposition {
+ }
+ 
+ /**
+- * Model-facing delegation-scope statement for every in-process child. A
++ * Model-facing delegation identity for every in-process child. Effective
++ * approval and sandbox policy are described by their own context providers. A
+  * runtime-context contribution rather than a system-prompt section, so the
+  * deployment's system prompt stays uniform across parents and children.
+  */
+ export const SUBAGENT_DELEGATION_CONTEXT
+-  = 'You are a delegated subagent: your permission scope was fixed when you were started and cannot be '
+-    + 'widened from inside this session — operations that require approval are rejected automatically. '
+-    + 'When the task needs access beyond that scope, do not retry the denied operation; state the '
+-    + 'limitation in your reply so the delegating agent can handle it.'
++  = 'You are a delegated subagent. You cannot grant yourself additional permissions. '
++    + 'Follow the current approval and sandbox policies described in this runtime context.'
+ 
+ /**
+  * Compose a child before publication and restore historical descriptor overrides.
 diff --git a/packages/subagent/subagent/src/descriptor.ts b/packages/subagent/subagent/src/descriptor.ts
 index 4b68a64852cda8403bae1ec1903558590c17f704..d2fe55010188a258a1d761d74297922902e5d9ff 100644
 --- a/packages/subagent/subagent/src/descriptor.ts
@@ -119,6 +143,78 @@ index 541721f2c17948ba68cadf0c5c4a0a2cf7f5d427..0b484ebb8fedf94d9ea0ea2446facf81
 +  // Refold checkpoints that previously classified those records as unknown.
 +  stateVersion: 3,
  } satisfies ProjectionDefinition<'subagent', IdentityState>
+diff --git a/packages/subagent/subagent/tests/activation-policy.spec.ts b/packages/subagent/subagent/tests/activation-policy.spec.ts
+index 38d9d44005a9388664de93ee0911a9554fa3944a..bdd075237e16916f41e3d92399a77a91cfde5293 100644
+--- a/packages/subagent/subagent/tests/activation-policy.spec.ts
++++ b/packages/subagent/subagent/tests/activation-policy.spec.ts
+@@ -17,7 +17,7 @@ import type { ContentBlock } from '@deepseek-ai/dsh-llm'
+ import SandboxPolicyService, { setSandboxMode } from '@deepseek-ai/dsh-sandbox-policy'
+ import { Session, SessionId, type SessionEvent } from '@deepseek-ai/dsh-session'
+ import * as ToolFs from '@deepseek-ai/dsh-tool-fs'
+-import ApprovalService from '@deepseek-ai/dsh-user-approval'
++import ApprovalService, { setApprovalPolicy } from '@deepseek-ai/dsh-user-approval'
+ import { MockAdapter, textResponse, toolCallResponse } from '../../../core/agent-loop/tests/mock-adapter.ts'
+ import SubagentRuntime from '@deepseek-ai/dsh-subagent'
+ import { mountLocalActivations, startPreparedActivation } from './local-activation.ts'
+@@ -277,10 +277,16 @@ describe('in-process policy inheritance', () => {
+     }
+   })
+ 
+-  it('rejects a child escalation deterministically even when an answerer would allow it', async () => {
++  it.each(['never', 'ask'] as const)('describes and enforces the effective child approval policy %s', async (policy) => {
+     const script: Script = []
+     const { ctx, parent } = await setupWalled(script)
+-    // A granting answerer proves the pin resolves before any answerer runs.
++    // A Host may establish its effective policy at the existing publication seam.
++    // Without that composition the native delegated policy remains pinned to never.
++    if (policy === 'ask') {
++      ctx.on('agent/created', ({ agent }) => {
++        if (agent.session.header.origin === 'subagent') setApprovalPolicy(agent.session, 'ask')
++      })
++    }
+     let consulted = false
+     ctx.on('approval/request', () => {
+       consulted = true
+@@ -303,10 +309,16 @@ describe('in-process policy inheritance', () => {
+       await run.result
+       const child = run.localAgent
+ 
+-      await expect(readFile(blocked, 'utf8')).rejects.toMatchObject({ code: 'ENOENT' })
+-      expect(consulted).toBe(false)
+-      expect(toolResultTexts(child).join('\n'))
+-        .toContain('the user rejected escalating this operation to "workspace-write"')
++      expect(ctx.approval.overrideOf(child.session)).toBe(policy)
++      if (policy === 'never') {
++        await expect(readFile(blocked, 'utf8')).rejects.toMatchObject({ code: 'ENOENT' })
++        expect(consulted).toBe(false)
++        expect(toolResultTexts(child).join('\n'))
++          .toContain('the user rejected escalating this operation to "workspace-write"')
++      } else {
++        expect(await readFile(blocked, 'utf8')).toBe('escaped')
++        expect(consulted).toBe(true)
++      }
+       const asked = child.session.snapshotEvents().find(
+         (event): event is SessionEvent<'approval/asked'> => event.type === 'approval/asked',
+       )
+@@ -314,7 +326,17 @@ describe('in-process policy inheritance', () => {
+         (event): event is SessionEvent<'approval/decided'> => event.type === 'approval/decided',
+       )
+       expect(asked?.data.toolName).toBe('write')
+-      expect(decided?.data).toMatchObject({ id: asked?.data.id, outcome: 'rejected' })
++      expect(decided?.data).toMatchObject({ id: asked?.data.id, outcome: policy === 'never' ? 'rejected' : 'allowed-once' })
++      const runtimeContext = child.session.snapshotEvents().find(
++        (event): event is SessionEvent<'user/message'> => event.type === 'user/message'
++          && event.data.source.kind === 'runtime-context',
++      )
++      const contextText = runtimeContext?.data.content
++        .filter((block): block is Extract<ContentBlock, { type: 'text' }> => block.type === 'text')
++        .map(block => block.text).join('\n')
++      expect(contextText).toContain('You are a delegated subagent')
++      expect(contextText).toContain(policy === 'never' ? 'Approval prompts are disabled' : 'Approval policy: ask.')
++      expect(contextText).not.toContain('operations that require approval are rejected automatically')
+     } finally {
+       await run.dispose()
+     }
 diff --git a/packages/subagent/subagent/tests/legacy-descriptor.spec.ts b/packages/subagent/subagent/tests/legacy-descriptor.spec.ts
 new file mode 100644
 index 0000000000000000000000000000000000000000..51fce255181d95d3119bb3a3f5675a0eb6c8094e
