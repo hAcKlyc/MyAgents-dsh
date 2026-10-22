@@ -1,7 +1,7 @@
 ---
 type: technical-architecture
 status: implemented
-updated: 2026-10-02
+updated: 2026-10-23
 module: system-context-and-instructions
 ---
 
@@ -89,7 +89,7 @@ does not alter execution-environment roots, visibility or permission authority.
 DSH independently discovers the user-global `<DSH_HOME>/AGENTS.md` first. The official composition
 does not override `dshHome`, so DSH's normal local home resolution applies (typically
 `~/.dsh/AGENTS.md`). This user-owned file is outside the Workspace trust boundary, is not supplied
-by a Host snapshot, and follows the DSH Agent Instructions lifecycle.
+by a Host snapshot, and follows the DSH Agent Instructions lifecycle. The candidate adds a shared agents-home root; MyAgents explicitly configures `globalInstructionRoots: ["dsh"]` to preserve the existing discovery boundary. Native defaults still enable both roots for other compositions.
 
 For the project root and nested project directories, the official profile composes DSH Agent
 Instructions with first-non-empty selection per directory:
@@ -145,13 +145,14 @@ tests use public DSH assembly to assert literal rendering, ordering, inheritance
 
 ## 8. DSH seam boundary
 
-The pinned patches retain three missing semantics:
+The pinned patches retain two missing semantics:
 
-- `0008`: literal child persona across continuation and cold resume;
-- `0009`: first-candidate Agent Instructions selection and configurable filesystem-touch names;
-- `0012`: literal Runtime context registration.
+- `0008`: literal historical child persona across cold resume;
+- `0009`: first-candidate Agent Instructions selection, configurable filesystem-touch names and explicit selection of existing global roots.
 
-Literal system sections are already supported by the pinned DSH API and need no Product copy.
+Patch `0012` is retired: native `PromptContext.interpolate` preserves literal Host and Skill bodies, including through `SystemPrompt.refreshContext`. Refresh retains the accepted contribution set and does not authorize a pending Product configuration.
+
+Literal system sections and runtime contexts are already supported by the pinned DSH API and need no Product copy.
 
 Defaults preserve upstream behavior. The patch inventory, exact blobs, tests and retirement rules
 remain governed by `specs/dsh/seam-decisions-v1.json` and the relevant ADRs. Credential-backed
@@ -167,7 +168,7 @@ justify a Provider-specific cache seam. A future seam requires new evidence of a
 - official stable sections and instruction plugin: `packages/runtime-product/src/composition.ts`;
 - Skill context: `packages/tools-agent/src/skill-runtime.ts`;
 - child literal persona: DSH subagent descriptor and `packages/runtime-product/src/composition.ts`;
-- DSH seams: `specs/dsh/patches/0008-*`, `0009-*`, `0012-*`.
+- DSH seams: `specs/dsh/patches/0008-*`, `0009-*`.
 
 The composition contributes `runtime:agent-identity` as generic literal Task guidance, without exposing the current native Agent ID. Native child descriptors and parent catalogs own child identity and lineage; admitted profiles and execution limits govern model selection and delegation depth. See [child work](./child-agents-and-background-work.md) for recovery and completion delivery.
 
@@ -176,3 +177,5 @@ The composition contributes `runtime:agent-identity` as generic literal Task gui
 The generic native Task guidance does not publish the root Agent/Runtime Session ID. Personal Task operations resolve their caller internally; native child controls use IDs returned by those tools. Product identity belongs to the Host. Workspace context describes the default directory without implying access restrictions; the active sandbox and tool policy own permissions.
 
 Native TimeContext remains the sole clock/elapsed/projection owner. Patch 0013 omits browser-only policy when no browser zone exists, retains resolved/mixed request policy, and accepts historical unavailable readings without rewriting them. Computer timezone is not a claim about a remote participant's timezone.
+
+The native working-directory service supplies the current directory to instruction reconciliation and file tools. It is initialized through the existing Session owner; the Product profile does not expose `chdir` or expand sandbox roots.

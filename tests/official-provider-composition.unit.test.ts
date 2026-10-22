@@ -8,11 +8,17 @@ import {
   type StreamChunk,
 } from "@deepseek-ai/dsh-llm";
 import {
+  AgentCollaborationPolicy,
   HOST_PI_AI_SETTINGS_NAMESPACE,
+  HostModelAuthority,
   HostSettingsProvider,
   installHostLlmRequestScope,
+  normalizeSystemContext,
   translateHostPiAiProfile,
 } from "@myagents-dsh/runtime-product";
+import { HostCredentialProvider, HostPortService, type HostCredentialProviderController, type HostPortServiceController } from "@myagents-dsh/host-ports";
+import { createInMemoryPeerPair } from "@myagents-dsh/test-host";
+import type { ModelExecutionProfile } from "@myagents-dsh/protocol";
 import { describe, expect, it } from "vitest";
 
 const PI_AI_PLUGIN_SPECIFIER = "@deepseek-ai/dsh-llm-pi-ai";
@@ -40,6 +46,89 @@ const composeProviderSeamFixture = async (): Promise<Context & { settings: HostS
 };
 
 describe("official Host-profiled Provider composition", () => {
+  it("admits different transcript capabilities on models sharing the same connection and credential", async () => {
+    const root = await composeProviderSeamFixture();
+    const pair = createInMemoryPeerPair();
+    try {
+      let portController: HostPortServiceController | undefined;
+      let credentialController: HostCredentialProviderController | undefined;
+      await root.plugin(HostPortService, { registerController: value => { portController = value; } });
+      if (portController === undefined) throw new Error("Host port controller missing");
+      const port = portController;
+      port.bindTransport(pair.runtime, "model-isolation-generation");
+      port.bindProductSession("model-isolation-product-session");
+      port.activate();
+      await root.plugin(HostCredentialProvider, {
+        authorityFactory: { createRequestAuthority: input => port.createRequestAuthority(input) },
+        registerController: value => { credentialController = value; },
+      });
+      if (credentialController === undefined) throw new Error("Credential controller missing");
+      pair.host.registerRequestHandler("host/credential/resolve", () => ({
+        kind: "availability", available: true, authoritativeCredentialRevision: "synthetic-credential-v1",
+      }));
+      const compatibility = { version: 1, family: "openai-responses", credentialMode: "pi-ai-api-key" } as const;
+      const base: ModelExecutionProfile = {
+        api: "openai-responses", baseUrl: "https://models.example.invalid/v1",
+        compatibility,
+        contextWindow: 128_000, maxTokens: 8_192, credentialRef: "SYNTHETIC_SHARED_KEY",
+        modelId: "absent", provider: "same-provider", providerRouteId: "same-route",
+        reasoning: false, revision: "absent-v1",
+      };
+      const enabled: ModelExecutionProfile = { ...base, modelId: "enabled", revision: "enabled-v1",
+        compatibility: { ...compatibility, wireCompat: { supportsMidConvoSystemMessages: true, supportsAdditionalTools: true } } };
+      const disabled: ModelExecutionProfile = { ...base, modelId: "disabled", revision: "disabled-v1",
+        compatibility: { ...compatibility, wireCompat: { supportsMidConvoSystemMessages: false, supportsToolSearch: false } } };
+      const authority = new HostModelAuthority(root, credentialController, {
+        resolveUserId: () => "00000000-0000-4000-8000-000000000001",
+      });
+      await authority.preflight({
+        mode: "create", runtimeSessionId: "model-isolation-session", signal: new AbortController().signal,
+        systemContext: normalizeSystemContext({ systemPrompt: "synthetic fixture" }),
+        workspace: { identity: "fixture-workspace", path: "/fixture/workspace", platformTarget: "darwin-arm64" },
+        params: {
+          clientOperationId: "model-isolation-create", configRevision: "model-isolation-config",
+          extensionDigest: "a".repeat(64), interactionScenario: "interaction-v1",
+          permissionMode: "approval-required", persistenceRef: "model-isolation-persistence",
+          provider: enabled, systemPrompt: "synthetic fixture",
+          collaboration: { ...new AgentCollaborationPolicy(enabled).config, modelProfiles: [base, disabled] },
+        },
+      });
+      expect(root.llm.listProviders().map(provider => provider.id)).toContain("same-route");
+      for (const model of [enabled, base, disabled]) {
+        const resolved = await root.llm.resolveModelInfo("same-route", model.modelId);
+        expect(resolved.systemPromptUpdate).toBe(model === enabled ? "in-history" : undefined);
+        expect(resolved.toolUpdate).toBe(model === enabled ? "addition-only" : undefined);
+      }
+    } finally {
+      await root.fiber.dispose();
+      pair.close();
+    }
+  });
+
+  it.each([
+    ["anthropic-messages", { supportsMidConvoSystemMessages: true, supportsMidConvoToolChanges: true }, "in-history"],
+    ["openai-completions", { supportsMidConvoSystemMessages: true, supportsMidConvoToolAdditions: true }, "addition-only"],
+    ["openai-responses", { supportsMidConvoSystemMessages: true, supportsAdditionalTools: true }, "addition-only"],
+    ["openai-responses", { supportsMidConvoSystemMessages: true, supportsToolSearch: true }, "addition-only"],
+    ["anthropic-messages", { supportsMidConvoSystemMessages: false, supportsMidConvoToolChanges: true }, undefined],
+  ] as const)("resolves model declarations through the official %s adapter", async (api, wireCompat, toolUpdate) => {
+    const root = await composeProviderSeamFixture();
+    try {
+      await root.settings.replace(HOST_PI_AI_SETTINGS_NAMESPACE, translateHostPiAiProfile({
+        api, baseUrl: "https://model.example.invalid/v1",
+        compatibility: { version: 1, family: api, credentialMode: "pi-ai-api-key", wireCompat },
+        contextWindow: 128_000, maxTokens: 8_192, credentialRef: "MYAGENTS_PROVIDER_API_KEY",
+        modelId: "declared-model", provider: "declared-provider", providerRouteId: "declared-route",
+        reasoning: false, revision: "declared-profile-v1",
+      }));
+      const resolved = await root.llm.resolveModelInfo("declared-route", "declared-model");
+      expect(resolved.systemPromptUpdate).toBe(wireCompat.supportsMidConvoSystemMessages ? "in-history" : undefined);
+      expect(resolved.toolUpdate).toBe(toolUpdate);
+    } finally {
+      await root.fiber.dispose();
+    }
+  });
+
   it("mounts the official pi-ai plugin dormant through the public DSH seams", async () => {
     const root = await composeProviderSeamFixture();
     try {

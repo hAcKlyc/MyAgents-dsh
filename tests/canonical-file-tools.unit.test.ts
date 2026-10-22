@@ -1,6 +1,8 @@
 import { prepareImageFile, DEFAULT_MAX_IMAGE_BYTES, DEFAULT_MAX_IMAGE_PIXELS, DEFAULT_MAX_IMAGES_PER_MESSAGE, DEFAULT_MAX_MESSAGE_IMAGE_BYTES } from "@deepseek-ai/dsh-attachment-local";
 import type { SaveImageAttachment } from "@deepseek-ai/dsh-attachment";
-import { SessionSeq } from "@deepseek-ai/dsh-session";
+import { Session, SessionId, SessionSeq, SESSION_FORMAT_VERSION } from "@deepseek-ai/dsh-session";
+import SessionProjectionRegistry from "@deepseek-ai/dsh-session-projection";
+import WorkingDirectoryService from "@deepseek-ai/dsh-working-directory";
 import { FsError } from "@deepseek-ai/dsh-fs";
 import { Context } from "@deepseek-ai/cordis";
 import type { Agent } from "@deepseek-ai/dsh-agent";
@@ -95,14 +97,14 @@ const harness = async (options: Readonly<{ additionalReadRoot?: boolean; imageIn
     ...(options.additionalReadRoot === true ? [mkdir(additionalReadRoot)] : []),
   ]);
   const context = new Context();
-  const session = { id: "session-fixture", header: { id: "session-fixture", cwd: workspace }, requestHeader: () => ({ config: {} }) };
+  const session = Session.create(SessionId("session-fixture"), [], { version: SESSION_FORMAT_VERSION, id: SessionId("session-fixture"), createdAt: 1, isSeeded: false, cwd: workspace });
   const agent = {
     ctx: context,
     id: "session-fixture",
     options: { provider: "fixture", model: "root" },
     session,
   } as unknown as Agent;
-  const childSession = { id: "child-session-fixture", header: { cwd: workspace }, requestHeader: () => ({ config: {} }) };
+  const childSession = Session.create(SessionId("child-session-fixture"), [], { version: SESSION_FORMAT_VERSION, id: SessionId("child-session-fixture"), createdAt: 1, isSeeded: false, cwd: workspace });
   const childAgent = {
     ctx: context,
     id: "child-session-fixture",
@@ -186,6 +188,8 @@ const harness = async (options: Readonly<{ additionalReadRoot?: boolean; imageIn
   await context.plugin(LocalWorkspaceFileSystem, {
     platform: selectPlatformAdapter(environment.platformTarget),
   });
+  await context.plugin(SessionProjectionRegistry);
+  await context.plugin(WorkingDirectoryService, { defaultDirectory: workspace });
   context.provide("productPermission", {
     authorize: (_product: ProductToolContext, request: ProductToolPermissionRequest) => {
       permissions.push(`${request.tool}:${request.target}`);

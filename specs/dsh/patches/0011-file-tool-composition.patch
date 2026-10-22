@@ -1,5 +1,5 @@
 diff --git a/packages/fs/fs-local/README.md b/packages/fs/fs-local/README.md
-index 9c005443eb064a03b3050c9ae82295c794315239..72d3b121fb6323329cafeab255d5089df1fcb3b6 100644
+index 92d853bf86a714fcfbf8f2040fc604f191270973..6dcbc0a6473cc67da029a396fa99325d45a07ef0 100644
 --- a/packages/fs/fs-local/README.md
 +++ b/packages/fs/fs-local/README.md
 @@ -94,6 +94,8 @@ Each edit probes, verifies the version guard before literal matching (so stale e
@@ -12,7 +12,7 @@ index 9c005443eb064a03b3050c9ae82295c794315239..72d3b121fb6323329cafeab255d5089d
  
  -----
 diff --git a/packages/fs/fs-local/README.zh.md b/packages/fs/fs-local/README.zh.md
-index 3adc249afe68b4cd8b56c68101baafec47ffb981..60fed4923745365dae27c229d0d49d6249405032 100644
+index e493ede1bc63cddd76a3357266130ad69f4db589..c7c038191770d9e6706d84809e7f4770509d0d4c 100644
 --- a/packages/fs/fs-local/README.zh.md
 +++ b/packages/fs/fs-local/README.zh.md
 @@ -94,6 +94,8 @@ Chokidar 通过 OS 事件观察单个文件或目录的直接子项，不使用
@@ -147,13 +147,13 @@ index 17033e512ba83eff50327419610f2aff568cb872..2cf705f4419addc3a944c67a388f4006
        return {
 diff --git a/packages/fs/fs-local/tests/product-composition.spec.ts b/packages/fs/fs-local/tests/product-composition.spec.ts
 new file mode 100644
-index 0000000000000000000000000000000000000000..ca6df2ba883041eea98265edb0d1f7ec9b486ca9
+index 0000000000000000000000000000000000000000..09f51e57f2e2c15ebe943ab3bf99041b8004468f
 --- /dev/null
 +++ b/packages/fs/fs-local/tests/product-composition.spec.ts
-@@ -0,0 +1,45 @@
+@@ -0,0 +1,60 @@
 +import { Context } from '@deepseek-ai/cordis'
 +import { afterEach, expect, it } from 'vitest'
-+import { mkdtemp, readFile, rm, writeFile, readdir } from 'node:fs/promises'
++import { mkdtemp, readFile, rm, writeFile, readdir, stat } from 'node:fs/promises'
 +import { tmpdir } from 'node:os'
 +import { join } from 'node:path'
 +import { LocalFileSystem, prepareTextEdit } from '../src/index.ts'
@@ -196,11 +196,26 @@ index 0000000000000000000000000000000000000000..ca6df2ba883041eea98265edb0d1f7ec
 +    expect(await readdir(root)).toEqual(['file.txt'])
 +  } finally { await ctx.fiber.dispose() }
 +})
++
++
++it('leaves absent parent creation to the composing journal when createParents is false', async () => {
++  const root = await mkdtemp(join(tmpdir(), 'dsh-file-composition-'))
++  roots.push(root)
++  const path = join(root, 'journal-owned', 'new.txt')
++  const ctx = new Context()
++  try {
++    await ctx.plugin(LocalFileSystem, { cwd: root, createParents: false })
++    const target = await ctx.fs.resolve(path)
++    await expect(ctx.fs.writeText(target, 'new')).rejects.toThrow()
++    await expect(stat(join(root, 'journal-owned'))).rejects.toMatchObject({ code: 'ENOENT' })
++    expect(await readdir(root)).toEqual([])
++  } finally { await ctx.fiber.dispose() }
++})
 diff --git a/packages/fs/tool-fs/README.md b/packages/fs/tool-fs/README.md
-index a6e889f1d619537dc77afdd05b12d37e6d51858a..f3624b12e70901f8d01f94ec92d2053c9e4b39f1 100644
+index e8a5c2b88f63518fac979fa2a0c6a3467f1b5267..e8065f9a2b3b69bf6ca64f4ece99f91621c49e76 100644
 --- a/packages/fs/tool-fs/README.md
 +++ b/packages/fs/tool-fs/README.md
-@@ -108,6 +108,8 @@ All four tools share one flow shape: resolve the path with the calling session's
+@@ -117,6 +117,8 @@ All four tools share one flow shape: resolve the path with the calling session's
  
  `fs/observed` fires after the operation succeeded via a plain `ctx.emit`; a listener is contractually a synchronous, side-effect-only recorder, so async or fallible observation does not belong on this event. `read` opts into concurrent scheduling because its only mutation is the synchronous version recorder; recorder races fail closed when a later `write` or `edit` re-checks the version under its target lock, and both mutation tools remain exclusive.
  
@@ -210,10 +225,10 @@ index a6e889f1d619537dc77afdd05b12d37e6d51858a..f3624b12e70901f8d01f94ec92d2053c
  
  -----
 diff --git a/packages/fs/tool-fs/README.zh.md b/packages/fs/tool-fs/README.zh.md
-index 5e56478d929f7890f47fa10963f5bd55b3bacb64..4902470a2f57f7632b2ce8941ec9bcdc833ff314 100644
+index 81bb490de1128892ade585a7324cd43759679bbc..402d27645aaaae6e21fa9f04973d09393dca047f 100644
 --- a/packages/fs/tool-fs/README.zh.md
 +++ b/packages/fs/tool-fs/README.zh.md
-@@ -108,6 +108,8 @@ kind: "package-reference"
+@@ -117,6 +117,8 @@ kind: "package-reference"
  
  `fs/observed` 在操作成功之后通过普通 `ctx.emit` 发出；监听器的约定是同步且只有副作用的记录器，因此异步或可能失败的观察不属于该事件。`read` 允许并发调度，因为它唯一改变状态的操作是同步记录版本；稍后的 `write` 或 `edit` 会在目标锁内重新检查版本，因此记录器竞态会安全地失败，两个变更工具仍保持互斥。
  
@@ -223,10 +238,10 @@ index 5e56478d929f7890f47fa10963f5bd55b3bacb64..4902470a2f57f7632b2ce8941ec9bcdc
  
  -----
 diff --git a/packages/fs/tool-fs/src/edit.ts b/packages/fs/tool-fs/src/edit.ts
-index 643806a96a41920ece814aea7bbd91334c1dc921..d6d27e5b006afc2075187734f3241319501af751 100644
+index 2dd594a37d8dd1da14ea3dc930b4e2869b63e6d2..6c6c9b41b52e2cf827aeb86eff3613c30f88d045 100644
 --- a/packages/fs/tool-fs/src/edit.ts
 +++ b/packages/fs/tool-fs/src/edit.ts
-@@ -7,12 +7,13 @@
+@@ -7,13 +7,14 @@
  
  import type { Context } from '@deepseek-ai/cordis'
  import { defineTool } from '@deepseek-ai/dsh-tools'
@@ -235,13 +250,14 @@ index 643806a96a41920ece814aea7bbd91334c1dc921..d6d27e5b006afc2075187734f3241319
  import type {} from '@deepseek-ai/dsh-fs'
  import { computeHunkDiffs, diffsFromMeta } from './diff.ts'
  import { remediateFsError } from './error.ts'
+ import { mutationResult } from './mutation-result.ts'
  import { sessionResolveOptions } from './session-cwd.ts'
 -import type { FsSandboxController } from './sandbox.ts'
 +import { FsSandboxController } from './sandbox.ts'
  
  /** Validated `edit` arguments after defaulting. */
  interface EditInput {
-@@ -81,7 +82,17 @@ export function applyEditTool(ctx: Context, sandbox: FsSandboxController): void
+@@ -82,7 +83,17 @@ export function applyEditTool(ctx: Context, sandbox: FsSandboxController): void
        : 'Read a file before editing it (the default fs-observation-policy requires it), unless you just created or edited it in this session.',
    })
  
@@ -260,7 +276,7 @@ index 643806a96a41920ece814aea7bbd91334c1dc921..d6d27e5b006afc2075187734f3241319
      name: 'edit',
      description: 'Edit an existing UTF-8 text file by replacing literal text.',
      parameters: {
-@@ -164,5 +175,5 @@ export function applyEditTool(ctx: Context, sandbox: FsSandboxController): void
+@@ -165,5 +176,5 @@ export function applyEditTool(ctx: Context, sandbox: FsSandboxController): void
        if (diffs === undefined) return undefined
        return { card: 'diff', title: `Edit ${args.file_path}`, diffs }
      },
@@ -268,12 +284,12 @@ index 643806a96a41920ece814aea7bbd91334c1dc921..d6d27e5b006afc2075187734f3241319
 +  })
  }
 diff --git a/packages/fs/tool-fs/src/index.ts b/packages/fs/tool-fs/src/index.ts
-index cfbec13cda610efd9ebb1cb6ea8a7ea2c5821d63..ff5ed82517584d5358600a28062c6f2cb38d6858 100644
+index 5c7a78d01b64cc34ea54d1dd87c3ac0b69205a1a..11a687599edb635a2ad3e1d00f9473e892325af1 100644
 --- a/packages/fs/tool-fs/src/index.ts
 +++ b/packages/fs/tool-fs/src/index.ts
-@@ -77,3 +77,10 @@ export function apply(ctx: Context, config: Config): void {
-   applyWriteTool(ctx, sandbox)
-   applyEditTool(ctx, sandbox)
+@@ -96,3 +96,10 @@ export function apply(ctx: Context, config: Config): void {
+     if (resolved.edit) applyEditTool(ctx, sandbox)
+   }
  }
 +
 +// Public composition factories preserve the stock schemas, executors and renderers.
@@ -283,7 +299,7 @@ index cfbec13cda610efd9ebb1cb6ea8a7ea2c5821d63..ff5ed82517584d5358600a28062c6f2c
 +export { createWriteTool } from './write.ts'
 +export { createEditTool } from './edit.ts'
 diff --git a/packages/fs/tool-fs/src/read-image.ts b/packages/fs/tool-fs/src/read-image.ts
-index c732750921c3356c7ccd8b9eb76919d59565144e..b9355968982b7f80b14d3c7ac84b7768c4384d7c 100644
+index 4a452e21c44f7253465e13f5e96c9ccbe7dd4ccc..fc6cd22ecdb23ff813a0d8f63ed91aeb9e2134a6 100644
 --- a/packages/fs/tool-fs/src/read-image.ts
 +++ b/packages/fs/tool-fs/src/read-image.ts
 @@ -17,6 +17,7 @@ import { AttachmentError, AttachmentId } from '@deepseek-ai/dsh-attachment'
@@ -294,7 +310,7 @@ index c732750921c3356c7ccd8b9eb76919d59565144e..b9355968982b7f80b14d3c7ac84b7768
  import type { GenericCallView, ToolExecution } from '@deepseek-ai/dsh-tools'
  import type {} from '@deepseek-ai/dsh-fs'
  import { resolveRegularReadTarget } from './read-target.ts'
-@@ -206,7 +207,16 @@ function imageReadContent(value: ImageReadValue): ContentBlock[] {
+@@ -207,7 +208,16 @@ function imageReadContent(value: ImageReadValue): ContentBlock[] {
   *   the optional `attachments`/`llm` services.
   */
  export function applyReadImageTool(ctx: Context): void {
@@ -312,7 +328,7 @@ index c732750921c3356c7ccd8b9eb76919d59565144e..b9355968982b7f80b14d3c7ac84b7768
      name: 'read_image',
      description: 'Read a PNG/JPEG/WebP/GIF file and return the image itself. '
        + 'Large images are downscaled automatically; do not install image libraries or create thumbnails to inspect an image.',
-@@ -345,5 +355,5 @@ export function applyReadImageTool(ctx: Context): void {
+@@ -346,5 +356,5 @@ export function applyReadImageTool(ctx: Context): void {
          locations: [{ path: args.file_path }],
        }
      },
@@ -320,7 +336,7 @@ index c732750921c3356c7ccd8b9eb76919d59565144e..b9355968982b7f80b14d3c7ac84b7768
 +  })
  }
 diff --git a/packages/fs/tool-fs/src/read.ts b/packages/fs/tool-fs/src/read.ts
-index edc273e0bef8530a84026bad2a43fb359e212536..82791d32ae35e2a71f2e038da68bc2dccb4fcc6b 100644
+index a5a747c77669f71797ff17e83034ff8c912b1068..2e6532596ede7ce24349a3d3c4158581bfe33520 100644
 --- a/packages/fs/tool-fs/src/read.ts
 +++ b/packages/fs/tool-fs/src/read.ts
 @@ -6,6 +6,7 @@
@@ -358,7 +374,7 @@ index edc273e0bef8530a84026bad2a43fb359e212536..82791d32ae35e2a71f2e038da68bc2dc
 +  })
  }
 diff --git a/packages/fs/tool-fs/src/sandbox.ts b/packages/fs/tool-fs/src/sandbox.ts
-index 6b815e5743df1f9ad5c8829305dfc868aef29382..5034f10c097618bf21b3603197eed8a0bb994618 100644
+index 36a6767506bcb09f6e3c5f89407d61016b9437b7..711c1bc8f9511790f56ff562eb401059e2f4ee5c 100644
 --- a/packages/fs/tool-fs/src/sandbox.ts
 +++ b/packages/fs/tool-fs/src/sandbox.ts
 @@ -122,10 +122,10 @@ export class FsSandboxController {
@@ -375,10 +391,10 @@ index 6b815e5743df1f9ad5c8829305dfc868aef29382..5034f10c097618bf21b3603197eed8a0
    }
  }
 diff --git a/packages/fs/tool-fs/src/write.ts b/packages/fs/tool-fs/src/write.ts
-index 405a1138151ce20aade896886844cd6a8a6ed8ac..025359424cba1871da8c3d17bc4cbd7034df67cc 100644
+index 1068cd9644caebc8ca41cf6fbcf907096599630b..d6a550aa4c0c11bbb0f1a7151bb275b15783227c 100644
 --- a/packages/fs/tool-fs/src/write.ts
 +++ b/packages/fs/tool-fs/src/write.ts
-@@ -7,13 +7,14 @@
+@@ -7,6 +7,7 @@
  
  import type { Context } from '@deepseek-ai/cordis'
  import { defineTool } from '@deepseek-ai/dsh-tools'
@@ -386,15 +402,16 @@ index 405a1138151ce20aade896886844cd6a8a6ed8ac..025359424cba1871da8c3d17bc4cbd70
  import type { DiffCallView, DiffResultView, ToolResult } from '@deepseek-ai/dsh-tools'
  import type { FsWriteOutcome } from '@deepseek-ai/dsh-fs'
  import type {} from '@deepseek-ai/dsh-fs'
- import { computeHunkDiffs, diffsFromMeta } from './diff.ts'
+@@ -14,7 +15,7 @@ import { computeHunkDiffs, diffsFromMeta, pathFromMeta } from './diff.ts'
  import { remediateFsError } from './error.ts'
+ import { mutationResult } from './mutation-result.ts'
  import { sessionResolveOptions } from './session-cwd.ts'
 -import type { FsSandboxController } from './sandbox.ts'
 +import { FsSandboxController } from './sandbox.ts'
  
  /**
   * Validate value constraints the schema DSL can't express: only a non-blank
-@@ -69,7 +70,17 @@ export function applyWriteTool(ctx: Context, sandbox: FsSandboxController): void
+@@ -70,7 +71,17 @@ export function applyWriteTool(ctx: Context, sandbox: FsSandboxController): void
          + '.',
    })
  
@@ -414,7 +431,7 @@ index 405a1138151ce20aade896886844cd6a8a6ed8ac..025359424cba1871da8c3d17bc4cbd70
      description: 'Create or fully replace a UTF-8 text file.',
      parameters: {
 @@ -149,5 +160,5 @@ export function applyWriteTool(ctx: Context, sandbox: FsSandboxController): void
-         ?? [{ path: args.file_path, oldText: null, newText: args.content }]
+         ?? [{ path: pathFromMeta(result.meta) ?? args.file_path, oldText: null, newText: args.content }]
        return { card: 'diff', title: `Write ${args.file_path}`, diffs }
      },
 -  }))

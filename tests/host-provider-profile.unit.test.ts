@@ -35,6 +35,39 @@ const profile = (
 
 describe("Host Provider profile translation", () => {
   it.each([
+    ["anthropic-messages", { supportsMidConvoSystemMessages: true, supportsMidConvoToolChanges: true }],
+    ["openai-completions", { supportsMidConvoSystemMessages: true, supportsMidConvoToolAdditions: true }],
+    ["openai-responses", { supportsMidConvoSystemMessages: true, supportsAdditionalTools: true, supportsToolSearch: false }],
+  ] as const)("preserves declared model update capabilities for %s", (api, wireCompat) => {
+    const input = profile(api, wireCompat);
+    const route = translateHostPiAiProfile(input).providers[input.providerRouteId];
+    expect(route?.compat).toBeUndefined();
+    expect(route?.models[0]?.compat).toEqual(wireCompat);
+    expect(route?.models.map(model => model.id)).toEqual([input.modelId]);
+    expect(translateHostPiAiProfile(profile(api)).providers[input.providerRouteId]?.models[0]?.compat).toBeUndefined();
+  });
+
+  it("keeps connection compatibility at route scope and only transcript declarations on the model", () => {
+    const input = profile("openai-completions", {
+      maxTokensField: "max_tokens", supportsDeveloperRole: false,
+      supportsMidConvoSystemMessages: false, supportsMidConvoToolAdditions: false,
+    });
+    const route = translateHostPiAiProfile(input).providers[input.providerRouteId];
+    expect(route?.compat).toEqual({ maxTokensField: "max_tokens", supportsDeveloperRole: false });
+    expect(route?.models[0]?.compat).toEqual({ supportsMidConvoSystemMessages: false, supportsMidConvoToolAdditions: false });
+  });
+
+  it.each([
+    ["anthropic-messages", { supportsMidConvoToolAdditions: true }],
+    ["openai-completions", { supportsMidConvoToolChanges: true }],
+    ["openai-responses", { supportsMidConvoToolChanges: true }],
+  ] as const)("rejects a conversation capability from another %s wire family", (api, wireCompat) => {
+    expect(() => translateHostPiAiProfile(profile(api, wireCompat))).toThrow("not valid for");
+    expect(() => translateHostPiAiProfile(profile(api, { supportsMidConvoSystemMessages: "true" })))
+      .toThrow("must be boolean");
+  });
+
+  it.each([
     ["anthropic-messages", { supportsTemperature: false, supportsStrictTools: true }],
     ["openai-completions", {
       maxTokensField: "max_completion_tokens",

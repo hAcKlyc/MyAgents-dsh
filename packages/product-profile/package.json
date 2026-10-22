@@ -23,5 +23,8 @@
     "./batch-1-candidate-manifest": "./manifests/batch-1-candidate-profile-v1.json",
     "./manifest": "./manifests/official-product-profile-v1.json",
     "./platform-manifest": "./manifests/platform-targets-v1.json"
+  },
+  "peerDependencies": {
+    "@deepseek-ai/dsh-working-directory": "0.2.1-rc.2 || 0.2.1-rc.2.myagents.687f282e8625.06b59a80661a"
   }
 }

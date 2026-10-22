@@ -5,7 +5,9 @@ import { AgentRegistry, type Agent } from "@deepseek-ai/dsh-agent";
 import type { FsTarget } from "@deepseek-ai/dsh-fs";
 import { ToolCallId } from "@deepseek-ai/dsh-llm";
 import { SessionId, SessionStore, type Session, type SessionEvent } from "@deepseek-ai/dsh-session";
+import SessionProjectionRegistry from "@deepseek-ai/dsh-session-projection";
 import { SystemPrompt } from "@deepseek-ai/dsh-system-prompt";
+import WorkingDirectoryService from "@deepseek-ai/dsh-working-directory";
 import "@deepseek-ai/dsh-plan-mode";
 import * as ToolCallTimeoutPolicy from "@deepseek-ai/dsh-tool-call-timeout-policy";
 import { ToolRuntime } from "@deepseek-ai/dsh-tools";
@@ -108,6 +110,8 @@ const mounted = async (options: MountedOptions = {}) => {
   await context.plugin(LocalWorkspaceFileSystem, {
     platform: selectPlatformAdapter(`${process.platform}-${process.arch}`),
   });
+  await context.plugin(SessionProjectionRegistry);
+  await context.plugin(WorkingDirectoryService, { defaultDirectory: workspace });
 
   const environment = Object.freeze({
     attachmentStagingRoot: attachments,

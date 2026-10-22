@@ -1,287 +1,17 @@
-diff --git a/docs/subsystems/subagent.md b/docs/subsystems/subagent.md
-index de96d7550904fb99e9109946c73eb1122dc4bdad..579828cbbda1bf9e94c9738582f520d142388a93 100644
---- a/docs/subsystems/subagent.md
-+++ b/docs/subsystems/subagent.md
-@@ -103,6 +103,11 @@ interface SubagentStartRequest {
-    * persona (strict `{{…}}` interpolation against the registered variables).
-    */
-   readonly persona?: string
-+  /**
-+   * Whether the child persona uses strict Prompt-variable interpolation.
-+   * Defaults to true; false preserves externally supplied persona text literally.
-+   */
-+  readonly personaInterpolate?: boolean
- }
- ```
- 
-@@ -501,6 +506,13 @@ Named provider registry with one-shot runs, durable discovery, and continuable-c
-  */
- resolveMaxDepth(configured?: number | 'provider-managed'): number | undefined
- 
-+/**
-+ * Install a trusted capability at unpublished fresh/cold child setup, revoked with its scope.
-+ * @param contribution - trusted child-scope setup invoked with its explicit unpublished Agent.
-+ * @returns the effect-scoped contribution disposer.
-+ */
-+registerContinuableSetup(contribution: ContinuableSetupContribution): () => void
-+
- /**
-  * Establish one durable continuable child and deliver its initial prompt.
-  * Resolves when the child's inbox accepts that prompt, without waiting for the
-@@ -512,6 +524,36 @@ resolveMaxDepth(configured?: number | 'provider-managed'): number | undefined
-  */
- async startContinuable(spec: ContinuableStartSpec): Promise<ContinuableStart>
- 
-+/**
-+ * Wake one exact durable child Inbox identity without reinserting it.
-+ * @param parent - exact live direct-parent Agent authorizing the operation.
-+ * @param childId - durable direct-child session identity.
-+ * @param messageId - already-durable pending identity; never removed or reinserted.
-+ * @param options - caller cancellation before admission.
-+ * @returns whether the existing identity was scheduled.
-+ */
-+async resumeContinuable(parent: Agent, childId: SessionId, messageId: MessageId, options: SubagentResumeOptions): Promise<boolean>
-+
-+/**
-+ * Deliver trusted composition input with its original provenance and explicit scheduling.
-+ * @param parent - exact live direct-parent Agent authorizing the operation.
-+ * @param childId - durable direct-child session identity.
-+ * @param content - trusted input blocks admitted through the native inbox.
-+ * @param options - delivery provenance, explicit scheduling and caller cancellation.
-+ * @returns the identity accepted by the native child inbox.
-+ */
-+async deliverContinuable( parent: Agent, childId: SessionId, content: ContentBlock[], options: SubagentDeliveryOptions, ): Promise<MessageId>
-+
-+/**
-+ * Retain exact direct-parent residency without injecting synthetic ancestor work.
-+ * @param root - exact live root authorizing the ancestry path.
-+ * @param ancestors - bounded acyclic direct-child path, ordered from root to immediate parent.
-+ * @param options - caller cancellation before admission.
-+ * @param operation - work using the resident immediate parent before holds release.
-+ * @returns the operation result after all residency holds release.
-+ */
-+async withContinuableAncestors<T>( root: Agent, ancestors: readonly SessionId[], options: SubagentResumeOptions, operation: (parent: Agent) => Promise<T>, ): Promise<T>
-+
- /**
-  * Steer one model-authored message to the sender's direct parent or direct
-  * continuable child. A running target admits it at the nearest step boundary;
-diff --git a/docs/subsystems/subagent.zh.md b/docs/subsystems/subagent.zh.md
-index 843f0e0cd7149e5ddbef9414632fa4464f58882c..1a543f0cd6441b13e7433946a923025d7e5b7d7a 100644
---- a/docs/subsystems/subagent.zh.md
-+++ b/docs/subsystems/subagent.zh.md
-@@ -103,6 +103,11 @@ interface SubagentStartRequest {
-    * persona (strict `{{…}}` interpolation against the registered variables).
-    */
-   readonly persona?: string
-+  /**
-+   * Whether the child persona uses strict Prompt-variable interpolation.
-+   * Defaults to true; false preserves externally supplied persona text literally.
-+   */
-+  readonly personaInterpolate?: boolean
- }
- ```
- 
-@@ -505,6 +510,13 @@ Named provider registry with one-shot runs, durable discovery, and continuable-c
-  */
- resolveMaxDepth(configured?: number | 'provider-managed'): number | undefined
- 
-+/**
-+ * Install a trusted capability at unpublished fresh/cold child setup, revoked with its scope.
-+ * @param contribution - trusted child-scope setup invoked with its explicit unpublished Agent.
-+ * @returns the effect-scoped contribution disposer.
-+ */
-+registerContinuableSetup(contribution: ContinuableSetupContribution): () => void
-+
- /**
-  * Establish one durable continuable child and deliver its initial prompt.
-  * Resolves when the child's inbox accepts that prompt, without waiting for the
-@@ -516,6 +528,36 @@ resolveMaxDepth(configured?: number | 'provider-managed'): number | undefined
-  */
- async startContinuable(spec: ContinuableStartSpec): Promise<ContinuableStart>
- 
-+/**
-+ * Wake one exact durable child Inbox identity without reinserting it.
-+ * @param parent - exact live direct-parent Agent authorizing the operation.
-+ * @param childId - durable direct-child session identity.
-+ * @param messageId - already-durable pending identity; never removed or reinserted.
-+ * @param options - caller cancellation before admission.
-+ * @returns whether the existing identity was scheduled.
-+ */
-+async resumeContinuable(parent: Agent, childId: SessionId, messageId: MessageId, options: SubagentResumeOptions): Promise<boolean>
-+
-+/**
-+ * Deliver trusted composition input with its original provenance and explicit scheduling.
-+ * @param parent - exact live direct-parent Agent authorizing the operation.
-+ * @param childId - durable direct-child session identity.
-+ * @param content - trusted input blocks admitted through the native inbox.
-+ * @param options - delivery provenance, explicit scheduling and caller cancellation.
-+ * @returns the identity accepted by the native child inbox.
-+ */
-+async deliverContinuable( parent: Agent, childId: SessionId, content: ContentBlock[], options: SubagentDeliveryOptions, ): Promise<MessageId>
-+
-+/**
-+ * Retain exact direct-parent residency without injecting synthetic ancestor work.
-+ * @param root - exact live root authorizing the ancestry path.
-+ * @param ancestors - bounded acyclic direct-child path, ordered from root to immediate parent.
-+ * @param options - caller cancellation before admission.
-+ * @param operation - work using the resident immediate parent before holds release.
-+ * @returns the operation result after all residency holds release.
-+ */
-+async withContinuableAncestors<T>( root: Agent, ancestors: readonly SessionId[], options: SubagentResumeOptions, operation: (parent: Agent) => Promise<T>, ): Promise<T>
-+
- /**
-  * Steer one model-authored message to the sender's direct parent or direct
-  * continuable child. A running target admits it at the nearest step boundary;
-diff --git a/packages/core/system-prompt/README.md b/packages/core/system-prompt/README.md
-index a76ae5c66f0801cb85cd8cf22d0c3ebbc68e65b8..ac1eafa821022d638c11ce9db5d412b3303f4f2a 100644
---- a/packages/core/system-prompt/README.md
-+++ b/packages/core/system-prompt/README.md
-@@ -110,6 +110,8 @@ Assembly resolves and renders in two stages: `assemble()` returns sections with
- 
- Scoped sections, variables, and tool providers shadow globals for one agent, and the assembly waterfall dispatches scope-filtered. Registry-change notifications (`system-prompt/change`) are deliberately unfiltered because a global change affects every scope.
- 
-+A section or context contribution with `interpolate: false` preserves literal braces in externally supplied text. Omitted flags retain strict template interpolation. Child personas use the same choice through `personaInterpolate`, including continuable cold resume; persona prefix and suffix ordering remains service-owned.
-+
- </details>
- 
- -----
-diff --git a/packages/core/system-prompt/README.zh.md b/packages/core/system-prompt/README.zh.md
-index 98c6e733399c954c5bbc56b905aefcc6b080381d..ef4813176c7176b721768167ea24cf31936e2d48 100644
---- a/packages/core/system-prompt/README.zh.md
-+++ b/packages/core/system-prompt/README.zh.md
-@@ -110,6 +110,8 @@ ctx.systemPrompt.variable('cwd', ({ agent }) => agent?.session.header.cwd)
- 
- 带作用域的段、变量与工具提供方会为单个 agent 遮蔽全局项，组装 waterfall 按作用域筛选分发。注册表变更通知（`system-prompt/change`）刻意不经过筛选，因为全局变更影响每个作用域。
- 
-+带有 `interpolate: false` 的 section 或 context 贡献项保留外部文本中的字面花括号。省略标志时仍严格执行模板插值。子级角色文本通过 `personaInterpolate` 使用同一选择，包括可续跑子级的冷恢复；角色前缀和后缀顺序仍由服务拥有。
-+
- </details>
- 
- -----
-diff --git a/packages/subagent/subagent-in-process-driver/README.md b/packages/subagent/subagent-in-process-driver/README.md
-index fe9703a2bc735cfea81dbf921488edb786335f6f..c116ab0ae4c502e96ba27b708b206fb9c91e2dca 100644
---- a/packages/subagent/subagent-in-process-driver/README.md
-+++ b/packages/subagent/subagent-in-process-driver/README.md
-@@ -75,6 +75,8 @@ The required request signal covers both startup and the live run. Before publica
- | [`src/structured.ts`](src/structured.ts) | Structured-output runtime: capture tool, prompt section, guard, commit |
- | — | No runtime invariant companion is published; this package exposes no independent event sequence or mutable data relation beyond contracts enforced at its owning seam. |
- 
-+The unpublished setup callback receives both the child context and its explicit Agent. Persona composition forwards `personaInterpolate` to the existing prefix slot, so literal external text follows the same scope lifetime as other child contributions.
-+
- </details>
- 
- -----
-diff --git a/packages/subagent/subagent-in-process-driver/README.zh.md b/packages/subagent/subagent-in-process-driver/README.zh.md
-index 5ee7447829985b71d7f2004bfaa94a98fc187ea1..6011334f4f4b02980be0b4d1ecd2977d0cf86c90 100644
---- a/packages/subagent/subagent-in-process-driver/README.zh.md
-+++ b/packages/subagent/subagent-in-process-driver/README.zh.md
-@@ -75,6 +75,8 @@ kind: "package-library"
- | [`src/structured.ts`](src/structured.ts) | 结构化输出运行时：捕获工具、提示词段、防护、提交 |
- | — | 不发布运行时不变式伴生入口；本包没有独立事件序列或可变数据关系，相关约定在所属 seam 强制执行。 |
- 
-+未发布阶段的 setup 回调同时收到子级上下文及其显式 Agent。角色组合将 `personaInterpolate` 传给已有的前缀 slot，因此外部字面文本与其他子级贡献项遵循同一作用域生命周期。
-+
- </details>
- 
- -----
-diff --git a/packages/subagent/subagent-in-process-driver/src/index.ts b/packages/subagent/subagent-in-process-driver/src/index.ts
-index dbaac326b10c444c6509dcb9f1aabc5f4f87df02..1d8684925614d7c16a03e5f9e6ef77c662b86f77 100644
---- a/packages/subagent/subagent-in-process-driver/src/index.ts
-+++ b/packages/subagent/subagent-in-process-driver/src/index.ts
-@@ -123,6 +123,7 @@ export async function startInProcessRun(
-     appendDelegatedPolicyOverrides(child.session, inherited)
-     applyChildComposition(childCtx, parent, {
-       persona: request.persona,
-+      personaInterpolate: request.personaInterpolate,
-       toolFilter: request.toolFilter,
-     })
-     if (request.outputSchema !== undefined) {
-diff --git a/packages/subagent/subagent-spawn-in-process/README.md b/packages/subagent/subagent-spawn-in-process/README.md
-index ce3909934efa1b2f5cc57ff046b892e3ec129444..b761b64e57588fd4ede1d7b6cbadd3062c6ab0e7 100644
---- a/packages/subagent/subagent-spawn-in-process/README.md
-+++ b/packages/subagent/subagent-spawn-in-process/README.md
-@@ -82,6 +82,8 @@ A start request resolves through the subagent service, then the shared driver va
- 
- The child gets a fresh flat registration scope: parent tool restrictions and authority are never imported, and the filter the tool applies is composition, not a parent-derived grant. The backend advertises all five start-time capabilities, including `agentOptions`, because it controls the child's creation window and can enforce each one.
- 
-+Spawn forwards the persona interpolation choice to the shared driver. It adds no prompt renderer or separate child execution path.
-+
- </details>
- 
- -----
-diff --git a/packages/subagent/subagent-spawn-in-process/README.zh.md b/packages/subagent/subagent-spawn-in-process/README.zh.md
-index 998b90ff0827e3cccc3be787e1941ca49aaeec0e..eb2e94d751851db26c46e62167d1b87c282f8d3b 100644
---- a/packages/subagent/subagent-spawn-in-process/README.zh.md
-+++ b/packages/subagent/subagent-spawn-in-process/README.zh.md
-@@ -82,6 +82,8 @@ kind: "package-reference"
- 
- 子 agent 获得全新的扁平注册作用域：父级工具限制与权限绝不会被导入，工具所施加的过滤属于组合而非父级派生授权。后端声明包括 `agentOptions` 在内的全部五项启动时能力，因为它控制子 agent 的创建窗口，可以逐一强制执行。
- 
-+Spawn 将角色插值选择传给共享驱动器，不增加提示词渲染器或独立的子级执行路径。
-+
- </details>
- 
- -----
-diff --git a/packages/subagent/subagent-spawn-in-process/tests/subagent-spawn-in-process.spec.ts b/packages/subagent/subagent-spawn-in-process/tests/subagent-spawn-in-process.spec.ts
-index e199b7c9aad008276348649cbb4d81a4421a9730..588ad1436ed71b23475a69422229cc771c941a55 100644
---- a/packages/subagent/subagent-spawn-in-process/tests/subagent-spawn-in-process.spec.ts
-+++ b/packages/subagent/subagent-spawn-in-process/tests/subagent-spawn-in-process.spec.ts
-@@ -416,6 +416,19 @@ describe('dsh-subagent-spawn-in-process', () => {
-       await run.dispose()
-     })
- 
-+    it('can keep an external child persona literal', async () => {
-+      const { ctx, parent, adapter } = await setup([textResponse('child answer')])
-+      const run = await start(ctx, 'spawn', {
-+        prompt: [{ type: 'text', text: 'do X' }],
-+        parent,
-+        persona: 'Render {{name}} and {{ malformed }} literally.',
-+        personaInterpolate: false,
-+      })
-+      await run.result
-+      expect(adapter.requests[0]!.messages.find(message => message.role === 'system')?.content.map(block => block.type === 'text' ? block.text : '').join('')).toContain('Render {{name}} and {{ malformed }} literally.')
-+      await run.dispose()
-+    })
-+
-     it('toolFilter hides denied tools from the child prompt AND refuses their execution', async () => {
-       const { ctx, parent, adapter } = await setup([
-         // The child tries the denied tool anyway, then answers.
-diff --git a/packages/subagent/subagent/README.md b/packages/subagent/subagent/README.md
-index f962257a854893d94d5b9317c9605d952917b1b1..3782ffd5d06834ae5fd65f1ac03194c141ffe39c 100644
---- a/packages/subagent/subagent/README.md
-+++ b/packages/subagent/subagent/README.md
-@@ -108,7 +108,7 @@ A request is validated against the provider's advertised capabilities, a durable
- 
- ### Continuable flow
- 
--The manager reserves a child identity, resolves the durable descriptor, creates (or cold-resumes) the child Agent, installs it in an Activation, and submits the prompt. Model-authored messages cross one parent/child edge through fixed Steer scheduling; browser human prompts choose Queue or best-effort Steer through an internal adapter, while other host protocols may retain Queue for distinct turns. A Session queue command admits a live subagent-owned Agent only from its own continuable descriptor. Settlement waits for Agent activity to finish, an empty Inbox, and no owned children, then flushes final Session state with admission open. Under the child lock, the manager revalidates the wake generation, Session sequence, Inbox, and owned children; the synchronous task entry of `Agent.runMaintenance()` claims the idle phase and closes the private subagent Inbox in the same JavaScript turn before handle disposal. An absent direct-child Activation cold-resumes from the persisted session. When a resident Activation settles, the manager tells the child's direct parent in the parent's own turn stream.
-+The manager reserves a child identity, resolves the durable descriptor, creates (or cold-resumes) the child Agent, installs it in an Activation, and submits the prompt. Model-authored messages cross one parent/child edge through fixed Steer scheduling; browser human prompts choose Queue or best-effort Steer through an internal adapter, while other host protocols may retain Queue for distinct turns. A Session queue command admits a live subagent-owned Agent only from its own continuable descriptor. Settlement waits for Agent activity to finish, an empty Inbox, and released admission holds; parent-delivery settlement additionally waits for owned children. It then flushes final Session state with admission open. Under the child lock, the manager revalidates the wake generation, Session sequence, Inbox, and owned children; the synchronous task entry of `Agent.runMaintenance()` claims the idle phase and closes the private subagent Inbox in the same JavaScript turn before handle disposal. An absent direct-child Activation cold-resumes from the persisted session. When a resident Activation using parent delivery settles, the manager tells the child's direct parent in the parent's own turn stream.
- 
- Successful local child creation appends a `subagent/catalog` fact to the parent Session. One-shot creation records it after the provider returns; continuable creation records it after initial inbox admission and before returning the child id. Failure releases the child without publishing a compensating catalog event. A one-shot catalog append failure handles the run’s result rejection and preserves the catalog error; disposal failures are logged separately. The `subagentCatalog` projection excludes fork-inherited facts and exposes a direct-child list through `projections.values.subagentCatalog` in Session observations and client snapshots. Each child's `subagentTiming` projection accumulates post-descriptor duration and records whether its latest closed turn ended with `completed`, clearing that completion when another turn opens. Invalid own catalog payloads, including unsupported versions, reject projection restoration. Projection state-version changes refold cached rows from the durable log. The catalog view preserves parent event order in O(D) time for D facts, and its immutable storage and checkpoint validation use [`dsh-chunked-list`](../../util/chunked-list/README.md). [The parent-catalog decision](../../../.agents/notes/implemented/architecture/2026-09-01-parent-owned-subagent-catalog.md) owns ordering, persistence costs, and alternatives. Catalog payload v0 records known modes; v1 also accepts unknown mode. Readers support both versions. Historical migration appends a v1 `subagent/catalog` from a readable child header when its descriptor is unavailable; normal creation retains v0. Its `mode: 'unknown'` projection keeps the child visible without claiming continuation support; an existing complete entry remains authoritative.
- 
-@@ -120,6 +120,8 @@ Successful local child creation appends a `subagent/catalog` fact to the parent
- - **The descriptor is log-only** — a session event absent from model history and retained across compaction; a continuable descriptor records the resolved child provider, model, and reasoning effort explicitly for cold resume.
- - **This runtime answers archive admission for children** ([seam](../../workspace/workspace/README.md)) — `workspace/session-activity` reports the live subagent descendants inside a turn as the `subagent` family, found by the durable lineage this package records (`parentSession` with the subagent origin, any depth, never a fork) and labelled from each child's descriptor through a live Session observation when the Session query service is composed, otherwise by id; `workspace/session-stop` cancels each of them with the parent cause, one at a time, so one child refusing its cancel is logged while its siblings still stop. The parent's own turn, its jobs, and the archived-lineage step gate belong to the API Session Controller.
- 
-+Trusted composition can retain a bounded path of actual direct-parent Agents, deliver sourced input through native Queue or Steer, and wake an exact durable pending identity. An ancestry hold schedules no synthetic turn. `settlementDelivery: external` persists the deployment settlement owner in descriptor version 5, suppresses the stock parent notice and allows descendants to remain active after their parent finishes. Admission holds still delay release. External settlement requires a successful final Session flush; a durability failure marks `infrastructureFailure` and rejects the owning drain. Versions 3 and 4 are not accepted by this distribution.
-+
- </details>
- 
- -----
 diff --git a/packages/subagent/subagent/src/child-agent.ts b/packages/subagent/subagent/src/child-agent.ts
-index 0004567a30f5f9e50a91518c071ed87ce72ae671..aba4810614581e55fd7b8a90cad3be3cfaab239a 100644
+index f9bd96125d871977bf318846905eb1f56ed238aa..fdd6a58f2ddab828aedbd41e1a9d92ac665ad632 100644
 --- a/packages/subagent/subagent/src/child-agent.ts
 +++ b/packages/subagent/subagent/src/child-agent.ts
-@@ -160,6 +160,8 @@ export function childSessionMeta(
- export interface ChildComposition {
-   /** Per-child persona shadowing the deployment persona. */
+@@ -159,6 +159,8 @@ export interface ChildComposition {
+   readonly agentPreset?: string | undefined
+   /** Historical descriptor persona reapplied only during cold resume. */
    readonly persona?: string | undefined
-+  /** Whether the persona uses strict Prompt-variable interpolation (default true). */
++  /** Historical literal/template choice restored from a MyAgents v5 descriptor. */
 +  readonly personaInterpolate?: boolean | undefined
-   /** Per-child tool scoping. */
+   /** Historical descriptor tool restriction reapplied only during cold resume. */
    readonly toolFilter?: ToolRestriction | undefined
  }
-@@ -213,6 +215,7 @@ export function applyChildComposition(
+@@ -212,6 +214,7 @@ function applyChildOverrides(childCtx: Context, composition: ChildComposition):
        name: 'deployment:persona-prefix',
        order: childCtx.systemPrompt.getSectionOrder('DEPLOYMENT_PERSONA_PREFIX'),
        text: composition.persona,
@@ -289,387 +19,92 @@ index 0004567a30f5f9e50a91518c071ed87ce72ae671..aba4810614581e55fd7b8a90cad3be3c
      })
    }
    if (composition.toolFilter !== undefined) childCtx.tools.restrict(composition.toolFilter)
-diff --git a/packages/subagent/subagent/src/continuation-activation.ts b/packages/subagent/subagent/src/continuation-activation.ts
-index e2bb062426c01e28d10313043802479e5580e0c8..25e847ef9cff52c31ae00b537e34e8ea533d95a1 100644
---- a/packages/subagent/subagent/src/continuation-activation.ts
-+++ b/packages/subagent/subagent/src/continuation-activation.ts
-@@ -25,12 +25,11 @@ import type {
-   SessionLogOffset as SessionLogOffsetType,
-   UserMessage,
- } from '@deepseek-ai/dsh-session'
--import type { ToolRestriction } from '@deepseek-ai/dsh-tools'
- import {
-   appendDelegatedPolicyOverrides,
-   applyChildComposition,
- } from './child-agent.ts'
--import type { DelegatedPolicyOverrides } from './child-agent.ts'
-+import type { ChildComposition, DelegatedPolicyOverrides } from './child-agent.ts'
- import { createSettlementMessage } from './continuation-messages.ts'
- import type { SubagentDescriptorData } from './descriptor.ts'
- import { SubagentError } from './error.ts'
-@@ -134,7 +133,7 @@ export interface MaterializeInputs {
-     descriptor: SubagentDescriptorData
-   }
-   agentOptions: AgentOptions
--  composition: { persona?: string | undefined; toolFilter?: ToolRestriction | undefined }
-+  composition: ChildComposition
-   signal: AbortSignal
-   residencyOnly?: boolean
- }
-@@ -571,16 +570,23 @@ export class ContinuableActivationRegistry {
-     return activation.inbox.close(() => this.finishDisposal(activation, options))
-   }
- 
--  /** Wake one already-durable identity under the same child admission lock. */
-+  /**
-+   * Wake one already-durable identity under the same child admission lock.
-+   * @param activation - exact retained child residency epoch.
-+   * @param messageId - already-durable pending identity; never removed or reinserted.
-+   * @param parent - exact live direct-parent Agent authorizing the operation.
-+   * @param signal - cancellation observed before admission.
-+   * @returns whether the existing identity was scheduled.
-+   */
-   wakePending(activation: Activation, messageId: MessageId, parent: Agent, signal: AbortSignal): boolean {
-     signal.throwIfAborted()
-     this.assertAdmitting(parent)
-     this.authorizeLineage(parent, activation.childId, activation.parentSession)
-     if (activation.inbox.closing !== undefined) throw new SubagentError('child is closing', 'ACTIVATION_CLOSING')
--    const wake = activation.handle.agent.wakePending
--    if (wake === undefined) throw new SubagentError('child cannot wake durable pending work', 'NOT_RESUMABLE')
-+    const child = activation.handle.agent
-+    if (child.wakePending === undefined) throw new SubagentError('child cannot wake durable pending work', 'NOT_RESUMABLE')
-     this.startObserver(activation)
--    const resumed = wake.call(activation.handle.agent, messageId)
-+    const resumed = child.wakePending(messageId)
-     if (resumed) {
-       this.acquireOwnership(parent, activation.childId)
-       activation.announced = true
-@@ -589,10 +595,17 @@ export class ContinuableActivationRegistry {
-     return resumed
-   }
- 
--  /** Retain quiet ancestry without scheduling a turn or activation edge. */
-+  /**
-+   * Retain quiet ancestry without scheduling a turn or activation edge.
-+   * @param activation - exact retained child residency epoch.
-+   */
-   retain(activation: Activation): void { activation.retainers += 1 }
- 
--  /** Release a caller's ancestry hold; keep genuinely pending input parked. */
-+  /**
-+   * Release a caller's ancestry hold; keep genuinely pending input parked.
-+   * @param activation - exact retained child residency epoch.
-+   * @returns the closing transaction when release retires the quiet child, otherwise undefined.
-+   */
-   releaseRetained(activation: Activation): Promise<void> | undefined {
-     activation.retainers -= 1
-     this.wake(activation)
-diff --git a/packages/subagent/subagent/src/continuation.ts b/packages/subagent/subagent/src/continuation.ts
-index ff3364332f3b3084e7aa4b2f1016b039e0107ca2..e7116684cb8e93c0e1e1d4ad6d2a1ecca7bc2142 100644
---- a/packages/subagent/subagent/src/continuation.ts
-+++ b/packages/subagent/subagent/src/continuation.ts
-@@ -108,7 +108,7 @@ export class SubagentContinuationManager {
-   async startContinuable(spec: ContinuableStartSpec): Promise<ContinuableStart> {
-     const request = spec.request
-     const parent = request.parent
--    const settlementDelivery = spec.settlementDelivery ?? 'parent'
-+    const settlementDelivery: unknown = spec.settlementDelivery ?? 'parent'
-     if (settlementDelivery !== 'parent' && settlementDelivery !== 'external') {
-       throw new TypeError('settlementDelivery must be "parent" or "external"')
-     }
-@@ -133,6 +133,7 @@ export class SubagentContinuationManager {
-       ...agentModel !== undefined ? { agentModel } : {},
-       ...agentReasoningEffort !== undefined ? { agentReasoningEffort } : {},
-       ...request.persona !== undefined ? { persona: request.persona } : {},
-+      ...request.personaInterpolate === undefined ? {} : { personaInterpolate: request.personaInterpolate },
-       ...request.toolFilter !== undefined ? { toolFilter: request.toolFilter } : {},
-     })
-     // Capture before the first await: a later parent switch belongs to the
-@@ -180,7 +181,7 @@ export class SubagentContinuationManager {
-             descriptor,
-           },
-           agentOptions,
--          composition: { persona: request.persona, toolFilter: request.toolFilter },
-+          composition: { persona: request.persona, personaInterpolate: request.personaInterpolate, toolFilter: request.toolFilter },
-           signal: spec.signal,
-         })
-         const childHeader = activation.handle.agent.session.header
-@@ -296,12 +297,26 @@ export class SubagentContinuationManager {
-     }
-   }
- 
--  /** Preserve trusted provenance using the existing queue/steer delivery path. */
-+  /**
-+   * Preserve trusted provenance using the existing queue/steer delivery path.
-+   * @param parent - exact live direct-parent Agent authorizing the operation.
-+   * @param childId - durable direct-child session identity.
-+   * @param content - trusted input blocks admitted through the native inbox.
-+   * @param options - delivery provenance, explicit scheduling and caller cancellation.
-+   * @returns the identity accepted by the native child inbox.
-+   */
-   deliverOwned(parent: Agent, childId: SessionId, content: ContentBlock[], options: SubagentDeliveryOptions): Promise<MessageId> {
-     return this.deliverToChild(parent, childId, content, options)
-   }
- 
--  /** Resume the same durable pending identity without inserting another input. */
-+  /**
-+   * Resume the same durable pending identity without inserting another input.
-+   * @param parent - exact live direct-parent Agent authorizing the operation.
-+   * @param childId - durable direct-child session identity.
-+   * @param messageId - already-durable pending identity; never removed or reinserted.
-+   * @param options - caller cancellation before admission.
-+   * @returns whether the existing identity was scheduled.
-+   */
-   async resumePending(parent: Agent, childId: SessionId, messageId: MessageId, options: SubagentResumeOptions): Promise<boolean> {
-     this.activations.assertAdmitting(parent)
-     const releaseHold = this.activations.holdOwnership(parent, childId)
-@@ -328,8 +343,20 @@ export class SubagentContinuationManager {
-     } finally { releaseHold() }
-   }
- 
--  /** Keep the actual direct parents resident while a trusted operation addresses a descendant. */
--  async withAncestors<T>(root: Agent, ancestors: readonly SessionId[], signal: AbortSignal, operation: (parent: Agent) => Promise<T>): Promise<T> {
-+  /**
-+   * Keep the actual direct parents resident while a trusted operation addresses a descendant.
-+   * @param root - exact live root authorizing the ancestry path.
-+   * @param ancestors - bounded acyclic direct-child path, ordered from root to immediate parent.
-+   * @param signal - cancellation observed before admission.
-+   * @param operation - work using the resident immediate parent before holds release.
-+   * @returns the operation result after all residency holds release.
-+   */
-+  async withAncestors<T>(
-+    root: Agent,
-+    ancestors: readonly SessionId[],
-+    signal: AbortSignal,
-+    operation: (parent: Agent) => Promise<T>,
-+  ): Promise<T> {
-     if (ancestors.length > 8 || new Set([root.id, ...ancestors]).size !== ancestors.length + 1) {
-       throw new SubagentError('continuable ancestry must be a bounded acyclic path', 'UNAUTHORIZED')
-     }
-@@ -537,7 +564,7 @@ export class SubagentContinuationManager {
-             ? { reasoningEffort: ReasoningEffortId(descriptor.agentReasoningEffort) }
-             : {},
-         },
--        composition: { persona: descriptor.persona, toolFilter: descriptor.toolFilter },
-+        composition: { persona: descriptor.persona, personaInterpolate: descriptor.personaInterpolate, toolFilter: descriptor.toolFilter },
-         signal,
-       })
-     } catch (error: unknown) {
 diff --git a/packages/subagent/subagent/src/descriptor.ts b/packages/subagent/subagent/src/descriptor.ts
-index 2bce55dd24b5f55430926bcce44d4b8b6ee8b785..1f41ebdd13982953029f3cd3bd56bdb3866dae89 100644
+index d2fe55010188a258a1d761d74297922902e5d9ff..146490fb3f052044f13dc11cf3d94b3272370f39 100644
 --- a/packages/subagent/subagent/src/descriptor.ts
 +++ b/packages/subagent/subagent/src/descriptor.ts
 @@ -81,6 +81,8 @@ export interface ContinuableSubagentDescriptorData extends SubagentDescriptorBas
    readonly agentReasoningEffort?: ReasoningEffortId
    /** Per-child persona that shadows the deployment persona on resume. */
    readonly persona?: string
-+  /** Strict interpolation by default; false preserves literal external text. */
++  /** Historical MyAgents v5 literal persona choice; not a new-start option. */
 +  readonly personaInterpolate?: boolean
    /** Child tool scoping reapplied on resume. */
    readonly toolFilter?: ToolRestriction
-   /** Whether each residency epoch reports settlement to its parent or an external product owner. */
-@@ -120,6 +122,8 @@ export interface ContinuableSubagentDescriptorInput extends SubagentDescriptorIn
-   readonly agentReasoningEffort?: ReasoningEffortId
-   /** Requested per-child persona. */
-   readonly persona?: string
-+  /** Strict interpolation by default; false preserves literal external text. */
-+  readonly personaInterpolate?: boolean
-   /** Requested child tool scoping. */
-   readonly toolFilter?: ToolRestriction
-   /** Settlement owner selected at initial continuable admission. */
-@@ -146,6 +150,7 @@ const CONTINUABLE_DESCRIPTOR_KEYS = new Set([
+   /** Historical MyAgents v5 settlement owner; external records are read-only. */
+@@ -93,7 +95,7 @@ export type SubagentDescriptorData =
+   | ContinuableSubagentDescriptorData
+ 
+ /** Continuable composition fields before the snapshot stamps their format version. */
+-export type ContinuableSubagentDescriptorInput = Omit<ContinuableSubagentDescriptorData, 'version' | 'settlementDelivery'>
++export type ContinuableSubagentDescriptorInput = Omit<ContinuableSubagentDescriptorData, 'version' | 'settlementDelivery' | 'personaInterpolate'>
+ 
+ const DESCRIPTOR_BASE_KEYS = [
+   'version',
+@@ -110,7 +112,7 @@ const CONTINUABLE_DESCRIPTOR_KEYS = new Set([
    'persona',
    'toolFilter',
-   'settlementDelivery',
-+  'personaInterpolate',
  ])
+-const LEGACY_CONTINUABLE_DESCRIPTOR_KEYS = new Set([...CONTINUABLE_DESCRIPTOR_KEYS, 'settlementDelivery'])
++const LEGACY_CONTINUABLE_DESCRIPTOR_KEYS = new Set([...CONTINUABLE_DESCRIPTOR_KEYS, 'settlementDelivery', 'personaInterpolate'])
  const TOOL_FILTER_KEYS = new Set(['allow', 'deny'])
  
-@@ -172,6 +177,16 @@ function optionalString(value: Record<string, unknown>, key: string): string | u
-   return field
- }
- 
-+/** Read one optional boolean field from a persisted descriptor record. */
-+function optionalBoolean(value: Record<string, unknown>, key: string): boolean | undefined {
-+  if (!Object.hasOwn(value, key)) return undefined
-+  const field = value[key]
-+  if (typeof field !== 'boolean') {
-+    throw new Error(`persisted subagent descriptor ${key} must be a boolean`)
-+  }
-+  return field
-+}
-+
- /** Read one optional string-array field from a persisted tool restriction. */
- function optionalStringArray(value: Record<string, unknown>, key: string): string[] | undefined {
-   if (!Object.hasOwn(value, key)) return undefined
-@@ -230,7 +245,7 @@ function parseSubagentDescriptor(value: unknown): SubagentDescriptorData | undef
-   if (mode === 'one-shot') {
-     const label = optionalString(value, 'label')
-     return {
--      version: SUBAGENT_DESCRIPTOR_VERSION,
-+      version,
-       mode,
-       provider,
-       ...label !== undefined ? { label } : {},
-@@ -244,6 +259,7 @@ function parseSubagentDescriptor(value: unknown): SubagentDescriptorData | undef
+ /** Whether a persisted JSON value is an object record. */
+@@ -209,6 +211,10 @@ function parseSubagentDescriptor(value: unknown): SubagentDescriptorData | undef
    const agentModel = optionalString(value, 'agentModel')
    const agentReasoningEffort = optionalString(value, 'agentReasoningEffort') as ReasoningEffortId | undefined
    const persona = optionalString(value, 'persona')
-+  const personaInterpolate = optionalBoolean(value, 'personaInterpolate')
++  const personaInterpolate = value['personaInterpolate']
++  if (Object.hasOwn(value, 'personaInterpolate') && typeof personaInterpolate !== 'boolean') {
++    throw new Error('persisted subagent descriptor personaInterpolate must be a boolean')
++  }
    const toolFilter = Object.hasOwn(value, 'toolFilter')
      ? parseToolFilter(value['toolFilter'])
      : undefined
-@@ -252,7 +268,7 @@ function parseSubagentDescriptor(value: unknown): SubagentDescriptorData | undef
-     throw new Error('persisted subagent descriptor settlementDelivery must be "parent" or "external"')
-   }
-   return {
--    version: SUBAGENT_DESCRIPTOR_VERSION,
-+    version,
-     mode,
-     provider,
-     label,
-@@ -260,6 +276,7 @@ function parseSubagentDescriptor(value: unknown): SubagentDescriptorData | undef
+@@ -225,6 +231,7 @@ function parseSubagentDescriptor(value: unknown): SubagentDescriptorData | undef
      ...agentModel !== undefined ? { agentModel } : {},
      ...agentReasoningEffort !== undefined ? { agentReasoningEffort } : {},
      ...persona !== undefined ? { persona } : {},
-+    ...personaInterpolate === undefined ? {} : { personaInterpolate },
++    ...typeof personaInterpolate === 'boolean' ? { personaInterpolate } : {},
      ...toolFilter !== undefined ? { toolFilter } : {},
      ...settlementDelivery !== undefined ? { settlementDelivery } : {},
    }
-@@ -303,6 +320,7 @@ export function snapshotSubagentDescriptor(input: SubagentDescriptorInput): Suba
-       ...input.agentModel !== undefined ? { agentModel: input.agentModel } : {},
-       ...input.agentReasoningEffort !== undefined ? { agentReasoningEffort: input.agentReasoningEffort } : {},
-       ...input.persona !== undefined ? { persona: input.persona } : {},
-+      ...input.personaInterpolate === undefined ? {} : { personaInterpolate: input.personaInterpolate },
-       ...input.toolFilter !== undefined ? { toolFilter: input.toolFilter } : {},
-       ...input.settlementDelivery !== undefined ? { settlementDelivery: input.settlementDelivery } : {},
-     }
-diff --git a/packages/subagent/subagent/src/types.ts b/packages/subagent/subagent/src/types.ts
-index 432bb7d3c13b7e2e7e94e11ce870db155421c9d6..6157f116a43b08448f97cc8d74b3dd0f8bd10636 100644
---- a/packages/subagent/subagent/src/types.ts
-+++ b/packages/subagent/subagent/src/types.ts
-@@ -218,6 +218,11 @@ export interface SubagentStartRequest {
-    * persona (strict `{{…}}` interpolation against the registered variables).
-    */
-   readonly persona?: string
-+  /**
-+   * Whether the child persona uses strict Prompt-variable interpolation.
-+   * Defaults to true; false preserves externally supplied persona text literally.
-+   */
-+  readonly personaInterpolate?: boolean
- }
- 
- /**
-diff --git a/packages/subagent/subagent/tests/continuation.spec.ts b/packages/subagent/subagent/tests/continuation.spec.ts
-index b79cf9d45d6ae7698ea942604088339d73a377fb..3694109a95aedeed21057dced15859f3b242beed 100644
---- a/packages/subagent/subagent/tests/continuation.spec.ts
-+++ b/packages/subagent/subagent/tests/continuation.spec.ts
-@@ -925,6 +925,33 @@ describe('SubagentRuntime.startContinuable', () => {
-     const resumed = await loadStoredSession(ctx.sessionPersistence, started.childId)
-     expect(hasUserText(resumed.events, 'resume it')).toBe(true)
+diff --git a/packages/subagent/subagent/src/manager.ts b/packages/subagent/subagent/src/manager.ts
+index 9377c41480a0822c6291f5a9e1e4a2f49ea6fcd1..f9eac0d8871e33683e9451c4a4a7c678179ba935 100644
+--- a/packages/subagent/subagent/src/manager.ts
++++ b/packages/subagent/subagent/src/manager.ts
+@@ -1378,7 +1378,8 @@ export class SubagentManager {
+             ? { reasoningEffort: ReasoningEffortId(descriptor.agentReasoningEffort) }
+             : {},
+         },
+-        composition: { agentPreset: agentPreset ?? undefined, persona: descriptor.persona, toolFilter: descriptor.toolFilter },
++        composition: { agentPreset: agentPreset ?? undefined, persona: descriptor.persona,
++          personaInterpolate: descriptor.personaInterpolate, toolFilter: descriptor.toolFilter },
+         signal: options.signal,
+       })
+     } catch (error: unknown) {
+diff --git a/packages/subagent/subagent/tests/legacy-descriptor.spec.ts b/packages/subagent/subagent/tests/legacy-descriptor.spec.ts
+index 51fce255181d95d3119bb3a3f5675a0eb6c8094e..24d45a92982e77cf73236d314895c2929d7856ce 100644
+--- a/packages/subagent/subagent/tests/legacy-descriptor.spec.ts
++++ b/packages/subagent/subagent/tests/legacy-descriptor.spec.ts
+@@ -73,6 +73,20 @@ describe('released MyAgents descriptor compatibility', () => {
+       && row.data.message.content.some(block => block.type === 'text' && block.text === 'resumed legacy child'))).toBe(true)
    })
-+
-+  it('preserves literal persona on fresh execution and cold resume', async () => {
-+    const { ctx, parent, adapter } = await setup([textResponse('scoped'), textResponse('resumed')])
-+    parkParent(ctx, parent)
-+    const started = await ctx.subagents.startContinuable({
-+      ...startSpec(parent),
-+      request: {
-+        prompt: message('scoped work'),
-+        parent,
-+        persona: 'Keep {{unknown}} and {{ malformed }} literal.',
-+        personaInterpolate: false,
-+      },
-+    })
-+    await waitNoActivation(ctx, started.childId)
-+
-+    const loaded = await loadStoredSession(ctx.sessionPersistence, started.childId)
-+    const descriptor = loaded.events.find(event => event.type === 'subagent/descriptor')
-+    expect(descriptor?.data).toMatchObject({ persona: 'Keep {{unknown}} and {{ malformed }} literal.' })
-+
-+    // Cold resume reconstructs the declared composition from that descriptor.
-+    await queuePrompt(ctx, parent, started.childId, message('resume it'))
-+    await waitNoActivation(ctx, started.childId)
-+    const resumed = await loadStoredSession(ctx.sessionPersistence, started.childId)
-+    expect(hasUserText(resumed.events, 'resume it')).toBe(true)
-+    expect(adapter.requests).toHaveLength(2)
-+    for (const request of adapter.requests) expect(request.messages.find(message => message.role === 'system')?.content.map(block => block.type === 'text' ? block.text : '').join('')).toContain('Keep {{unknown}} and {{ malformed }} literal.')
-+  })
- })
  
- describe('continuable image Queue prompts', () => {
-@@ -1489,7 +1516,7 @@ describe('continuable durability and teardown', () => {
-     const started = await ctx.subagents.startContinuable({ ...startSpec(parent), settlementDelivery: 'external' })
-     await vi.waitFor(() => { expect(adapter.requests).toHaveLength(1) })
-     let finalFlushes = 0
--    ctx.on('session/flush', session => {
-+    ctx.on('session/flush', (session) => {
-       if (session.id === started.childId && ++finalFlushes === 1) throw new Error('transient final write failure')
-     })
-     hold.resolve(undefined)
-@@ -2922,8 +2949,8 @@ describe('composition-owned delivery and descendant settlement', () => {
-     const { ctx, parent } = await setupWith(adapter)
-     const starts: SessionId[] = []
-     const ends: SessionId[] = []
--    ctx.on('subagent/start', info => { starts.push(info.id) })
--    ctx.on('subagent/end', info => { ends.push(info.id) })
-+    ctx.on('subagent/start', (info) => { starts.push(info.id) })
-+    ctx.on('subagent/end', (info) => { ends.push(info.id) })
-     const first = await ctx.subagents.startContinuable({ ...startSpec(parent), settlementDelivery: 'external' })
-     await vi.waitFor(() => { expect(adapter.requests).toHaveLength(1) })
-     const nested = await ctx.subagents.startContinuable({ ...startSpec(ctx.agents.get(first.childId)!), settlementDelivery: 'external' })
-diff --git a/packages/subagent/subagent/tests/service.spec.ts b/packages/subagent/subagent/tests/service.spec.ts
-index 01a17cb591efeafc515b1a7c52cc6808b95ca874..acce158b4937fbb4ebd71ea35b7d04d8370c11fb 100644
---- a/packages/subagent/subagent/tests/service.spec.ts
-+++ b/packages/subagent/subagent/tests/service.spec.ts
-@@ -412,6 +412,7 @@ describe('subagent descriptors', () => {
-       agentModel: 'chat',
-       agentReasoningEffort: ReasoningEffortId('high'),
-       persona: 'reviewer',
-+      personaInterpolate: false,
-       toolFilter: { allow: ['read'], deny: ['bash'] },
-     }
-     expect(snapshotSubagentDescriptor({
-@@ -422,6 +423,7 @@ describe('subagent descriptors', () => {
-       agentModel: complete.agentModel,
-       agentReasoningEffort: complete.agentReasoningEffort,
-       persona: complete.persona,
-+      personaInterpolate: complete.personaInterpolate,
-       toolFilter: complete.toolFilter,
-     })).toEqual(complete)
-     expect(foldSubagentDescriptor([event(complete)])).toEqual(complete)
-@@ -446,6 +448,20 @@ describe('subagent descriptors', () => {
-     expect(foldSubagentDescriptor([
-       event({ version: SUBAGENT_DESCRIPTOR_VERSION + 1, provider: 'spawn' }),
-     ])).toBeUndefined()
-+    expect(foldSubagentDescriptor([event({
-+      version: 3,
-+      mode: 'continuable',
-+      provider: 'spawn',
-+      label: 'legacy child',
-+      persona: 'legacy {{name}}',
-+    })])).toBeUndefined()
-+    expect(foldSubagentDescriptor([event({
-+      version: 4, mode: 'continuable', provider: 'spawn', label: 'old product child',
-+      persona: 'literal {{unknown}}', personaInterpolate: false, settlementDelivery: 'external',
-+    })])).toBeUndefined()
-+    expect(() => foldSubagentDescriptor([event({
-+      version: SUBAGENT_DESCRIPTOR_VERSION, mode: 'continuable', provider: 'spawn', label: 'invalid', requiredUnknownPolicy: true,
-+    })])).toThrow()
-     expect(() => snapshotSubagentDescriptor({
-       mode: 'continuable',
-       provider: 'spawn',
-@@ -526,6 +542,13 @@ describe('subagent descriptors', () => {
-       label: 'l',
-       persona: {},
-     }, 'persona must be a string'],
-+    ['invalid persona interpolation', {
-+      version: SUBAGENT_DESCRIPTOR_VERSION,
-+      mode: 'continuable',
-+      provider: 'spawn',
-+      label: 'l',
-+      personaInterpolate: 'no',
-+    }, 'personaInterpolate must be a boolean'],
-     ['non-object tool filter', {
-       version: SUBAGENT_DESCRIPTOR_VERSION,
-       mode: 'continuable',
++  it('cold-resumes released literal persona bytes and rejects malformed legacy flags', async () => {
++    const persona = 'Review {{unregistered}} and {{malformed braces literally'
++    const data = { ...descriptor, persona, personaInterpolate: false, settlementDelivery: 'parent' }
++    expect(foldSubagentDescriptor([event(data)])).toEqual(data)
++    expect(() => foldSubagentDescriptor([event({ ...data, personaInterpolate: 'false' })])).toThrow('must be a boolean')
++    expect(() => foldSubagentDescriptor([event({ ...data, version: 3 })])).toThrow('unknown field')
++    const state = await fixture(data)
++    await state.send()
++    await vi.waitFor(() => { expect(state.ctx.agents.get(state.childId)).toBeUndefined() })
++    expect(state.adapter.requests.some(request => request.messages.some(message => message.role === 'system' && JSON.stringify(message).includes(persona)))).toBe(true)
++    expect((await loadStoredSession(state.ctx.sessionPersistence, state.childId)).events
++      .filter(row => row.type === 'subagent/descriptor').map(row => row.data)).toEqual([data])
++  })
++
+   it('keeps external-owner logs readable and refuses execution before materializing or inserting', async () => {
+     const state = await fixture({ ...descriptor, settlementDelivery: 'external' })
+     const before = await loadStoredSession(state.ctx.sessionPersistence, state.childId)

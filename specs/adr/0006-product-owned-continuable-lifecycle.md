@@ -1,92 +1,25 @@
-# ADR 0006 — Bind continuable subagent settlement and retirement to one product owner
+# ADR 0006 — Preserve historical child ownership while adopting native activations
 
-Current DSH `0.2.0-rc.2` disposition: retained as patch 0005; external settlement and exact child lifecycle remain required. The [seam registry](../dsh/seam-decisions-v1.json) owns exact current patch identity; dated evidence below is historical.
+Status: accepted; revised for DSH `0.2.1-rc.2` on 2026-10-23.
 
-Status: accepted on 2026-08-21 for the fixed DSH source baseline
-
-Historical disposition (2026-09-05): rebased as `DSH-SEAM-006` / patch 0005 for official DSH `0.1.2-rc.1` (`a66e470…`). Selected-child drain is now stock; trusted setup, external completion, attributed delivery, exact pending wake and cold-ancestor residency remain patched. The current seam registry and upstream refresh records supersede the original rc.5 patch identity below.
-
-## Context
-
-Stock DSH sends a `subagent-settled` notice to the direct parent after every continuable child residency epoch. That is correct for the stock parent-driven coordination flow, but the MyAgents WorkRegistry owns the Agent tool's product-visible background state and settlement. Letting both paths run would wake the primary Agent with a Host-less message and create work outside the accepted product operation authority.
-
-DSH's public `interrupt()` is deliberately nonterminal: it cancels only the current turn, preserves pending Inbox work, and retains the Activation and `AgentHandle`. That behavior is correct for ordinary collaboration, but it cannot satisfy canonical `TaskStop`, which must terminate one owned work item and await resource finalization. Draining every descendant of the root would stop unrelated sibling work; reaching into the continuation manager would create a second lifecycle owner.
-
-A product delivery can also cross two durable commits: DSH may persist the exact child Inbox message before ProductWork persists its delivery receipt or before the process exits. `Agent.wakePending()` can wake that identity only after an Agent already exists; ProductWork must not reconstruct the Activation itself or insert the message again.
-
-Canonical child capability restriction must be installed before the first child turn and restored identically on cold materialization. The fixed DSH source already owns an internal activation-setup registry at that unpublished boundary, but stock `SubagentRuntime` does not expose trusted composition registration. Installing tools after `startContinuable()` returns is too late; placing a caller callback in the durable descriptor would admit arbitrary executable extension input.
-
-## Evidence
-
-Patch `specs/dsh/patches/0005-product-owned-continuable-lifecycle.patch` is the fifth pinned patch over `deepseek-harness@47f943859bef60e4160492346772ded9b24f765a`. Patched-source tests run the real continuation manager and prove both boundaries:
-
-- omitted settlement configuration retains stock parent delivery;
-- trusted composition setup uses the existing unpublished Activation boundary and is released with that child scope;
-- external ownership suppresses the parent notice and survives cold resume;
-- external ownership requires the quiescent child prefix to flush before release and marks an infrastructure failure on the terminal edge if it cannot;
-- exact-target retirement rejects a foreign parent before mutation;
-- accepted retirement cancels the target forest top-down, releases handles child-first, waits for quiescence, and is idempotent after the Activation is absent.
-- exact pending recovery cold-materializes the durable child, wakes the existing identity once, retains the whole pending FIFO as owned work, and never appends a duplicate insertion.
+The [seam registry](../dsh/seam-decisions-v1.json) owns exact patch bytes and source identities. `DSH-SEAM-006` is reduced to historical descriptor compatibility. The previous ProductWork execution contract is superseded: its execution owner was already removed, and its old setup, external-settlement, exact-retirement, quiet-ancestor and pending-wake APIs have no current Product caller.
 
 ## Decision
 
-Expose the existing activation-setup registry to trusted composition, and add three minimal public lifecycle inputs plus one terminal fact:
+DSH's public `startActivation`, `waitForChildren`, `drainDescendants`, `prompt` and `interruptByParent` own current execution. Native delegation returns a child ID immediately. The manager owns child creation, FIFO input, ancestry, capacity, cleanup and parent result delivery. MyAgents retains its Host permissions, operation admission and truthful terminal projection through existing public composition.
 
-```ts
-SubagentRuntime.registerContinuableSetup(contribution): () => void
-ContinuableStartSpec.settlementDelivery?: "parent" | "external"
-SubagentRuntime.retireContinuable(childId, authority): Promise<void>
-SubagentRuntime.resumeContinuable(parent, childId, messageId, { signal }): Promise<boolean>
-SubagentRunEndInfo.infrastructureFailure?: true
-```
+Released MyAgents-dsh wrote descriptor version 5. The native candidate writes version 3 and recognizes only version 3 without this patch. Version 5 therefore remains readable through DSH's own descriptor fold, retaining its original version, route, label, tools and settlement-owner fields. Parent-owned and omitted-owner v5 children cold-resume through the same native manager with unchanged ID, lineage and log. New children use native v3; no Product descriptor writer or migration store is added. The native identity projection is versioned again so previously unknown v5 checkpoint states refold.
 
-`parent` remains the default. The initial start snapshots the resolved settlement owner into the versioned `subagent/descriptor`; every Activation, including a cold-resumed one, reads the same durable choice. `external` suppresses the automatic parent settlement notice and makes the manager's existing final child-Session flush strict. Stock `parent` mode retains its compatible best-effort flush behavior.
+A historical `settlementDelivery: external` record is readable but cannot resume. The manager rejects it before materialization or Inbox insertion with `NOT_RESUMABLE` and an explicit read-only explanation. Mapping this owner to native `delivery: caller` or default parent delivery would change persisted authority; neither is a valid compatibility adaptation. Historical ProductWork events retain their separate read-only provenance decoder.
 
-`registerContinuableSetup` is a thin public projection of DSH's existing `SubagentActivationSetupRegistry`. Only trusted Runtime composition calls it. Contributions execute synchronously inside the unpublished child context on fresh creation and cold materialization, return one scoped disposer, and are rolled back or revoked by the registry's existing transaction. No descriptor, Host, SDK, or model input can supply executable setup.
+## Completion and cancellation
 
-`retireContinuable` uses the continuation manager's existing per-child lock, authority checks, memoized disposal transaction, recursive child ownership, and handle finalizer. It does not add a queue, scheduler, Session store, or second disposal path. An absent target is an idempotent no-op after validating the caller; the durable child Session remains intact, while the product Work owner decides whether any future cold resume is allowed.
+Root idleness alone cannot mean Product completion after native asynchronous delegation. The Product operation owner joins `waitForChildren` outside operation admission serialization, then validates the same root object, idle state and Session sequence. Native notifications remain free to admit their parent turn. A progressing descendant or changed prefix delays the Product terminal; the final terminal still derives from actual native turn-end facts. Native lifecycle failure fences the Session instead of inventing success.
 
-The existing local `subagent/end` edge is emitted only after Activation quiescence, the final child flush, and handle disposal. In external mode a failed final flush participates in the manager's existing teardown failure, rejects exact retirement, and marks the terminal edge with `infrastructureFailure: true`; an ordinary child model/tool error remains `stopReason: "error"` without that marker. ProductWork fences a marked edge before committing a primary-Session epoch. On an unmarked edge it can safely project the already-confirmed child prefix without reopening a Session that DSH has released. This strengthens the one DSH persistence/lifecycle owner instead of adding a second product flush after teardown.
+A quiescent mutation obtains a fresh native observation outside admission serialization and rechecks within it before committing. Host child Inbox admission shares that serialization and invalidates an older observation, since waking a parked child need not change the root log. Cancellation withdraws that mutation's wait without cancelling unrelated native work. Primary retirement invokes native descendant drain, waits for its pending join, then settles the root and releases the generation. A rejected native lifecycle join uses the existing primary settlement-failure signal to release the Host waiter without another RPC; ordinary failed child work remains a native result.
 
-`resumeContinuable` uses that same per-child lock and cold-materialization path, validates exact parent lineage, and invokes the existing Agent `wakePending()` seam for the named durable identity. Materialization projects every pending Inbox identity into the Activation's existing accepted-work set before its settlement watcher starts. A missing/claimed identity returns `false`; no path inserts or replaces Inbox content. If a process died after the durable descriptor was created but before the initial Inbox insertion existed, ProductWork may use ordinary `followup()` exactly once to complete that missing admission; it first proves from the root operation/tool-call log that no initial user insertion exists, so this path cannot duplicate an accepted message.
+## Evidence and removal
 
-The MyAgents ProductWorkService selects `external`, consumes the existing lifecycle edges, writes its projection into the primary Session, and calls exact retirement for `TaskStop`. DSH remains the child Session, Inbox, AgentLoop, Activation, persistence, and physical handle owner.
+`legacy-descriptor.spec.ts` exercises official JSONL cold reads, parent/default v5 continuation, unchanged descriptor/lineage, native v3 new writes and external-owner read-only refusal. Native continuation, parent-result, parked-wait and lifecycle regressions cover the adopted owner. Product `native-operation-settlement.unit.test.ts` covers delayed terminals, sequence races, admission reentrancy, mutation cancellation and native failure.
 
-## Cold ancestor residency in the UPG source candidate
-
-Official rc.1 continuation requires the exact registered direct-parent Agent. Its public
-Session query can read a cold ancestor but cannot authorize a descendant delivery without
-materializing that ancestor. Sending an invented parent prompt would spend a model turn;
-reparenting or constructing a Product-owned AgentHandle would change lineage or duplicate
-the native lifecycle owner.
-
-`SubagentRuntime.withContinuableAncestors(root, path, { signal }, operation)` therefore
-retains each exact stored direct-parent edge through the existing continuation manager,
-child lock, setup transaction and Agent handle. Quiet residency emits no subagent activation
-edge and injects no input. DSH's normal `session/end-seed` resume marker remains a native
-Session fact. Concurrent callers share the same handle; the last lease releases a quiet
-ancestor without joining or stopping its background descendants. If a pending identity was
-already durable, residency preserves it for its existing `resumeContinuable` owner rather
-than disposing and clearing the Inbox. Normal delivery promotes that same native handle
-into an observed activation. Stale objects reject new admission. The existing scoped drain also retains proven durable ancestor Session identities, so a restored ancestor can stop descendants that survived its original Agent object; identity restoration does not reparent them.
-
-This is a trusted composition API, with bounded acyclic ancestry; model/Host configuration
-cannot supply its callback. ProductWork must still authorize root membership, closed state,
-current model access and execution capacity before using it. Source regressions cover quiet
-cold routing, pending preservation, callback failure, forged paths, concurrent leases and
-stale objects. Runtime integration and final-byte evidence remain in the UPG ledger.
-
-## Rejected alternatives
-
-- Accept and discard the stock parent notice: the unowned message is already durable and may already have woken a turn.
-- Treat the notice as a new product operation: there is no Host admission identity or exact operation birth authority.
-- Implement `TaskStop` with `interrupt()`: the documented seam retains the Activation and handle.
-- Drain every root descendant: stopping one task would terminate unrelated sibling work.
-- Reimplement continuable children outside DSH: this would create a second child lifecycle, Inbox, and persistence owner.
-- Persist or accept a caller-provided setup callback: executable extension input must remain trusted build/composition authority and cannot enter the descriptor.
-- Make external settlement the default: existing DSH callers rely on parent notification.
-- Recover an already-inserted message by calling `followup()` again: that creates a second user message and violates exactly-once durable delivery; such messages use `resumeContinuable` instead.
-
-## Consequences and removal
-
-The official artifact must contain the patch before the A9 WorkRegistry can activate. Trusted child setup remains composition-owned and effect-scoped; settlement ownership is immutable per child generation. Exact retirement remains live-Activation scoped; external durability failure is explicit and product durability fences later cold resume after terminal projection. Remove the patch when an installed DSH release provides equivalent unpublished setup registration, owner selection, strict external final durability, exact quiescent retirement, and exact no-reinsert pending wake, and all setup, default, external, cold-resume, FIFO, authority, descendant-release, and idempotency regressions pass unchanged.
+Remove the remaining patch when official native descriptor parsing and cold materialization provide the same released v5 compatibility and external-owner refusal. Do not restore old ProductWork execution APIs or infer permission to delete released history. Native v3 new writes are not understood by the previous MyAgents v5-only reader, so downgrading a candidate-written child does not promise continuation compatibility.

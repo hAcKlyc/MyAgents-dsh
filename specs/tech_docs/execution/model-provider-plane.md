@@ -2,7 +2,7 @@
 type: technical-architecture
 status: implemented
 module: model-provider-plane
-updated: 2026-10-02
+updated: 2026-10-23
 ---
 
 # Model Provider plane
@@ -25,10 +25,11 @@ The official composition registers two deliberately different routes behind DSH 
 | Route | Active implementation | API behavior |
 | --- | --- | --- |
 | `deepseek-official` | MyAgents `HostDeepSeekLlmAdapter` wrapping the official DSH DeepSeek adapter | fixed official DeepSeek route using its accepted `anthropic-messages` profile, DeepSeek-native streaming and Files/attachments |
-| Host-declared ordinary API route | the pinned `@deepseek-ai/dsh-llm-pi-ai` adapter using in-memory `HostSettingsProvider`, with separately pinned/patched pi-ai `0.87.1` | Direct `anthropic-messages`, `openai-completions` or `openai-responses`, as selected by the Host profile; generic structured Provider content is retained |
+| Host-declared ordinary API route | the pinned `@deepseek-ai/dsh-llm-pi-ai` adapter using in-memory `HostSettingsProvider`, with separately pinned/patched pi-ai `1.1.0` | Direct `anthropic-messages`, `openai-completions` or `openai-responses`, as selected by the Host profile; generic structured Provider content is retained |
 
-The Host lock selects the accepted Runtime and adapter bytes. DeepSeek's resolved model metadata passes explicit `systemPromptUpdate: in-history`
-through `prepareCall` to the native AgentLoop. With that declaration, changed system instructions
+The Host lock selects the accepted Runtime and adapter bytes. Admitted DeepSeek profile declarations
+for `systemPromptUpdate: in-history` and `toolUpdate: addition-only | in-history` pass through the
+native model definition and resolved call metadata to the AgentLoop. With `systemPromptUpdate`, changed system instructions
 append in history; without it, the native loop updates the leading system message. Model capability
 is never inferred from the Provider name, and undeclared input modalities default to text only. Ordinary API profiles accept either ordering of declared text/image modalities; array order is not a model-admission policy.
 Real LlmRuntime/AgentLoop fixtures verify the resulting second-request wire using fake SSE and Host
@@ -36,7 +37,7 @@ credentials. They do not claim live Provider acceptance.
 
 The configured API family is preserved. Anthropic-compatible profiles use Anthropic Messages; OpenAI Chat Completions and Responses profiles use their corresponding direct pi-ai transports. This Runtime does not route those families through the historical MyAgents Anthropic bridge when the installed adapter supports them.
 
-The installed pi-ai package catalog is advisory and dormant until a Host profile is admitted. An enabled ordinary API Provider becomes eligible when the Host maps its declared protocol to one of the three installed families; no Runtime catalog or Provider/model whitelist participates. The minimal pi-ai and DSH adapter patches preserve Provider-owned Anthropic content through the same message stream and exact matching-route replay; they do not add a transport or model loop.
+The installed pi-ai package catalog is advisory and dormant until a Host profile is admitted. An enabled ordinary API Provider becomes eligible when the Host maps its declared protocol to one of the three installed families; no Runtime catalog or Provider/model whitelist participates. The pi-ai and DSH adapter content patches preserve Provider-owned Anthropic content through the same message stream and exact matching-route replay; they do not add a transport or model loop. A separate pi-ai source patch ports DSH's official six-transport optimization that retains tool-argument delta text while deferring repeated partial JSON parsing to terminal edges. It preserves final argument parsing and does not admit additional Product routes. The [pi-ai source authority](../../pi-ai/seam-evidence-v1.json) owns both ordered patches; their source tests are distinct from installed Runtime and live Provider acceptance.
 
 The accepted Runtime admits a bounded Host model set in addition to the primary profile. `AgentCollaborationPolicy` resolves inheritance, fixed Host profile constraints or opt-in selection. Native child authority captures the delegated profile at the DSH publication boundary and uses the sending operation for continuations. Profile revisions disambiguate equal model names across Providers. The Host also supplies native depth/resource limits; it does not own a second child lifecycle.
 
@@ -46,6 +47,19 @@ other. Revocation is checked again when material returns and when a prepared req
 DeepSeek keeps immutable per-profile adapter options; pi-ai combines compatible models within a
 route, requiring different route IDs when connection/credential/reasoning settings differ. The Host
 still owns those route IDs and records. A policy or model map is never a secret store.
+
+Ordinary API conversation updates are exact-model facts. Product places the five
+`supportsMidConvoSystemMessages`, `supportsMidConvoToolChanges`,
+`supportsMidConvoToolAdditions`, `supportsAdditionalTools` and `supportsToolSearch`
+declarations in `models[].compat`; other wire compatibility remains on the route.
+The [exact-model configuration seam](../../adr/0015-model-update-capabilities.md)
+admits only the appropriate native protocol families and rejects these five fields
+as route defaults. It feeds the official materialized model consumed by both
+resolved capability metadata and the actual provider serializer. Explicit false
+remains false, omission enables nothing on an uncatalogued model, and Responses
+additional-tools does not imply tool-search. Models sharing a route and credential
+can declare different capabilities; empty route compatibility is omitted so it
+does not create a false connection conflict.
 
 ## 4. Admission and request flow
 

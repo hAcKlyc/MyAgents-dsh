@@ -1,8 +1,8 @@
 diff --git a/docs/architecture.md b/docs/architecture.md
-index c63a75cb2367b566eea5778fc50273ff67dc8bcc..59e1fb320c46a1a10dfac50dd302067df0ec62a6 100644
+index 03d88148c7992f1c856efc44df0a930470f90f70..87844638517fc8ede8321091b454e24b7289d392 100644
 --- a/docs/architecture.md
 +++ b/docs/architecture.md
-@@ -98,6 +98,7 @@ turn/start
+@@ -95,6 +95,7 @@ turn/start
       derive and freeze model history from the log
       stream the bound prepared call -> llm/stream -> agent/assistant-stream start
         agent/assistant-stream chunk*
@@ -11,10 +11,10 @@ index c63a75cb2367b566eea5778fc50273ff67dc8bcc..59e1fb320c46a1a10dfac50dd302067d
       tool/call* -> tools/pre-execute -> tools/execute -> tools/post-execute -> tool/result*
       step/end
 diff --git a/docs/architecture.zh.md b/docs/architecture.zh.md
-index 1ae1356a74157fc300d7b1da44056758f52f040d..2c3e4b538cf732c5ccb129b116079d4bd7e8fed6 100644
+index 870fa1c996ba569f882a7cb70e62f0bd655c64af..33f3ec02171068067ba57baf8103c62b65f7829a 100644
 --- a/docs/architecture.zh.md
 +++ b/docs/architecture.zh.md
-@@ -102,6 +102,7 @@ turn/start
+@@ -99,6 +99,7 @@ turn/start
       derive and freeze model history from the log
       stream the bound prepared call -> llm/stream -> agent/assistant-stream start
         agent/assistant-stream chunk*
@@ -23,33 +23,27 @@ index 1ae1356a74157fc300d7b1da44056758f52f040d..2c3e4b538cf732c5ccb129b116079d4b
       tool/call* -> tools/pre-execute -> tools/execute -> tools/post-execute -> tool/result*
       step/end
 diff --git a/packages/core/agent-loop/README.md b/packages/core/agent-loop/README.md
-index 19e356affcaed3029b17889fc5df56f7271333ba..092894fddfb7b69683262292e54b9a478249e5fb 100644
+index 62dcd35a92a39c1a4696e2e031a0296534fcface..d8e23a8fab066fa596395dbc4ce39a0585cf3c80 100644
 --- a/packages/core/agent-loop/README.md
 +++ b/packages/core/agent-loop/README.md
-@@ -128,6 +128,8 @@ Final adapter selection, dispatch, and iteration failures arrive as terminal fin
+@@ -228,3 +228,5 @@ These limits define when the loop needs special care. They are current package c
+ None.
  
- Before closing a failed step, the driver records an error result for each unanswered assistant tool call. A recorded `tool/call` without a committed result receives `TOOL_OUTCOME_UNKNOWN`; a request without a call record receives `TOOL_NOT_STARTED`. Committed results remain intact, started dispatches settle before recovery, and the turn retains the original failure. These results let later requests use paired tool history without automatically retrying uncertain operations ([decision](../../../.agents/notes/implemented/bug-fix/2026-09-19-failed-step-tool-results.md)).
- 
-+The `agent/pre-assistant-commit` waterfall governs the complete successful assistant message before settlement. It may replace tool arguments only; the loop validates lossless JSON and preserves message, block and tool identities. Durable content, permission and execution use the governed arguments; the embedded stream retains the original provider response. Rejection or cancellation commits no governed message.
-+
  </details>
- 
- -----
++
++The `agent/pre-assistant-commit` waterfall governs tool arguments before assistant settlement. Identity and non-tool content are preserved; durable history, permission and execution consume one validated plan while the source stream remains unchanged. Rejection or cancellation commits no governed message.
 diff --git a/packages/core/agent-loop/README.zh.md b/packages/core/agent-loop/README.zh.md
-index a6a8e874c06c4069e7941eeedd16d14bd43c37ef..25c9fb77cb4e33799c5c2ccb29107abcccba97cd 100644
+index ee355a328d0b5b9cdc6ac1c1e93ad7296a8ab5be..1bf5c899940c9c9931d8c9c2d90f8a6f8fb73bc5 100644
 --- a/packages/core/agent-loop/README.zh.md
 +++ b/packages/core/agent-loop/README.zh.md
-@@ -128,6 +128,8 @@ const handle = await ctx.agents.create({
+@@ -228,3 +228,5 @@ const handle = await ctx.agents.create({
+ 无。
  
- 关闭失败步骤之前，驱动器为每个尚无结果的 assistant 工具调用记录错误结果。已有 `tool/call` 记录但尚无已提交结果的调用获得 `TOOL_OUTCOME_UNKNOWN`；没有调用记录的请求获得 `TOOL_NOT_STARTED`。已提交的结果保持完整，已启动的派发先结算再恢复，轮次保留原始失败。这些结果让后续请求使用配对完整的工具历史，而不自动重试结果不明的操作（[决策](../../../.agents/notes/implemented/bug-fix/2026-09-19-failed-step-tool-results.zh.md)）。
- 
-+`agent/pre-assistant-commit` waterfall 在结算之前处理完整的成功助手消息。它只能替换工具参数；循环验证无损 JSON，并保持消息、内容块和工具标识。持久化内容、权限与执行使用处理后的参数；内嵌流保留提供方原始响应。拒绝或取消时不提交处理后的消息。
-+
  </details>
- 
- -----
++
++`agent/pre-assistant-commit` waterfall 在助手消息结算前处理工具参数。标识和非工具内容保持不变；持久化历史、权限与执行共用验证后的计划，原始流保持不变。拒绝或取消不提交处理后的消息。
 diff --git a/packages/core/agent-loop/src/agent.ts b/packages/core/agent-loop/src/agent.ts
-index 3f1b0409c18553e6c9d3f6d89959eec2b0f1b98d..4a847c36983dec009aa8427fca0fd5ff03e963a8 100644
+index 83bd0ff9aa2ff9901cb0d60d90241bbfc01c1e3e..43a4125b690737a41e29032f23c160400ba4d352 100644
 --- a/packages/core/agent-loop/src/agent.ts
 +++ b/packages/core/agent-loop/src/agent.ts
 @@ -12,19 +12,22 @@ import type {
@@ -205,7 +199,7 @@ index 3f1b0409c18553e6c9d3f6d89959eec2b0f1b98d..4a847c36983dec009aa8427fca0fd5ff
  /** Remove adapter-derived values before plugins propose the next request config. */
  function requestProposal(header: EpochHeader): LlmCallConfig {
    if (header.adapterDefaults === undefined) return header.config
-@@ -517,7 +641,7 @@ export class ReactLoopAgent implements Agent {
+@@ -534,7 +658,7 @@ export class ReactLoopAgent implements Agent {
            continue
          }
  
@@ -214,7 +208,7 @@ index 3f1b0409c18553e6c9d3f6d89959eec2b0f1b98d..4a847c36983dec009aa8427fca0fd5ff
            content: live.blocks(),
            source: {
              provider: request.provider,
-@@ -525,6 +649,20 @@ export class ReactLoopAgent implements Agent {
+@@ -542,6 +666,20 @@ export class ReactLoopAgent implements Agent {
              ...live.replayState !== undefined ? { replayState: live.replayState } : {},
            },
          })
@@ -235,7 +229,7 @@ index 3f1b0409c18553e6c9d3f6d89959eec2b0f1b98d..4a847c36983dec009aa8427fca0fd5ff
          live.settle(
            'assistant/message',
            () => this.session.append('assistant/message', {
-@@ -537,10 +675,11 @@ export class ReactLoopAgent implements Agent {
+@@ -554,10 +692,11 @@ export class ReactLoopAgent implements Agent {
          )
          if (finish.kind === 'max-tokens') return { kind: 'max-tokens' }
  
@@ -251,10 +245,10 @@ index 3f1b0409c18553e6c9d3f6d89959eec2b0f1b98d..4a847c36983dec009aa8427fca0fd5ff
          return concluded ? { kind: 'completed' } : null
 diff --git a/packages/core/agent-loop/tests/pre-assistant-commit.spec.ts b/packages/core/agent-loop/tests/pre-assistant-commit.spec.ts
 new file mode 100644
-index 0000000000000000000000000000000000000000..2cb749d337d1259f6e64ac942f14b09ab5dd2b5f
+index 0000000000000000000000000000000000000000..af3b7096b4a80b91b2d34b44d5bdf36beb209d98
 --- /dev/null
 +++ b/packages/core/agent-loop/tests/pre-assistant-commit.spec.ts
-@@ -0,0 +1,321 @@
+@@ -0,0 +1,346 @@
 +import { afterEach, describe, expect, it } from 'vitest'
 +import { mkdtemp, rm } from 'node:fs/promises'
 +import { tmpdir } from 'node:os'
@@ -277,7 +271,7 @@ index 0000000000000000000000000000000000000000..2cb749d337d1259f6e64ac942f14b09a
 +import SessionStore, { Session, SessionId } from '@deepseek-ai/dsh-session'
 +import { snapshotJsonValue, type JsonValue } from '@deepseek-ai/dsh-util-values'
 +import SessionProjectionRegistry from '@deepseek-ai/dsh-session-projection'
-+import JsonlSessionPersistence from '@deepseek-ai/dsh-session-persistence-jsonl'
++import * as JsonlSessionPersistence from '@deepseek-ai/dsh-session-persistence-jsonl'
 +import SystemPrompt from '@deepseek-ai/dsh-system-prompt'
 +import ToolRuntime, { defineContentToolFixture } from '@deepseek-ai/dsh-tools'
 +import { maxTokensResponse, MockAdapter, textResponse, toolCallResponse } from './mock-adapter.ts'
@@ -348,6 +342,31 @@ index 0000000000000000000000000000000000000000..2cb749d337d1259f6e64ac942f14b09a
 +}
 +
 +describe('agent/pre-assistant-commit', () => {
++  it('routes the waterfall only through the owning Agent scope and removes disposed contributions', async () => {
++    const ctx = await harness(new MockAdapter([
++      toolCallResponse('a', 'echo', { text: 'original' }), textResponse('done'),
++      toolCallResponse('b', 'echo', { text: 'original' }), textResponse('done'),
++      toolCallResponse('c', 'echo', { text: 'original' }), textResponse('done'),
++    ]))
++    const seen: string[] = []
++    ctx.tools.register(defineContentToolFixture({
++      name: 'echo', description: 'echo', parameters: { text: { type: 'string' } },
++      async execute(input) { seen.push(String(input.text)); return [{ type: 'text', text: 'ok' }] },
++    }))
++    const first = await ctx.agentLoop.create(SessionId('scoped-first'), { provider: 'mock', model: 'mock' })
++    const second = await ctx.agentLoop.create(SessionId('scoped-second'), { provider: 'mock', model: 'mock' })
++    const dispose = first.ctx.on('agent/pre-assistant-commit', async (_payload, next) =>
++      replaceArguments(await next(), { echo: { text: 'first-scope' } }))
++    send(first)
++    await first.whenIdle()
++    send(second)
++    await second.whenIdle()
++    dispose()
++    send(first)
++    await first.whenIdle()
++    expect(seen).toEqual(['first-scope', 'original', 'original'])
++  })
++
 +  it('makes transformed multi-call input authoritative through history, permission, execution, result, and resume', async () => {
 +    const root = await mkdtemp(join(tmpdir(), 'dsh-pre-assistant-commit-'))
 +    directories.push(root)
@@ -577,7 +596,7 @@ index 0000000000000000000000000000000000000000..2cb749d337d1259f6e64ac942f14b09a
 +  })
 +})
 diff --git a/packages/core/agent/src/runtime-types.ts b/packages/core/agent/src/runtime-types.ts
-index 717fe3416ef539780a7c359cdf92db06d18ccbe8..56b08ae41fdbb1066a10b0bc4b89521cdc17dfe5 100644
+index 1da251f007d363532efb8841316739fd278f76e9..ae84e6215f6305057d708ea5cd242157019e2205 100644
 --- a/packages/core/agent/src/runtime-types.ts
 +++ b/packages/core/agent/src/runtime-types.ts
 @@ -8,10 +8,11 @@
@@ -631,47 +650,3 @@ index 717fe3416ef539780a7c359cdf92db06d18ccbe8..56b08ae41fdbb1066a10b0bc4b89521c
      /**
       * Handle one failed model-request attempt before the loop retries or closes
       * its step. A listener returns `{ kind: 'retry' }` without calling `next()`
-diff --git a/packages/core/scope/src/scoped-events.generated.ts b/packages/core/scope/src/scoped-events.generated.ts
-index d0e4a9cb9727c492a551a8188454bb58820507e5..642efd3e251b1e2479438d70b7fce374a42a729b 100644
---- a/packages/core/scope/src/scoped-events.generated.ts
-+++ b/packages/core/scope/src/scoped-events.generated.ts
-@@ -15,6 +15,7 @@ const scopedSubjectResolvers: Readonly<Record<string, ScopedSubjectResolver | nu
-   'agent/inbox/claimed': args => (args[0] as Record<string, unknown>)['agent'],
-   'agent/inbox/discarded': args => (args[0] as Record<string, unknown>)['agent'],
-   'agent/inbox/inserted': args => (args[0] as Record<string, unknown>)['agent'],
-+  'agent/pre-assistant-commit': args => (args[0] as Record<string, unknown>)['agent'],
-   'agent/pre-step': args => (args[0] as Record<string, unknown>)['agent'],
-   'agent/request': args => (args[0] as Record<string, unknown>)['agent'],
-   'agent/request-error': args => (args[0] as Record<string, unknown>)['agent'],
-diff --git a/packages/core/scope/tests/invariant.spec.ts b/packages/core/scope/tests/invariant.spec.ts
-index 8e3e358a2743a6f84b2c40decbb338e208124c7a..301c73cbe57f495cd50c95d5bce20c11f162ff9f 100644
---- a/packages/core/scope/tests/invariant.spec.ts
-+++ b/packages/core/scope/tests/invariant.spec.ts
-@@ -2,7 +2,7 @@ import { freezeMessage, MessageId } from '@deepseek-ai/dsh-llm'
- import { describe, expect, it } from 'vitest'
- import { Context } from '@deepseek-ai/cordis'
- import type { Events } from '@deepseek-ai/cordis'
--import type { Agent } from '@deepseek-ai/dsh-agent'
-+import type { Agent, PreparedAssistantCommit } from '@deepseek-ai/dsh-agent'
- import { scopeTarget } from '@deepseek-ai/dsh-scope'
- import * as ScopeInvariant from '@deepseek-ai/dsh-scope/invariant'
- import InvariantRegistry from '@deepseek-ai/dsh-invariants'
-@@ -38,6 +38,7 @@ describe('scoped-dispatch invariants', () => {
-     const other = { id: 'a2' } as unknown as Agent
-     const signal = new AbortController().signal
-     const config = { provider: 'p', model: 'm' }
-+    const commit = {} as PreparedAssistantCommit
-     const message = freezeMessage({
-       id: MessageId('m'),
-       role: 'user',
-@@ -53,6 +54,10 @@ describe('scoped-dispatch invariants', () => {
-       'agent/inbox/discarded': [{ agent, message }],
-       'agent/pre-step': [{ agent, messages: [message], turn: 1, step: 1, signal }, () => Promise.resolve({ kind: 'enter', messages: [message] })],
-       'agent/request': [{ agent, turn: 1, step: 1, signal }, () => Promise.resolve(config)],
-+      'agent/pre-assistant-commit': [
-+        { agent, commit, turn: 1, step: 1, signal },
-+        () => Promise.resolve(commit),
-+      ],
-       'agent/assistant-stream': [{
-         agent,
-         frame: {

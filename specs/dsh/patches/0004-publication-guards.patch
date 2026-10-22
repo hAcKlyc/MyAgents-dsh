@@ -1,143 +1,24 @@
 diff --git a/docs/subsystems/core.md b/docs/subsystems/core.md
-index 15c70ebca6a1469634ca75450c23097990e85037..d8800a67c9b6c88173572a6798efe90e7c86758c 100644
+index 42f6d2e24a7e1ac7f662a742bd9f31f0506962b5..a3af7ad9a4702fad8c3fcb157027d23b23d8e4f5 100644
 --- a/docs/subsystems/core.md
 +++ b/docs/subsystems/core.md
-@@ -71,72 +71,74 @@ interface Agent {
-   readonly status: AgentStatus
-   /** Agent-scoped context; its contributions are agent-local, unwind on disposal, and reject registration afterward. */
-   readonly ctx: Context
--
-   /**
--   * Clear queued and steering work — unless `keepInbox` — and abort the active
--   * turn or between-turn task. The first cause wins for that activity. With no
--   * active activity, cancellation is a no-op and does not arm later work.
--   * @param cause - the stable caller intent carried by the active operation signal.
--   * @param options - cancellation options; `keepInbox` preserves pending work.
--   */
-+     * Clear queued and steering work — unless `keepInbox` — and abort the active
-+     * turn or between-turn task. The first cause wins for that activity. With no
-+     * active activity, cancellation is a no-op and does not arm later work.
-+     * @param cause - the stable caller intent carried by the active operation signal.
-+     * @param options - cancellation options; `keepInbox` preserves pending work.
-+     */
-   cancel(cause: AgentCancelCause, options?: CancelOptions): void
--
-   /**
--   * Resolve after the current whole-agent activity reaches quiescence. This
--   * follows replacement work started before the observed driver retires,
--   * but does not identify the settlement of any particular message.
--   * @returns fulfillment after no active driver or maintenance task remains.
--   */
-+     * Resolve after the current whole-agent activity reaches quiescence. This
-+     * follows replacement work started before the observed driver retires,
-+     * but does not identify the settlement of any particular message.
-+     * @returns fulfillment after no active driver or maintenance task remains.
-+     */
+@@ -89,6 +89,9 @@ interface Agent {
+    */
    whenIdle(): Promise<void>
--
-   /**
--   * Run one non-turn maintenance task from the true idle phase. The task starts
--   * synchronously after claiming that phase; later waking input remains in the
--   * inbox until the task settles, while public status stays `idle`.
--   * `whenIdle()` follows both the task and any waking work released behind it.
--   * @param task - operation whose fulfillment or rejection is preserved, with a signal aborted by {@link cancel}.
--   * @throws synchronously when turn-driving or another maintenance task already owns the agent.
--   * @returns the task promise.
--   */
-+       * Wake the driver only when the exact identity is already pending. This
-+       * performs no Inbox mutation and therefore preserves durable FIFO order and
-+       * cancellation history. Repeated calls are safe: the driver wake is already
-+       * a level-triggered/latching operation.
-+       * @param messageId - an existing next-step or next-turn message identity.
-+       * @returns whether that identity was still pending when the wake was requested.
-+       */
+ 
++  /** Wake one existing Inbox identity without durable mutation. */
 +  wakePending?(messageId: MessageId): boolean
-+  /**
-+     * Run one non-turn maintenance task from the true idle phase. The task starts
-+     * synchronously after claiming that phase; later waking input remains in the
-+     * inbox until the task settles, while public status stays `idle`.
-+     * `whenIdle()` follows both the task and any waking work released behind it.
-+     * @param task - operation whose fulfillment or rejection is preserved, with a signal aborted by {@link cancel}.
-+     * @throws synchronously when turn-driving or another maintenance task already owns the agent.
-+     * @returns the task promise.
-+     */
-   runMaintenance<T>(task: (signal: AbortSignal) => Promise<T>): Promise<T>
--
++
    /**
--   * Route identified input to an inbox boundary and optionally wake the driver.
--   * Waking input submitted after active cancellation is queued for the next
--   * turn and runs when the aborted activity converges to idle; a `disposed`
--   * cancel leaves it parked. A wake submitted while already idle always opens
--   * its turn boundary, even when its message is cleared before the driver
--   * claims ([cancel-convergence wake latch](../../../../.agents/notes/implemented/bug-fix/2026-08-07-cancel-convergence-wake-latch.md)).
--   * @param message - identified content and the source that supplied it.
--   * @param target - the preferred next-turn or next-step inbox boundary.
--   * @param wakeup - whether delivery may wake the driver.
--   */
-+     * Route identified input to an inbox boundary and optionally wake the driver.
-+     * Waking input submitted after active cancellation is queued for the next
-+     * turn and runs when the aborted activity converges to idle; a `disposed`
-+     * cancel leaves it parked. A wake submitted while already idle always opens
-+     * its turn boundary, even when its message is cleared before the driver
-+     * claims ([cancel-convergence wake latch](../../../../.agents/notes/implemented/bug-fix/2026-08-07-cancel-convergence-wake-latch.md)).
-+     * @param message - identified content and the source that supplied it.
-+     * @param target - the preferred next-turn or next-step inbox boundary.
-+     * @param wakeup - whether delivery may wake the driver.
-+     */
-   send(message: UserMessage, target: InboxTarget, wakeup: boolean): void
--
-   /**
--   * Queue an ordinary follow-up turn and wake the driver. The item becomes the
--   * sole ordinary message of its own turn.
--   * @param message - identified prompt content and the source that supplied it.
--   */
-+     * Queue an ordinary follow-up turn and wake the driver. The item becomes the
-+     * sole ordinary message of its own turn.
-+     * @param message - identified prompt content and the source that supplied it.
-+     */
-   followup(message: UserMessage): void
--
-   /**
--   * Submit steering for the nearest step. An idle driver starts a turn;
--   * a running driver consumes it at its next step boundary.
--   * A rejected step leaves steering parked in the inbox until the next
--   * wake; cancellation or disposal may discard pending steering.
--   * @param message - identified steering content and the source that supplied it.
--   */
-+     * Submit steering for the nearest step. An idle driver starts a turn;
-+     * a running driver consumes it at its next step boundary.
-+     * A rejected step leaves steering parked in the inbox until the next
-+     * wake; cancellation or disposal may discard pending steering.
-+     * @param message - identified steering content and the source that supplied it.
-+     */
-   steer(message: UserMessage): void
--
-   /**
--   * Queue model-facing context for the next pre-step without waking the
--   * driver. A running driver claims it at the nearest later step boundary;
--   * idle drivers leave it pending until follow-up or steering
--   * wakes them. It may miss a request whose pre-step already claimed its
--   * batch. Cancellation or disposal may discard pending context.
--   * @param message - identified injected context and the source that supplied it.
--   */
-+     * Queue model-facing context for the next pre-step without waking the
-+     * driver. A running driver claims it at the nearest later step boundary;
-+     * idle drivers leave it pending until follow-up or steering
-+     * wakes them. It may miss a request whose pre-step already claimed its
-+     * batch. Cancellation or disposal may discard pending context.
-+     * @param message - identified injected context and the source that supplied it.
-+     */
-   inject(message: UserMessage): void
- }
- ```
-@@ -409,6 +411,35 @@ type Branded<B extends string> = string & { readonly [BRAND]: B }
+    * Run one non-turn maintenance task from the true idle phase. The task starts
+    * synchronously after claiming that phase; later waking input remains in the
+@@ -409,6 +412,32 @@ type Branded<B extends string> = string & { readonly [BRAND]: B }
  
  The two core IDs are `ToolCallId` (correlates a tool call with its result; dsh-llm) and `SessionId` (the shared live agent and durable session identity; dsh-session). Capability packages brand their own ids too, such as `JobId` in [jobs.md](jobs.md).
  
 +### `PreparedAssistantToolCall`
 +
 +```ts type-equiv
-+/** One assembled tool call at the pre-assistant-commit boundary. */
 +interface PreparedAssistantToolCall {
 +  readonly callId: ToolCallId
 +  readonly name: string
@@ -149,7 +30,6 @@ index 15c70ebca6a1469634ca75450c23097990e85037..d8800a67c9b6c88173572a6798efe90e
 +### `PreparedAssistantCommit`
 +
 +```ts type-equiv
-+/** Complete immutable plan committed to assistant history and tool scheduling. */
 +interface PreparedAssistantCommit {
 +  readonly message: AssistantMessage
 +  readonly toolCalls: readonly PreparedAssistantToolCall[]
@@ -159,14 +39,13 @@ index 15c70ebca6a1469634ca75450c23097990e85037..d8800a67c9b6c88173572a6798efe90e
 +### `AgentPublicationGuard`
 +
 +```ts type-equiv
-+/** Deployment policy checked synchronously before registry publication. */
 +type AgentPublicationGuard = (agent: Agent, owner: Agent | undefined) => void
 +```
 +
  <!-- BEGIN GENERATED cordis-surface (gen-cordis-catalog.ts) — do not edit between markers -->
  
  <a id="cordis-surface"></a>
-@@ -647,6 +678,17 @@ withoutInitiator<T>(operation: () => T): T
+@@ -655,6 +684,17 @@ withoutInitiator<T>(operation: () => T): T
   */
  setFactory(factory: AgentFactory): () => void
  
@@ -184,7 +63,7 @@ index 15c70ebca6a1469634ca75450c23097990e85037..d8800a67c9b6c88173572a6798efe90e
  /**
   * Create and publish a new agent through the registered factory.
   * Distinct from {@link register} (which records an already-constructed
-@@ -917,6 +959,29 @@ Types: [Scoped](scope.md) · [UserMessage](session.md)
+@@ -925,6 +965,29 @@ Types: [Scoped](scope.md) · [UserMessage](session.md)
  
  Source: [`packages/core/agent/src/runtime-types.ts`](../../packages/core/agent/src/runtime-types.ts)
  
@@ -215,145 +94,26 @@ index 15c70ebca6a1469634ca75450c23097990e85037..d8800a67c9b6c88173572a6798efe90e
  
  #### `agent/pre-step` — waterfall
 diff --git a/docs/subsystems/core.zh.md b/docs/subsystems/core.zh.md
-index 03de9ddb7bb1eab82a60b6026c9864531f4bb1e1..4a18b2b47f7d5bf94ca8d40600f9691330ef048b 100644
+index 9714c7c62fc596798f5c7ddc0a469f8426e3443c..24bbaaac7a1b1d707601d3323b456231660950dc 100644
 --- a/docs/subsystems/core.zh.md
 +++ b/docs/subsystems/core.zh.md
-@@ -75,72 +75,74 @@ interface Agent {
-   readonly status: AgentStatus
-   /** Agent-scoped context; its contributions are agent-local, unwind on disposal, and reject registration afterward. */
-   readonly ctx: Context
--
-   /**
--   * Clear queued and steering work — unless `keepInbox` — and abort the active
--   * turn or between-turn task. The first cause wins for that activity. With no
--   * active activity, cancellation is a no-op and does not arm later work.
--   * @param cause - the stable caller intent carried by the active operation signal.
--   * @param options - cancellation options; `keepInbox` preserves pending work.
--   */
-+     * Clear queued and steering work — unless `keepInbox` — and abort the active
-+     * turn or between-turn task. The first cause wins for that activity. With no
-+     * active activity, cancellation is a no-op and does not arm later work.
-+     * @param cause - the stable caller intent carried by the active operation signal.
-+     * @param options - cancellation options; `keepInbox` preserves pending work.
-+     */
-   cancel(cause: AgentCancelCause, options?: CancelOptions): void
--
-   /**
--   * Resolve after the current whole-agent activity reaches quiescence. This
--   * follows replacement work started before the observed driver retires,
--   * but does not identify the settlement of any particular message.
--   * @returns fulfillment after no active driver or maintenance task remains.
--   */
-+     * Resolve after the current whole-agent activity reaches quiescence. This
-+     * follows replacement work started before the observed driver retires,
-+     * but does not identify the settlement of any particular message.
-+     * @returns fulfillment after no active driver or maintenance task remains.
-+     */
+@@ -93,6 +93,9 @@ interface Agent {
+    */
    whenIdle(): Promise<void>
--
-   /**
--   * Run one non-turn maintenance task from the true idle phase. The task starts
--   * synchronously after claiming that phase; later waking input remains in the
--   * inbox until the task settles, while public status stays `idle`.
--   * `whenIdle()` follows both the task and any waking work released behind it.
--   * @param task - operation whose fulfillment or rejection is preserved, with a signal aborted by {@link cancel}.
--   * @throws synchronously when turn-driving or another maintenance task already owns the agent.
--   * @returns the task promise.
--   */
-+       * Wake the driver only when the exact identity is already pending. This
-+       * performs no Inbox mutation and therefore preserves durable FIFO order and
-+       * cancellation history. Repeated calls are safe: the driver wake is already
-+       * a level-triggered/latching operation.
-+       * @param messageId - an existing next-step or next-turn message identity.
-+       * @returns whether that identity was still pending when the wake was requested.
-+       */
+ 
++  /** Wake one existing Inbox identity without durable mutation. */
 +  wakePending?(messageId: MessageId): boolean
-+  /**
-+     * Run one non-turn maintenance task from the true idle phase. The task starts
-+     * synchronously after claiming that phase; later waking input remains in the
-+     * inbox until the task settles, while public status stays `idle`.
-+     * `whenIdle()` follows both the task and any waking work released behind it.
-+     * @param task - operation whose fulfillment or rejection is preserved, with a signal aborted by {@link cancel}.
-+     * @throws synchronously when turn-driving or another maintenance task already owns the agent.
-+     * @returns the task promise.
-+     */
-   runMaintenance<T>(task: (signal: AbortSignal) => Promise<T>): Promise<T>
--
++
    /**
--   * Route identified input to an inbox boundary and optionally wake the driver.
--   * Waking input submitted after active cancellation is queued for the next
--   * turn and runs when the aborted activity converges to idle; a `disposed`
--   * cancel leaves it parked. A wake submitted while already idle always opens
--   * its turn boundary, even when its message is cleared before the driver
--   * claims ([cancel-convergence wake latch](../../../../.agents/notes/implemented/bug-fix/2026-08-07-cancel-convergence-wake-latch.md)).
--   * @param message - identified content and the source that supplied it.
--   * @param target - the preferred next-turn or next-step inbox boundary.
--   * @param wakeup - whether delivery may wake the driver.
--   */
-+     * Route identified input to an inbox boundary and optionally wake the driver.
-+     * Waking input submitted after active cancellation is queued for the next
-+     * turn and runs when the aborted activity converges to idle; a `disposed`
-+     * cancel leaves it parked. A wake submitted while already idle always opens
-+     * its turn boundary, even when its message is cleared before the driver
-+     * claims ([cancel-convergence wake latch](../../../../.agents/notes/implemented/bug-fix/2026-08-07-cancel-convergence-wake-latch.md)).
-+     * @param message - identified content and the source that supplied it.
-+     * @param target - the preferred next-turn or next-step inbox boundary.
-+     * @param wakeup - whether delivery may wake the driver.
-+     */
-   send(message: UserMessage, target: InboxTarget, wakeup: boolean): void
--
-   /**
--   * Queue an ordinary follow-up turn and wake the driver. The item becomes the
--   * sole ordinary message of its own turn.
--   * @param message - identified prompt content and the source that supplied it.
--   */
-+     * Queue an ordinary follow-up turn and wake the driver. The item becomes the
-+     * sole ordinary message of its own turn.
-+     * @param message - identified prompt content and the source that supplied it.
-+     */
-   followup(message: UserMessage): void
--
-   /**
--   * Submit steering for the nearest step. An idle driver starts a turn;
--   * a running driver consumes it at its next step boundary.
--   * A rejected step leaves steering parked in the inbox until the next
--   * wake; cancellation or disposal may discard pending steering.
--   * @param message - identified steering content and the source that supplied it.
--   */
-+     * Submit steering for the nearest step. An idle driver starts a turn;
-+     * a running driver consumes it at its next step boundary.
-+     * A rejected step leaves steering parked in the inbox until the next
-+     * wake; cancellation or disposal may discard pending steering.
-+     * @param message - identified steering content and the source that supplied it.
-+     */
-   steer(message: UserMessage): void
--
-   /**
--   * Queue model-facing context for the next pre-step without waking the
--   * driver. A running driver claims it at the nearest later step boundary;
--   * idle drivers leave it pending until follow-up or steering
--   * wakes them. It may miss a request whose pre-step already claimed its
--   * batch. Cancellation or disposal may discard pending context.
--   * @param message - identified injected context and the source that supplied it.
--   */
-+     * Queue model-facing context for the next pre-step without waking the
-+     * driver. A running driver claims it at the nearest later step boundary;
-+     * idle drivers leave it pending until follow-up or steering
-+     * wakes them. It may miss a request whose pre-step already claimed its
-+     * batch. Cancellation or disposal may discard pending context.
-+     * @param message - identified injected context and the source that supplied it.
-+     */
-   inject(message: UserMessage): void
- }
- ```
-@@ -419,6 +421,35 @@ type Branded<B extends string> = string & { readonly [BRAND]: B }
+    * Run one non-turn maintenance task from the true idle phase. The task starts
+    * synchronously after claiming that phase; later waking input remains in the
+@@ -421,6 +424,32 @@ type Branded<B extends string> = string & { readonly [BRAND]: B }
  
  两个核心 ID 是 `ToolCallId`（关联工具调用及其结果；dsh-llm）和 `SessionId`（活跃 agent 与持久会话共享的标识；dsh-session）。能力包也会品牌化各自的 id，例如 [jobs.md](jobs.zh.md) 中的 `JobId`。
  
 +### `PreparedAssistantToolCall`
 +
 +```ts type-equiv
-+/** One assembled tool call at the pre-assistant-commit boundary. */
 +interface PreparedAssistantToolCall {
 +  readonly callId: ToolCallId
 +  readonly name: string
@@ -365,7 +125,6 @@ index 03de9ddb7bb1eab82a60b6026c9864531f4bb1e1..4a18b2b47f7d5bf94ca8d40600f96913
 +### `PreparedAssistantCommit`
 +
 +```ts type-equiv
-+/** Complete immutable plan committed to assistant history and tool scheduling. */
 +interface PreparedAssistantCommit {
 +  readonly message: AssistantMessage
 +  readonly toolCalls: readonly PreparedAssistantToolCall[]
@@ -375,14 +134,13 @@ index 03de9ddb7bb1eab82a60b6026c9864531f4bb1e1..4a18b2b47f7d5bf94ca8d40600f96913
 +### `AgentPublicationGuard`
 +
 +```ts type-equiv
-+/** Deployment policy checked synchronously before registry publication. */
 +type AgentPublicationGuard = (agent: Agent, owner: Agent | undefined) => void
 +```
 +
  <!-- BEGIN GENERATED cordis-surface (gen-cordis-catalog.ts) — do not edit between markers -->
  
  <a id="cordis-surface"></a>
-@@ -657,6 +688,17 @@ withoutInitiator<T>(operation: () => T): T
+@@ -667,6 +696,17 @@ withoutInitiator<T>(operation: () => T): T
   */
  setFactory(factory: AgentFactory): () => void
  
@@ -400,7 +158,7 @@ index 03de9ddb7bb1eab82a60b6026c9864531f4bb1e1..4a18b2b47f7d5bf94ca8d40600f96913
  /**
   * Create and publish a new agent through the registered factory.
   * Distinct from {@link register} (which records an already-constructed
-@@ -927,6 +969,29 @@ Types: [Scoped](scope.zh.md) · [UserMessage](session.zh.md)
+@@ -937,6 +977,29 @@ Types: [Scoped](scope.zh.md) · [UserMessage](session.zh.md)
  
  Source: [`packages/core/agent/src/runtime-types.ts`](../../packages/core/agent/src/runtime-types.ts)
  
@@ -431,28 +189,23 @@ index 03de9ddb7bb1eab82a60b6026c9864531f4bb1e1..4a18b2b47f7d5bf94ca8d40600f96913
  
  #### `agent/pre-step` — waterfall
 diff --git a/docs/subsystems/session.md b/docs/subsystems/session.md
-index 415201d15987b8369b2f5bfced3dc18dbc89d1b3..488615e5f1a8abb69ef3cf2f6623a8576d01744d 100644
+index 4933734d57745a6473a460decfeaa48e24001a40..4f161a8f05720363a5ccd41f3dde5887a17d77fa 100644
 --- a/docs/subsystems/session.md
 +++ b/docs/subsystems/session.md
-@@ -765,6 +765,17 @@ The backends that consume this contract are on [persistence.md](persistence.md).
- `SessionOpenWorkspacePathRequest` carries an absolute or workspace-resolved `path`; optional `action: "reveal"` selects file-manager navigation instead of default-application opening. `SessionOpenWorkspacePathValue` confirms that the Host accepted the native handoff. A Session-aware Client resolves relative paths against its current Session cwd when known; the controller hands the path to the opener unchanged and reports invalid requests, cancellation, and opener failures through the Session Remote error vocabulary.
+@@ -809,6 +809,12 @@ The backends that consume this contract are on [persistence.md](persistence.md).
  
  The optional `application` selects a registered file handler without changing the system default; `workspacePathApplications({ path })` returns current handlers, names, icons, and default selection after Host path verification.
+ 
 +### `SessionPublicationGuard`
 +
 +```ts type-equiv
-+/**
-+ * Synchronous fail-closed guard invoked immediately before a Session store
-+ * entry becomes visible. Deployments with a stricter publication policy may
-+ * install one through {@link SessionStore.setPublicationGuard}; stock DSH
-+ * behavior is unchanged when no guard is installed.
-+ */
 +type SessionPublicationGuard = (session: Session) => void
 +```
- 
++
  <!-- BEGIN GENERATED cordis-surface (gen-cordis-catalog.ts) — do not edit between markers -->
  
-@@ -968,6 +979,17 @@ Persistence is intentionally not implemented here — the agent lifecycle attach
+ <a id="cordis-surface"></a>
+@@ -1013,6 +1019,17 @@ Persistence is intentionally not implemented here — the agent lifecycle attach
   */
  registerMessageProjection(projection: SessionMessageProjection): () => Promise<void>
  
@@ -471,28 +224,23 @@ index 415201d15987b8369b2f5bfced3dc18dbc89d1b3..488615e5f1a8abb69ef3cf2f6623a857
   * Create a session owned by the calling fiber: disposing that fiber stops
   * event notification and removes the session from the store. `options.seed`
 diff --git a/docs/subsystems/session.zh.md b/docs/subsystems/session.zh.md
-index e52c08e8199caddc6dd6761dddb0c3da82680aa1..dd8746621170cda7802e3b8e619acc4dbbc7b605 100644
+index a3e5446b610f5ddfadaea2550d0b46bf69034e50..b713a9d80925facd2b70f11aeb30cea950fa734b 100644
 --- a/docs/subsystems/session.zh.md
 +++ b/docs/subsystems/session.zh.md
-@@ -769,6 +769,17 @@ interface TurnEndReasonMap {
- `SessionOpenWorkspacePathRequest` 携带绝对路径或已按 workspace 解析的 `path`。`SessionOpenWorkspacePathValue` 确认 Host 已接受原生交接。Session-aware Client 会在已知当前 Session cwd 时据此解析相对路径；controller 将路径原样交给打开器，并通过 Session Remote 错误词汇表报告无效请求、取消与打开器失败。 可选的 `action: "reveal"` 选择文件管理器导航；省略时使用默认应用打开。
+@@ -813,6 +813,12 @@ interface PluginRecord {
  
  可选的 `application` 指定文件关联应用，不修改系统默认值；`workspacePathApplications({ path })` 在校验 Host 路径后返回当前关联应用、名称、图标和默认项。
+ 
 +### `SessionPublicationGuard`
 +
 +```ts type-equiv
-+/**
-+ * Synchronous fail-closed guard invoked immediately before a Session store
-+ * entry becomes visible. Deployments with a stricter publication policy may
-+ * install one through {@link SessionStore.setPublicationGuard}; stock DSH
-+ * behavior is unchanged when no guard is installed.
-+ */
 +type SessionPublicationGuard = (session: Session) => void
 +```
- 
++
  <!-- BEGIN GENERATED cordis-surface (gen-cordis-catalog.ts) — do not edit between markers -->
  
-@@ -972,6 +983,17 @@ Persistence is intentionally not implemented here — the agent lifecycle attach
+ <a id="cordis-surface"></a>
+@@ -1017,6 +1023,17 @@ Persistence is intentionally not implemented here — the agent lifecycle attach
   */
  registerMessageProjection(projection: SessionMessageProjection): () => Promise<void>
  
@@ -594,45 +342,29 @@ index 0000000000000000000000000000000000000000..62b3429429cd2cbd04311ed5188f92f7
 +  })
 +})
 diff --git a/packages/core/agent/README.md b/packages/core/agent/README.md
-index be003d7b899306b58c4ddc88e720c18dde9ce33b..80da687eccf894b23ca46fb060b414dbec82ed92 100644
+index 9da1f06f64004f8154ac424dd2aadc6c59c2647c..8752ab82946612d94f7995efefda0d3e940e15c6 100644
 --- a/packages/core/agent/README.md
 +++ b/packages/core/agent/README.md
-@@ -117,6 +117,8 @@ Each driver runs its complete lifetime inside `ctx.agents.withInitiator(agent, .
+@@ -186,3 +186,5 @@ These limits define when this package needs special care. They are current packa
+ This Dev Note is working context for maintainers; it is explicitly non-authoritative. Open, undecided directions: inter-agent channels beyond delegation — shared state, streaming child output, and background or poll semantics remain outside the current delegation seam; and the `SessionStartSource` values `'clear'`/`'compact'` are reserved with no emitter yet, pending the driving subsystems.
  
- The `AgentHandle` disposer is a capability: among consumers, only its holder can tear the agent down. The registered factory provider is a structural co-owner, because scoped agents depend on that provider's service API; provider unload stops and drains every live handle it made. `ctx.agents.get(id)` still returns a bare `Agent` — the handle is exposed only to the consumer that created it.
- 
-+A deployment can install one effect-scoped publication guard before an Agent becomes visible. The guard runs synchronously and rejects creation before registry mutation. `wakePending()` schedules an existing durable inbox identity without changing its FIFO position; callers must retain the owning handle.
-+
  </details>
- 
- -----
-diff --git a/packages/core/agent/README.zh.md b/packages/core/agent/README.zh.md
-index e360ba975dddc381e25b69766b1df82f6e45b3b4..7b1cc426e60151f8ce328ee049b59d0de2eb5e09 100644
---- a/packages/core/agent/README.zh.md
-+++ b/packages/core/agent/README.zh.md
-@@ -117,6 +117,8 @@ await handle.agent.whenIdle()
- 
- `AgentHandle` disposer 是一项能力：在消费方中，只有其持有者能拆除该 agent。已注册的工厂提供方是结构化共同拥有者，因为作用域 agent 依赖该提供方的服务 API；提供方卸载会停止并排空它创建的每个实时句柄。`ctx.agents.get(id)` 仍返回裸 `Agent`——句柄只暴露给创建它的消费方。
- 
-+部署可以在 Agent 可见之前安装一个随 effect 释放的发布检查。检查同步运行，拒绝时不会修改注册表。`wakePending()` 调度已有的持久化收件箱标识，不改变其 FIFO 位置；调用方必须持有所属句柄。
 +
- </details>
- 
- -----
++A deployment may install one effect-scoped synchronous publication guard before registry mutation. Its exception rejects visibility; disposal restores ordinary admission. `wakePending` wakes an existing Inbox identity without changing FIFO.
 diff --git a/packages/core/agent/src/index.ts b/packages/core/agent/src/index.ts
-index 54dd8a805dd7be26953b31cc97864900f7da3fc9..c0f2f8df4e7c74a70b845bac685950c9932bd859 100644
+index dd8d09e6b7a32827e84a12f968cc2e900099b7ab..7e11ad1fc2b1975a24f495a71761a82c8c160ed7 100644
 --- a/packages/core/agent/src/index.ts
 +++ b/packages/core/agent/src/index.ts
-@@ -226,6 +226,9 @@ interface InitiatorRun {
+@@ -225,6 +225,9 @@ interface InitiatorRun {
+   readonly parent: InitiatorRun | undefined
  }
  
- /** Plain holder prevents Cordis from tracing the factory field before the caller context is known. */
 +/** Deployment policy checked synchronously before registry publication. */
 +export type AgentPublicationGuard = (agent: Agent, owner: Agent | undefined) => void
 +
+ /** Plain holder prevents Cordis from tracing the factory field before the caller context is known. */
  interface FactorySlot {
    readonly target: AgentFactory
- }
 @@ -245,6 +248,7 @@ interface FactorySlot {
  export class AgentRegistry extends Service {
    private store = new Map<SessionId, AgentEntry>()
@@ -641,7 +373,7 @@ index 54dd8a805dd7be26953b31cc97864900f7da3fc9..c0f2f8df4e7c74a70b845bac685950c9
    private readonly initiators = new AsyncLocalStorage<Agent | undefined>()
    private readonly initiatorRuns = new AsyncLocalStorage<InitiatorRun>()
    private initiatorState: 'active' | 'closing' | 'disposed' = 'active'
-@@ -373,6 +377,28 @@ export class AgentRegistry extends Service {
+@@ -375,6 +379,28 @@ export class AgentRegistry extends Service {
      return dispose
    }
  
@@ -670,7 +402,7 @@ index 54dd8a805dd7be26953b31cc97864900f7da3fc9..c0f2f8df4e7c74a70b845bac685950c9
    /** Return the active creation factory. */
    private requireFactory(): FactorySlot {
      if (this.factory === undefined) throw new Error(NO_FACTORY_MESSAGE)
-@@ -465,6 +491,7 @@ export class AgentRegistry extends Service {
+@@ -467,6 +493,7 @@ export class AgentRegistry extends Service {
      // This is the authoritative collision boundary. Concurrent create/resume
      // operations may both prepare, but only one exact entry can publish.
      if (this.store.has(id)) throw new Error(`agent "${id}" is already registered`)
@@ -678,63 +410,21 @@ index 54dd8a805dd7be26953b31cc97864900f7da3fc9..c0f2f8df4e7c74a70b845bac685950c9
      const entry: AgentEntry = {
        id,
        agent,
-diff --git a/packages/core/scope/README.md b/packages/core/scope/README.md
-index 72c41e4c1a3b8f8a79940838ead7447f64781cc4..2e17d107b70715e9dd448e833b98219b255ff7b6 100644
---- a/packages/core/scope/README.md
-+++ b/packages/core/scope/README.md
-@@ -76,6 +76,8 @@ One relation powers both directions: registration views inherit DOWN the chain (
- 
- `scopeTarget` composes the base's existing `Context.filter` with the scope predicate: an untagged listener is admitted; a tagged listener is admitted iff its tag is the dispatch key or an ancestor of it; `key === undefined` admits untagged listeners only. `{ global: true }` listeners bypass filtering. The `Scoped<T>` brand demands the carrier as the `this` type of a scope-filtered event, so dispatching with a bare subject is a compile error.
- 
-+The scoped assistant-commit waterfall uses the Agent identity carried in its payload. Contributions remain visible only in their registration scope and disappear when that scope is disposed.
-+
- </details>
- 
- -----
-diff --git a/packages/core/scope/README.zh.md b/packages/core/scope/README.zh.md
-index b48842570c564979f920d8e6f6fda87284f4bc65..c85c4e1ce59aa037bc8f8416613595a332d66ebe 100644
---- a/packages/core/scope/README.zh.md
-+++ b/packages/core/scope/README.zh.md
-@@ -76,6 +76,8 @@ await scope.dispose()   // unwinds every registration made through scope.ctx
- 
- `scopeTarget` 把基对象的现有 `Context.filter` 与作用域谓词组合起来：无标签监听器放行；有标签监听器仅当标签为分发键或其祖先时放行；`key === undefined` 只放行无标签监听器。带 `{ global: true }` 的监听器绕过筛选。`Scoped<T>` brand 要求带作用域事件以载体作为 `this` 类型，因此用裸主体分发会产生编译错误。
- 
-+作用域内的助手提交 waterfall 使用载荷携带的 Agent 标识。贡献项只在注册作用域内可见，并在该作用域释放时移除。
-+
- </details>
- 
- -----
 diff --git a/packages/core/session/README.md b/packages/core/session/README.md
-index 4a73a20c95d2ad05c4d5b432beedb7dd7bc14eda..00b42e1ad7e3b4c43f89504be83033196c97998d 100644
+index 178dc708b878d8648942c7b6124c59f69db71a8a..e55dd0b9aa9322c10b835c2883108d65df580829 100644
 --- a/packages/core/session/README.md
 +++ b/packages/core/session/README.md
-@@ -119,6 +119,8 @@ Every append uses the shared iterative `snapshotJsonValue()` pass, which reads,
+@@ -213,3 +213,5 @@ These limits define when the session store needs special care. They are current
+ None.
  
- The loop logs a full canonical `request/header` snapshot (call config, adapter defaults, assembled tool schemas — the rendered system prompt is a `system/message` surface node, not header state) at each loop-instance boundary and on change; `foldRequestHeader(events)` reconstructs it by selecting the latest snapshot, making every conversation request a pure function of the log. Route metadata (`request/context`) is separate logged state appended only when the provider, model, capacity, or `systemPromptUpdate` mode differs; it records the actual prepared call's mode after prompt and user admission, rather than supplying that admission decision.
- 
-+A deployment may install one synchronous publication guard on the Session store. The guard runs before attachment or store mutation, and its effect-scoped disposer restores ordinary admission. The guard does not replace persistence write ownership.
-+
  </details>
- 
- -----
-diff --git a/packages/core/session/README.zh.md b/packages/core/session/README.zh.md
-index 7fb334cfaa8a3a5468bf8330f0dd5802d1e98dbc..7238f691e7133fbb5edf2f4317a68a49df8425c4 100644
---- a/packages/core/session/README.zh.md
-+++ b/packages/core/session/README.zh.md
-@@ -119,6 +119,8 @@ session.deriveMessages()         // the derived model history
- 
- 循环在每个循环实例边界及变更时记录完整规范 `request/header` 快照（调用配置、适配器默认值、组装后的工具 schema——渲染后的系统提示词是 `system/message` surface 节点，不是 header 状态）；`foldRequestHeader(events)` 通过选择最新快照来重建它，使每个对话请求都成为日志的纯函数。路由元数据（`request/context`）是独立的已记录状态，仅在提供方、模型、容量或 `systemPromptUpdate` 模式变化时追加；它在提示词与用户消息准入之后记录实际已准备调用的模式，而非提供准入决策。
- 
-+部署可以在 Session 存储上安装一个同步发布检查。检查在挂接或修改存储之前运行，其 effect 释放函数恢复普通准入。检查不替代持久化写入所有权。
 +
- </details>
- 
- -----
++A deployment may install one effect-scoped synchronous publication guard before store or attachment mutation. Its exception rejects visibility; disposal restores ordinary admission. Persistence ownership remains separate.
 diff --git a/packages/core/session/src/index.ts b/packages/core/session/src/index.ts
-index b0cfa0c19b6ad65404fcde055af8e318632ee705..41c52ebb4f903099cfbf5e1ce82f1e9b72c18ce3 100644
+index e1ecb920bd197aa9648b41c9a2d307ed14ac6edc..ea13632dba46d4ca14539fbd40e08fdb11465e41 100644
 --- a/packages/core/session/src/index.ts
 +++ b/packages/core/session/src/index.ts
-@@ -894,6 +894,14 @@ export class Session {
+@@ -1018,6 +1018,14 @@ export class Session {
  /** A fork source: either the live session object or its live store id. */
  export type SessionForkSource = Session | SessionId
  
@@ -749,7 +439,7 @@ index b0cfa0c19b6ad65404fcde055af8e318632ee705..41c52ebb4f903099cfbf5e1ce82f1e9b
  /**
   * Rejection codes for session forking: the fork source id is unknown to the
   * live store (`SESSION_NOT_FOUND`) or names a session object that is not the
-@@ -948,6 +956,7 @@ export class SessionStore extends Service {
+@@ -1072,6 +1080,7 @@ export class SessionStore extends Service {
        return () => { this.projections.splice(this.projections.indexOf(projection), 1) }
      }, 'sessions.registerMessageProjection()')
    }
@@ -757,7 +447,7 @@ index b0cfa0c19b6ad65404fcde055af8e318632ee705..41c52ebb4f903099cfbf5e1ce82f1e9b
  
    constructor(ctx: Context) {
      super(ctx, 'sessions')
-@@ -962,6 +971,28 @@ export class SessionStore extends Service {
+@@ -1087,6 +1096,28 @@ export class SessionStore extends Service {
      })
    }
  
@@ -786,7 +476,7 @@ index b0cfa0c19b6ad65404fcde055af8e318632ee705..41c52ebb4f903099cfbf5e1ce82f1e9b
    /**
     * Create a session owned by the calling fiber: disposing that fiber stops
     * event notification and removes the session from the store. `options.seed`
-@@ -1089,6 +1120,7 @@ export class SessionStore extends Service {
+@@ -1214,6 +1245,7 @@ export class SessionStore extends Service {
      // preparation. Only one exact same-id transaction can publish.
      if (this.store.has(id)) throw new Error(`session "${id}" already exists`)
      if (attachments.has(session)) throw new Error(`session "${id}" is already attached to a store`)
@@ -794,3 +484,100 @@ index b0cfa0c19b6ad65404fcde055af8e318632ee705..41c52ebb4f903099cfbf5e1ce82f1e9b
      const entry: SessionEntry = {
        id,
        session,
+diff --git a/packages/extensions/tool-cordis/src/api-catalog.ts b/packages/extensions/tool-cordis/src/api-catalog.ts
+index be3e31626359ec9607789b83000f7e3128a425ea..261170fcd0e397b2d28ebfdfe207c2f455c78313 100644
+--- a/packages/extensions/tool-cordis/src/api-catalog.ts
++++ b/packages/extensions/tool-cordis/src/api-catalog.ts
+@@ -260,6 +260,12 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
+         parameters: [{ name: 'factory', description: 'the loop-owned factory {@link create}/{@link resume} delegate to.' }],
+         returns: 'the disposer that clears the factory slot. The exact Cordis effect disposer (single-shot): composite (generator) effects may yield it directly — exact identity nests the teardown in order.',
+       },
++      {
++        signature: 'setPublicationGuard(guard: AgentPublicationGuard): () => void',
++        description: 'Install the one process-wide Agent publication guard. The guard runs at the authoritative enter boundary after identity/collision checks and before the registry mutates. A synchronous throw rejects publication without exposing the candidate. Registration is effect-scoped and exclusive; the returned disposer restores stock behavior.',
++        parameters: [{ name: 'guard', description: 'deployment-owned synchronous publication policy.' }],
++        returns: 'the exact Cordis effect disposer.',
++      },
+       {
+         signature: 'async create(options: CreateAgentOptions): Promise<AgentHandle>',
+         description: 'Create and publish a new agent through the registered factory. Distinct from register (which records an already-constructed agent): this constructs the agent and its session. Rejects if no factory is registered or creation/setup fails. The resolved AgentHandle lets the owner tear down exactly this agent.',
+@@ -2513,6 +2519,12 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
+         returns: 'the fiber-owned disposer.',
+         throws: ['when another definition already owns this event type.'],
+       },
++      {
++        signature: 'setPublicationGuard(guard: SessionPublicationGuard): () => void',
++        description: 'Install the one process-wide Session publication guard. The guard runs at the authoritative enter boundary after collision/attachment checks and before store or attachment state mutates. A synchronous throw rejects publication without exposing the candidate. Registration is effect-scoped and exclusive; the returned disposer restores stock behavior.',
++        parameters: [{ name: 'guard', description: 'deployment-owned synchronous publication policy.' }],
++        returns: 'the exact Cordis effect disposer.',
++      },
+       {
+         signature: 'create(id?: SessionId, options?: CreateSessionOptions): Session',
+         description: 'Create a session owned by the calling fiber: disposing that fiber stops event notification and removes the session from the store. `options.seed` populates the session with a copy of those events (replay/fork); `options.meta` attaches creation metadata (validated absolute `cwd`, seed and parent lineage, and delegation depth) as the immutable SessionHeader (the store fills `version`/`id`/`createdAt`).\n\nFor an agent whose session must be torn down IN ORDER with its loop (so the loop\'s final events are published before the store attachment ends), do NOT use this — fold the session lifecycle into the agent\'s own effect via prepare + enter + announce (see `dsh-agent-loop`\'s creation transaction).',
+@@ -4069,6 +4081,14 @@ export const EVENT_API: readonly EventApiEntry[] = [
+     description: 'One message entered the live inbox.',
+     parameters: [{ name: 'payload', description: '.message - the inserted message. Scope-filtered dispatch (`@deepseek-ai/dsh-scope`): agent-scoped listeners receive only that agent.' }],
+   },
++  {
++    name: 'agent/pre-assistant-commit',
++    mode: 'waterfall',
++    signature: '\'agent/pre-assistant-commit\'(this: Scoped<Agent>, payload: { agent: Agent; commit: Readonly<PreparedAssistantCommit>; turn: number; step: number; signal: AbortSignal }, next: () => Promise<PreparedAssistantCommit>): Promise<PreparedAssistantCommit>',
++    summary: 'Transform a complete assembled assistant response before any `assistant/message` or `tool/call` event is appended.',
++    description: 'Transform a complete assembled assistant response before any `assistant/message` or `tool/call` event is appended. The AgentLoop validates that only existing tool-call arguments changed and rebuilds scheduler inputs from the returned message.',
++    parameters: [{ name: 'payload', description: 'complete assistant commit with immutable identities and transformable tool arguments. Scope-filtered dispatch (`@deepseek-ai/dsh-scope`): listeners receive only the payload Agent scope.' }],
++  },
+   {
+     name: 'agent/pre-step',
+     mode: 'waterfall',
+@@ -4753,6 +4773,10 @@ export const TYPE_API: readonly TypeApiEntry[] = [
+     name: 'AgentPresetRow',
+     declaration: 'export interface AgentPresetRow {\n    readonly id: string;\n    readonly isDefault: boolean;\n    readonly name?: string;\n    readonly description?: string;\n    readonly broken?: string;\n}',
+   },
++  {
++    name: 'AgentPublicationGuard',
++    declaration: 'export type AgentPublicationGuard = (agent: Agent, owner: Agent | undefined) => void;',
++  },
+   {
+     name: 'AgentResolver',
+     declaration: 'export type AgentResolver = (sessionId: SessionId) => Promise<Agent>;',
+@@ -6453,6 +6477,14 @@ export const TYPE_API: readonly TypeApiEntry[] = [
+     name: 'PreparedAdapterCall',
+     declaration: 'export interface PreparedAdapterCall {\n    readonly model: LlmResolvedModelInfo;\n    stream(options: GenerateOptions): AsyncIterable<StreamChunk>;\n}',
+   },
++  {
++    name: 'PreparedAssistantCommit',
++    declaration: 'export interface PreparedAssistantCommit {\n    readonly message: AssistantMessage;\n    readonly toolCalls: readonly PreparedAssistantToolCall[];\n}',
++  },
++  {
++    name: 'PreparedAssistantToolCall',
++    declaration: 'export interface PreparedAssistantToolCall {\n    readonly callId: ToolCallId;\n    readonly name: string;\n    readonly rawArguments: string;\n    readonly parsedArguments: JsonValue;\n}',
++  },
+   {
+     name: 'PreparedDeepSeekLlmApiExtension',
+     declaration: 'export interface PreparedDeepSeekLlmApiExtension<T extends DeepSeekLlmApiJson> {\n    readonly value: T;\n    accept?(): void | Promise<void>;\n}',
+@@ -7365,6 +7397,10 @@ export const TYPE_API: readonly TypeApiEntry[] = [
+     name: 'SessionPromptValue',
+     declaration: 'export interface SessionPromptValue {\n    readonly accepted: true;\n}',
+   },
++  {
++    name: 'SessionPublicationGuard',
++    declaration: 'export type SessionPublicationGuard = (session: Session) => void;',
++  },
+   {
+     name: 'SessionRecord',
+     declaration: 'export interface SessionRecord {\n    header: SessionHeader;\n    live: boolean;\n    persisted: boolean;\n    formatStatus?: \'current\' | \'migration-required\';\n}',
+diff --git a/scripts/gen-cordis-catalog.ts b/scripts/gen-cordis-catalog.ts
+index ebd752714286dd59491439c88a697bfa84f3b6f2..aaf432ee53da3ca09d00954afe35f67eb0b56141 100644
+--- a/scripts/gen-cordis-catalog.ts
++++ b/scripts/gen-cordis-catalog.ts
+@@ -336,6 +336,10 @@ export const LINK_MAP: Readonly<Record<string, string>> = {
+   AllowedModelRoute: 'subagent.md',
+   SubagentModelSelectionSettings: 'subagent.md',
+   AgentOptions: 'core.md',
++  PreparedAssistantCommit: 'core.md',
++  PreparedAssistantToolCall: 'core.md',
++  AgentPublicationGuard: 'core.md',
++  SessionPublicationGuard: 'session.md',
+   AgentStatus: 'core.md',
+   AssistantStreamFrame: 'core.md',
+   ContentBlock: 'llm-streaming.md',

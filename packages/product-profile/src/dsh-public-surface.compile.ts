@@ -1,3 +1,4 @@
+import { remoteErrorOf } from "@deepseek-ai/dsh-typert-protocol";
 import { installProxyFromEnvironment, proxyRouteFor } from "@deepseek-ai/dsh-http-proxy";
 import { LocalFileSystem, prepareTextEdit } from "@deepseek-ai/dsh-fs-local";
 import { createReadTool, createReadImageTool, createWriteTool, createEditTool, type ReadToolCaps } from "@deepseek-ai/dsh-tool-fs";
@@ -79,7 +80,9 @@ import { Session, SessionId, SessionStore, buildForkSeed } from "@deepseek-ai/ds
 import type { SessionEvent, SessionHeader } from "@deepseek-ai/dsh-session";
 import { createScope, scopeOf } from "@deepseek-ai/dsh-scope";
 import type { Scope, ScopeKey, Scoped } from "@deepseek-ai/dsh-scope";
-import { default as JsonlSessionPersistence, type Config as JsonlConfig } from "@deepseek-ai/dsh-session-persistence-jsonl";
+import { apply as applyJsonlSessionPersistence, withStoredEventValidation } from "@deepseek-ai/dsh-session-persistence-jsonl";
+import type { Config as JsonlConfig } from "@deepseek-ai/dsh-session-persistence-jsonl";
+import { WorkingDirectoryService, type Config as WorkingDirectoryConfig } from "@deepseek-ai/dsh-working-directory";
 import { validateStoredEvents, SessionPersistence } from "@deepseek-ai/dsh-session-persistence";
 import type { SessionHandle, SessionInspection, SessionPersistenceSnapshot } from "@deepseek-ai/dsh-session-persistence";
 import { ShellExecutor, parseExitStatus } from "@deepseek-ai/dsh-shell";
@@ -97,8 +100,6 @@ import type {
 import { finalAssistantOutput, SubagentRuntime } from "@deepseek-ai/dsh-subagent";
 import { queueHostSubagentPrompt } from "@deepseek-ai/dsh-subagent/internal";
 import type { SubagentInterruptAuthority, SubagentProvider, SubagentResult } from "@deepseek-ai/dsh-subagent";
-import { startInProcessRun } from "@deepseek-ai/dsh-subagent-in-process-driver";
-import type { InProcessRunOptions } from "@deepseek-ai/dsh-subagent-in-process-driver";
 import { apply as applySubagentSpawnInProcess } from "@deepseek-ai/dsh-subagent-spawn-in-process";
 import type { Config as SubagentSpawnInProcessConfig } from "@deepseek-ai/dsh-subagent-spawn-in-process";
 import { apply as applySubagentForkInProcess } from "@deepseek-ai/dsh-subagent-fork-in-process";
@@ -174,7 +175,8 @@ export const dshPublicSurfaceValues = Object.freeze({
   buildForkSeed,
   SessionId,
   SessionPersistence,
-  JsonlSessionPersistence,
+  applyJsonlSessionPersistence,
+  withStoredEventValidation,
   SessionStore,
   SessionQueryEngine,
   SqliteSessionQueryEngine,
@@ -194,6 +196,7 @@ export const dshPublicSurfaceValues = Object.freeze({
   SettingsForms,
   UserQuestionService,
   WebRuntime,
+  WorkingDirectoryService,
   applyMcpClient,
   applyAgentInstructions,
   applySubagentSpawnInProcess,
@@ -225,12 +228,12 @@ export const dshPublicSurfaceValues = Object.freeze({
   isSkillName,
   renderSkillContent,
   resolveRetryPolicy,
-  startInProcessRun,
   timeoutOf,
 });
 
 export interface DshPublicSurfaceTypes {
   jsonl: JsonlConfig;
+  workingDirectory: WorkingDirectoryConfig;
   agent: [Agent, AgentFactory, AgentHandle, CreateAgentOptions, ResumeAgentOptions];
   agentInstructions: [AgentInstructionsConfig];
   agentLoop: [AgentLoopConfig];
@@ -265,7 +268,6 @@ export interface DshPublicSurfaceTypes {
     SkillSummary,
   ];
   subagent: [SubagentInterruptAuthority, SubagentProvider, SubagentResult];
-  subagentInProcess: [InProcessRunOptions];
   subagentSpawnInProcess: [SubagentSpawnInProcessConfig];
   subagentForkInProcess: [SubagentForkInProcessConfig];
   toolSubagent: [ToolSubagentConfig];
@@ -284,3 +286,5 @@ export const officialFileComposition = { LocalFileSystem, prepareTextEdit, creat
 export type OfficialReadCaps = ReadToolCaps;
 
 export const officialNetworkComposition = { installProxyFromEnvironment, proxyRouteFor };
+
+export const nativeRemoteErrorContract = { remoteErrorOf };

@@ -46,6 +46,12 @@ export const deriveSummaryTokenUsage = (events: readonly SessionEvent[]): ExactR
     if (event.type === "compaction/summary") {
       if (summaries.has(String(event.data.compactionId))) return undefined;
       summaries.add(String(event.data.compactionId));
+      // Native summaries already aggregate one normal call and at most one repair.
+      // Older marked summaries omit the count and mean one call. A malformed
+      // restored count cannot substantiate an exact billing disclosure.
+      const calls = "llmStreamCallCount" in event.data ? event.data.llmStreamCallCount : undefined;
+      if (calls !== undefined && (event.data.llmStreamCall !== true
+        || !Number.isSafeInteger(calls) || calls < 1 || calls > 2)) return undefined;
       const usage = exactReportedUsage(event.data.usage);
       if (usage === undefined) return undefined;
       const added = addExactReportedUsage(result, usage);

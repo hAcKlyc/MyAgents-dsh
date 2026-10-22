@@ -1,10 +1,10 @@
 diff --git a/packages/llm/llm-pi-ai/README.md b/packages/llm/llm-pi-ai/README.md
-index 0e8a801b5354f050b98c0575da8b373e1431bc60..786dab6cd46c8568fafe13066c8cd0145c52eda1 100644
+index af66591776a9f5c9024282613ffc717125de0437..29948120ab07779a1b6b1580e6cc96c22cb9395a 100644
 --- a/packages/llm/llm-pi-ai/README.md
 +++ b/packages/llm/llm-pi-ai/README.md
-@@ -158,6 +158,8 @@ The plugin declares every installed catalog provider it can authenticate in the
+@@ -184,6 +184,8 @@ The `pre-commit` hook runs `node_modules/.bin/tsx packages/llm/llm-pi-ai/scripts
  
- Successful assistant responses store a versioned, lossless-JSON replay state beside the provider and model that produced them — response-level facts plus one per-block entry per streamed block. At request time, `LlmRuntime` passes replay state only when the same adapter instance owns both routes; the adapter validates it and restores native response ids, provider signatures, and optional `providerThinkingLevel` effort metadata, keeping absent effort metadata absent. Replay validates the requested model identity against the assistant source and uses it to retain same-model signatures; provider-reported response models remain diagnostic metadata. Absent or unusable replay state degrades to provider-neutral content while preserving the assistant source’s required provider and model. pi-ai tool-call arguments are parsed objects, so the adapter parses input and re-stringifies output to the harness raw-JSON convention; pi-ai in-stream error events map to terminal `finish` chunks.
+ Successful assistant responses store a versioned, lossless-JSON replay state beside the provider and model that produced them — response-level facts plus one per-block entry per streamed block. At request time, `LlmRuntime` passes replay state only when the same adapter instance owns both routes; the adapter validates it and restores native response ids, provider signatures, and optional `providerThinkingLevel` effort metadata, keeping absent effort metadata absent. Replay validates the requested model identity against the assistant source and uses it to retain same-model signatures; provider-reported response models remain diagnostic metadata. Absent or unusable replay state degrades to provider-neutral content while preserving the assistant source’s required provider and model. pi-ai tool-call arguments are parsed objects, so the adapter parses input and re-stringifies output to the harness raw-JSON convention; pi-ai in-stream error events map to terminal `finish` chunks. Protocol conversion operates on request-local copies. Switching from A to B and back to A preserves the stored content, including empty text blocks, tool ids, original block order, and native replay metadata; unsupported signatures are omitted only from the foreign request.
  
 +Provider-executed tool calls and results remain ordered, structured content. They never enter the client tool executor. Matching-route replay restores their raw blocks while retaining distinct requested and response model identities. This behavior requires the paired pi-ai transport extension; an unpatched transport cannot emit the extra content events.
 +
@@ -12,12 +12,12 @@ index 0e8a801b5354f050b98c0575da8b373e1431bc60..786dab6cd46c8568fafe13066c8cd014
  
  -----
 diff --git a/packages/llm/llm-pi-ai/README.zh.md b/packages/llm/llm-pi-ai/README.zh.md
-index 5126fe25ed6fe4b431a74ddc0d21abd4a6d72861..90db72aef5c479706a435b5bfddadb51c4d97bfe 100644
+index b5e79c14a24d33ae9d1b13b8a1a81f49e6c9ed2e..b813dae2bfd65b65bf08f54d63483bda5c840246 100644
 --- a/packages/llm/llm-pi-ai/README.zh.md
 +++ b/packages/llm/llm-pi-ai/README.zh.md
-@@ -158,6 +158,8 @@ Config 更新严格验证发生变化的 provider。初始加载将已存储的
+@@ -184,6 +184,8 @@ git add packages/llm/llm-pi-ai/src/provider-data.generated.ts
  
- 成功 assistant 响应会存储带版本的、无损 JSON 回放状态，与产生它们的提供方和模型放在一起——响应级事实加每个流式块一条逐块条目。请求时，`LlmRuntime` 仅当同一适配器实例拥有两条路由时才传递回放状态；适配器校验它并恢复原生响应 id、提供方签名与可选的 `providerThinkingLevel` effort 元数据，缺失的 effort 元数据仍保持缺失。回放会对照 assistant 来源校验请求模型身份，并用它保留同模型签名；提供方报告的响应模型仅作为诊断元数据。回放状态缺失或无法使用时会降级为提供方无关内容，并保留 assistant 来源中必需的提供方和模型。pi-ai 工具调用参数是解析后的对象，因此适配器解析输入并重新字符串化输出，以符合 harness 原始 JSON 约定；pi-ai 流内错误事件映射为终止 `finish` 分片。
+ 成功 assistant 响应会存储带版本的、无损 JSON 回放状态，与产生它们的提供方和模型放在一起——响应级事实加每个流式块一条逐块条目。请求时，`LlmRuntime` 仅当同一适配器实例拥有两条路由时才传递回放状态；适配器校验它并恢复原生响应 id、提供方签名与可选的 `providerThinkingLevel` effort 元数据，缺失的 effort 元数据仍保持缺失。回放会对照 assistant 来源校验请求模型身份，并用它保留同模型签名；提供方报告的响应模型仅作为诊断元数据。回放状态缺失或无法使用时会降级为提供方无关内容，并保留 assistant 来源中必需的提供方和模型。pi-ai 工具调用参数是解析后的对象，因此适配器解析输入并重新字符串化输出，以符合 harness 原始 JSON 约定；pi-ai 流内错误事件映射为终止 `finish` 分片。 协议转换仅作用于请求副本。从 A 切换到 B 再切回 A 时，存储的内容保持完整，包括空文本块、工具 id、原始块顺序和原生回放元数据；不受支持的签名仅从发给其他协议的请求中省略。
  
 +提供方执行的工具调用与结果保持有序的结构化内容，绝不进入客户端工具执行器。匹配路由的回放恢复原始块，同时保留请求模型与响应模型的独立标识。该行为依赖配套的 pi-ai 传输扩展；未打补丁的传输无法发出额外内容事件。
 +
@@ -107,7 +107,7 @@ index 0000000000000000000000000000000000000000..02d5de8c9ef634761060692e0b02f731
 +  return message
 +}
 diff --git a/packages/llm/llm-pi-ai/src/replay.ts b/packages/llm/llm-pi-ai/src/replay.ts
-index 9012c56fcafcb7f00690d59a5942e327c65e9fbd..46c3594d6782bf4025e0daf3e3720ccc00612145 100644
+index 098f4a63017c2d48c5b562986dc82069e5a804c4..ec9de783167acfd1c5fccb9e835fb4f0dfafece7 100644
 --- a/packages/llm/llm-pi-ai/src/replay.ts
 +++ b/packages/llm/llm-pi-ai/src/replay.ts
 @@ -11,12 +11,15 @@
@@ -120,7 +120,7 @@ index 9012c56fcafcb7f00690d59a5942e327c65e9fbd..46c3594d6782bf4025e0daf3e3720ccc
  export type PiAiReplayBlock =
    | { type: 'text'; textSignature?: string }
    | { type: 'reasoning'; thinkingSignature?: string; redacted?: boolean }
-   | { type: 'tool-call'; thoughtSignature?: string }
+   | { type: 'tool-call'; thoughtSignature?: string; namespace?: string }
 +  | { type: 'provider-tool-call' }
 +  | { type: 'provider-tool-result' }
  
@@ -135,16 +135,16 @@ index 9012c56fcafcb7f00690d59a5942e327c65e9fbd..46c3594d6782bf4025e0daf3e3720ccc
    const response: PiAiReplayResponse = {
      kind: 'pi-ai',
      version: 2,
-@@ -103,6 +106,8 @@ export function toPiReplayState(message: AssistantMessage, requestedModel = mess
-           type: 'tool-call',
+@@ -104,6 +107,8 @@ export function toPiReplayState(message: AssistantMessage, requestedModel = mess
            ...block.thoughtSignature === undefined ? {} : { thoughtSignature: block.thoughtSignature },
+           ...block.namespace === undefined ? {} : { namespace: block.namespace },
          }
 +        case 'providerToolCall': return { type: 'provider-tool-call' }
 +        case 'providerToolResult': return { type: 'provider-tool-result' }
        }
      }),
    }
-@@ -135,7 +140,9 @@ function readReplayState(value: unknown): PiAiReplayState {
+@@ -136,7 +141,9 @@ function readReplayState(value: unknown): PiAiReplayState {
    for (const [index, value] of blocks.entries()) {
      if (typeof value !== 'object' || value === null || Array.isArray(value)) return invalidReplay(`block ${index} must be an object`)
      const block = value as Record<string, unknown>
@@ -152,10 +152,10 @@ index 9012c56fcafcb7f00690d59a5942e327c65e9fbd..46c3594d6782bf4025e0daf3e3720ccc
 +    if (!['text', 'reasoning', 'tool-call', 'provider-tool-call', 'provider-tool-result'].includes(String(block['type']))) {
 +      return invalidReplay(`block ${index} has an unknown type`)
 +    }
-     for (const signature of ['textSignature', 'thinkingSignature', 'thoughtSignature'] as const) {
+     for (const signature of ['textSignature', 'thinkingSignature', 'thoughtSignature', 'namespace'] as const) {
        if (block[signature] !== undefined && typeof block[signature] !== 'string') return invalidReplay(`block ${index} ${signature} must be a string`)
      }
-@@ -183,12 +190,12 @@ function foreignAssistant(message: HarnessAssistantMessage): AssistantMessage {
+@@ -184,12 +191,12 @@ function foreignAssistant(message: HarnessAssistantMessage): AssistantMessage {
  }
  
  /** Recombine durable Harness content with validated pi-ai replay metadata. */
@@ -170,9 +170,9 @@ index 9012c56fcafcb7f00690d59a5942e327c65e9fbd..46c3594d6782bf4025e0daf3e3720ccc
      const replay = state.blocks[index]
      if (replay === undefined || replay.type !== block.type) return invalidReplay(`block ${index} does not match assistant content`)
      switch (block.type) {
-@@ -210,6 +217,22 @@ function replayedAssistant(message: HarnessAssistantMessage, source: ModelMessag
-         arguments: parseArguments(block.arguments),
+@@ -212,6 +219,22 @@ function replayedAssistant(message: HarnessAssistantMessage, source: ModelMessag
          ...replay.type === 'tool-call' && replay.thoughtSignature !== undefined ? { thoughtSignature: replay.thoughtSignature } : {},
+         ...replay.type === 'tool-call' && replay.namespace !== undefined ? { namespace: replay.namespace } : {},
        }
 +      case 'provider-tool-call': return {
 +        type: 'providerToolCall',
@@ -193,7 +193,7 @@ index 9012c56fcafcb7f00690d59a5942e327c65e9fbd..46c3594d6782bf4025e0daf3e3720ccc
        /* v8 ignore next -- readReplayState rejects unknown replay tags, so an equal plugin-added Harness tag cannot reach this switch */
        default: return invalidReplay(`block ${index} has an unsupported Harness type`)
      }
-@@ -246,7 +269,7 @@ export function toPiAssistant(message: HarnessAssistantMessage, onDegrade?: (rea
+@@ -248,7 +271,7 @@ export function toPiAssistant(message: HarnessAssistantMessage, onDegrade?: (rea
    const source = message.source
    if (source.replayState === undefined) return foreignAssistant(message)
    try {
@@ -296,7 +296,7 @@ index 30e9c79412a300adc8a373b1a5e2caa77cb69ad6..6a7bc07a56d99a6f6e104e7030295c03
 +  }
 +}
 diff --git a/packages/llm/llm-pi-ai/tests/convert.spec.ts b/packages/llm/llm-pi-ai/tests/convert.spec.ts
-index 005c12596cd7d765f1992cdcab808f859d4afdb1..49990963d8ea4aa69b3ba38c674a226e59457665 100644
+index d6c86ba4b8818963483483abbd68b776f2c53c49..ce5121500fc7a1a9703eb3310b3a22f122bf7f4c 100644
 --- a/packages/llm/llm-pi-ai/tests/convert.spec.ts
 +++ b/packages/llm/llm-pi-ai/tests/convert.spec.ts
 @@ -7,6 +7,7 @@ import type { AssistantMessage, AssistantMessageEvent, Usage } from '@earendil-w
@@ -320,7 +320,7 @@ index 005c12596cd7d765f1992cdcab808f859d4afdb1..49990963d8ea4aa69b3ba38c674a226e
  async function* feed(...events: AssistantMessageEvent[]): AsyncGenerator<AssistantMessageEvent> {
    for (const event of events) yield event
  }
-@@ -509,6 +516,66 @@ describe('toPiContext', () => {
+@@ -508,6 +515,66 @@ describe('toPiContext', () => {
      expect(context.messages[0]).not.toHaveProperty('providerThinkingLevel')
    })
  

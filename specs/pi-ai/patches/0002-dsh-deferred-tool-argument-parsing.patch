@@ -1,0 +1,153 @@
+diff --git a/packages/ai/src/api/anthropic-messages.ts b/packages/ai/src/api/anthropic-messages.ts
+index a7b8fa1c2a654353d2cae705ecbdac0aa54aa621..ff6959c7228fd2bd2b29e8566dd16d547198fc0f 100644
+--- a/packages/ai/src/api/anthropic-messages.ts
++++ b/packages/ai/src/api/anthropic-messages.ts
+@@ -864,7 +864,6 @@ export const stream: StreamFunction<"anthropic-messages", AnthropicOptions> = (
+ 						const block = blocks[index];
+ 						if (block && block.type === "toolCall") {
+ 							block.partialJson += event.delta.partial_json;
+-							block.arguments = parseStreamingJson(block.partialJson);
+ 							stream.push({
+ 								type: "toolcall_delta",
+ 								contentIndex: index,
+diff --git a/packages/ai/src/api/bedrock-converse-stream.ts b/packages/ai/src/api/bedrock-converse-stream.ts
+index 1bada0746e2728a3c533e9a4ff82bf028be6a5ff..db9f344ea7004f86413b3e73bdabdb32bbe2b39f 100644
+--- a/packages/ai/src/api/bedrock-converse-stream.ts
++++ b/packages/ai/src/api/bedrock-converse-stream.ts
+@@ -628,7 +628,6 @@ function handleContentBlockDelta(
+ 		}
+ 	} else if (delta?.toolUse && block?.type === "toolCall") {
+ 		block.partialJson = (block.partialJson || "") + (delta.toolUse.input || "");
+-		block.arguments = parseStreamingJson(block.partialJson);
+ 		stream.push({ type: "toolcall_delta", contentIndex: index, delta: delta.toolUse.input || "", partial: output });
+ 	} else if (delta?.reasoningContent) {
+ 		let thinkingBlock = block;
+diff --git a/packages/ai/src/api/mistral-conversations.ts b/packages/ai/src/api/mistral-conversations.ts
+index bf8626d1c3649475c98c29f897fdbc9951f65af8..f267d696456251387474c916488e4492b1cdb95d 100644
+--- a/packages/ai/src/api/mistral-conversations.ts
++++ b/packages/ai/src/api/mistral-conversations.ts
+@@ -732,7 +732,6 @@ async function consumeChatStream(
+ 					? toolCall.function.arguments
+ 					: JSON.stringify(toolCall.function.arguments || {});
+ 			block.partialArgs = (block.partialArgs || "") + argsDelta;
+-			block.arguments = parseStreamingJson<ToolCall["arguments"]>(block.partialArgs);
+ 			stream.push({
+ 				type: "toolcall_delta",
+ 				contentIndex: toolBlocksByKey.get(key)!,
+diff --git a/packages/ai/src/api/openai-completions.ts b/packages/ai/src/api/openai-completions.ts
+index 96cb23ab3e9983d1e71bde0fe28c4a64433a695c..24873823315ec72b9ee57e8fa01ba98d5daf9930 100644
+--- a/packages/ai/src/api/openai-completions.ts
++++ b/packages/ai/src/api/openai-completions.ts
+@@ -653,7 +653,6 @@ export const stream: StreamFunction<"openai-completions", OpenAICompletionsOptio
+ 							if (toolCall.function?.arguments) {
+ 								delta = toolCall.function.arguments;
+ 								block.partialArgs = (block.partialArgs ?? "") + toolCall.function.arguments;
+-								block.arguments = parseStreamingJson(block.partialArgs);
+ 							} else if (toolCall.custom?.input) {
+ 								const nextInput = getCustomToolCallInput(block) + toolCall.custom.input;
+ 								delta = appendCustomToolCallInput(block, nextInput, false) ?? "";
+diff --git a/packages/ai/src/api/openai-responses-shared.ts b/packages/ai/src/api/openai-responses-shared.ts
+index 59c9b5b428b9f8858ebc2a20ea243747b9f64c0b..4128d6ec5554938f4ece24b73e50a53d4cf1ab6a 100644
+--- a/packages/ai/src/api/openai-responses-shared.ts
++++ b/packages/ai/src/api/openai-responses-shared.ts
+@@ -656,7 +656,6 @@ export async function processResponsesStream<TApi extends Api>(
+ 			const slot = getSlot(event.output_index, "toolCall");
+ 			if (!slot || slot.block.partialJson === undefined) continue;
+ 			slot.block.partialJson += event.delta;
+-			slot.block.arguments = parseStreamingJson(slot.block.partialJson);
+ 			pushToolCallDelta(slot, event.delta);
+ 		} else if (event.type === "response.function_call_arguments.done") {
+ 			const slot = getSlot(event.output_index, "toolCall");
+diff --git a/packages/ai/src/api/pi-messages.ts b/packages/ai/src/api/pi-messages.ts
+index 2137b551f8f8e8c58d3bf0ebb5cf840e5b04183b..86bfbcb35f15980f19f5dd4ed99f70bf63689017 100644
+--- a/packages/ai/src/api/pi-messages.ts
++++ b/packages/ai/src/api/pi-messages.ts
+@@ -27,7 +27,6 @@ import type {
+ import { appendAssistantMessageDiagnostic, createAssistantMessageDiagnostic } from "../utils/diagnostics.ts";
+ import { AssistantMessageEventStream } from "../utils/event-stream.ts";
+ import { headersToRecord, providerHeadersToRecord } from "../utils/headers.ts";
+-import { parseStreamingJson } from "../utils/json-parse.ts";
+ import { getProviderEnvValue } from "../utils/provider-env.ts";
+ 
+ export interface PiMessagesOptions extends StreamOptions {
+@@ -254,8 +253,6 @@ function createEventConverter(model: Model<"pi-messages">) {
+ 			case "toolcall_delta": {
+ 				const json = `${toolJson.get(event.contentIndex) ?? ""}${event.delta}`;
+ 				toolJson.set(event.contentIndex, json);
+-				(partial.content[event.contentIndex] as ToolCall).arguments =
+-					parseStreamingJson<ToolCall["arguments"]>(json);
+ 				break;
+ 			}
+ 			case "toolcall_end":
+diff --git a/packages/ai/test/dsh-tool-argument-streaming.test.ts b/packages/ai/test/dsh-tool-argument-streaming.test.ts
+new file mode 100644
+index 0000000000000000000000000000000000000000..daf7050ac42d7d864fe44055eac8b48453c64ed3
+--- /dev/null
++++ b/packages/ai/test/dsh-tool-argument-streaming.test.ts
+@@ -0,0 +1,66 @@
++import { describe, expect, it } from "vitest";
++import type { AssistantMessageEvent, Model } from "../src/types.ts";
++import { stream as anthropic } from "../src/api/anthropic-messages.ts";
++import { stream as completions } from "../src/api/openai-completions.ts";
++import { stream as responses } from "../src/api/openai-responses.ts";
++import { normalizeContext } from "../src/utils/transcript.ts";
++
++const args = { file_path: "notes.md", content: "x".repeat(2048) };
++const json = JSON.stringify(args);
++const fragments = json.match(/.{1,7}/gs) ?? [];
++const context = normalizeContext({ messages: [{ role: "user", content: "fixture", timestamp: 0 }] });
++const model = <A extends "anthropic-messages" | "openai-completions" | "openai-responses">(api: A): Model<A> => ({
++  id: "fixture", name: "fixture", api, provider: "fixture", baseUrl: "https://fixture.invalid/v1", reasoning: false,
++  input: ["text"], cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 }, contextWindow: 8192, maxTokens: 4096,
++});
++const response = (events: unknown[], named = false) => new Response(events.map(event =>
++  `${named ? `event: ${(event as { type: string }).type}\n` : ""}data: ${typeof event === "string" ? event : JSON.stringify(event)}\n\n`,
++).join(""), { headers: { "content-type": "text/event-stream" } });
++async function check(events: AsyncIterable<AssistantMessageEvent>) {
++  const partials: unknown[] = [];
++  let final: unknown;
++  for await (const event of events) {
++    if (event.type === "toolcall_delta" && event.delta.length > 0) {
++      const block = event.partial.content[event.contentIndex];
++      partials.push(block?.type === "toolCall" ? structuredClone(block.arguments) : undefined);
++    } else if (event.type === "toolcall_end") final = event.toolCall.arguments;
++    else if (event.type === "error") throw new Error(event.error.errorMessage);
++  }
++  expect(partials).toHaveLength(fragments.length);
++  expect(partials.every(value => JSON.stringify(value) === "{}")).toBe(true);
++  expect(final).toEqual(args);
++}
++describe("DSH deferred tool argument parsing", () => {
++  it("parses Anthropic client tool arguments at the terminal edge", async () => {
++    const events = [
++      { type: "message_start", message: { id: "msg_1", type: "message", role: "assistant", model: "fixture", content: [], stop_reason: null, usage: { input_tokens: 1, output_tokens: 0 } } },
++      { type: "content_block_start", index: 0, content_block: { type: "tool_use", id: "toolu_1", name: "write", input: {} } },
++      ...fragments.map(partial_json => ({ type: "content_block_delta", index: 0, delta: { type: "input_json_delta", partial_json } })),
++      { type: "content_block_stop", index: 0 },
++      { type: "message_delta", delta: { stop_reason: "tool_use" }, usage: { output_tokens: 1 } },
++      { type: "message_stop" },
++    ];
++    await check(anthropic(model("anthropic-messages"), context, { apiKey: "fixture-key", fetch: async () => response(events, true) }));
++  });
++  it("parses Completions client tool arguments at the terminal edge", async () => {
++    const events = [
++      { choices: [{ delta: { role: "assistant", tool_calls: [{ index: 0, id: "call_1", type: "function", function: { name: "write", arguments: "" } }] }, index: 0, finish_reason: null }] },
++      ...fragments.map(fragment => ({ choices: [{ delta: { tool_calls: [{ index: 0, function: { arguments: fragment } }] }, index: 0, finish_reason: null }] })),
++      { choices: [{ delta: {}, index: 0, finish_reason: "tool_calls" }], usage: { prompt_tokens: 1, completion_tokens: 1 } },
++      "[DONE]",
++    ];
++    await check(completions(model("openai-completions"), context, { apiKey: "fixture-key", fetch: async () => response(events) }));
++  });
++  it("parses Responses client tool arguments at the terminal edge", async () => {
++    const item = { type: "function_call", call_id: "call_1", id: "fc_1", name: "write" };
++    const events = [
++      { type: "response.created", response: { id: "resp_1" } },
++      { type: "response.output_item.added", output_index: 0, item: { ...item, arguments: "" } },
++      ...fragments.map(delta => ({ type: "response.function_call_arguments.delta", output_index: 0, delta })),
++      { type: "response.function_call_arguments.done", output_index: 0, arguments: json },
++      { type: "response.output_item.done", output_index: 0, item: { ...item, arguments: json } },
++      { type: "response.completed", response: { id: "resp_1", status: "completed", output: [], usage: { input_tokens: 1, output_tokens: 1, total_tokens: 2 } } },
++    ];
++    await check(responses(model("openai-responses"), context, { apiKey: "fixture-key", fetch: async () => response(events) }));
++  });
++});

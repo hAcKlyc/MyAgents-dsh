@@ -2,7 +2,7 @@
 type: technical-architecture
 status: implemented
 module: sessions-persistence-and-recovery
-updated: 2026-10-02
+updated: 2026-10-23
 decisions:
   - ../../adr/0003-product-session-event-predicate.md
   - ../../adr/0004-shared-backend-lock-and-immutable-rewind-generation.md
@@ -46,6 +46,12 @@ Workspace writes remain outside that transaction and use explicit prepare/commit
 does not make cross-file side effects atomic. Replacing this store with separate JSON files would
 require an equivalent durable transaction mechanism. An upstream implementation of these missing
 Product semantics is the removal condition, rather than retaining a parallel implementation.
+
+Each generation mounts `withStoredEventValidation(validateProductEventExtension)`, which uses the
+same plugin lifecycle as official JSONL. Its private service/tracker are never subclassed or exposed.
+Native known records remain subject to native validation; the trusted callback only recognizes and
+validates additional Product payloads after native envelope adoption. Required Product facts are not
+converted into ignorable plugin records. The current V4 layout remains readable without migration.
 
 `storage-contract.ts` composes the official `validateStoredEvents` with the exact Product
 required-event registry and each Product owner's payload validator. Known Product events are

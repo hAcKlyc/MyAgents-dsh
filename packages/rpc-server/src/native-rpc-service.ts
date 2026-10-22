@@ -1,3 +1,4 @@
+import { rethrowNativeChildControlError } from "./native-child-control-error.js";
 import { Service, symbols, type Context } from "@deepseek-ai/cordis";
 import type {} from "@deepseek-ai/dsh-subagent";
 import type {} from "@deepseek-ai/dsh-session-persistence";
@@ -594,7 +595,8 @@ export class NativeRpcServer extends Service {
         registered("subagent/list", this.peerValue.registerRequestHandler("subagent/list", async (_params, context) => {
           const root = this.productSessionValue.requireAgent();
           const entries = await compositionAuthority.context.subagents.listDescendants(root.id, context.signal);
-          return { items: entries.filter((entry) => entry.kind === "child").slice(0, 256).map((entry) => {
+          // External native executions have no local Session and are outside this profile's child controls.
+          return { items: entries.filter((entry) => entry.kind === "child" && entry.mode !== "external").slice(0, 256).map((entry) => {
             return {
               id: String(entry.id), parentId: String(entry.parentId), depth: entry.depth,
               mode: entry.mode, activity: entry.activity,
@@ -645,15 +647,14 @@ export class NativeRpcServer extends Service {
           if (child?.kind !== "child" || child.mode !== "continuable") {
             throw new ProtocolError("task_not_found", "continuable subagent is unavailable");
           }
-          context.commit();
-          await compositionAuthority.context.subagents.prompt({
+          await this.operationsValue.admitNativeChildPrompt(context.signal, () => context.commit(), () => compositionAuthority.context.subagents.prompt({
             requestId: params.clientMessageId as Parameters<typeof compositionAuthority.context.subagents.prompt>[0]["requestId"],
             parentSessionId: child.parentId,
             childSessionId: child.id,
             mode: "continuable",
             delivery: "queue",
             content: [{ type: "text", text: params.message }],
-          }, context.signal);
+          }, context.signal)).catch(rethrowNativeChildControlError);
           return { ok: true as const };
         })),
         registered("subagent/interrupt", this.peerValue.registerRequestHandler("subagent/interrupt", async (params, context) => {
@@ -664,7 +665,11 @@ export class NativeRpcServer extends Service {
             throw new ProtocolError("task_not_found", "continuable subagent is unavailable");
           }
           context.commit();
-          compositionAuthority.context.subagents.interruptByParent(child.id, child.parentId, "continuable");
+          try {
+            compositionAuthority.context.subagents.interruptByParent(child.id, child.parentId, "continuable");
+          } catch (error) {
+            rethrowNativeChildControlError(error);
+          }
           return { ok: true as const };
         })),
         registered("work/agent/resume", this.peerValue.registerRequestHandler("work/agent/resume", () => {

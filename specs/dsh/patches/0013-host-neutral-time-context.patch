@@ -1,5 +1,5 @@
 diff --git a/packages/context/time-context/src/index.ts b/packages/context/time-context/src/index.ts
-index 493630a8..5fedad78 100644
+index 493630a8118206fade80d7229dd049f2b83f12f9..5fedad78c7419625f82474434ff49a9a494be310 100644
 --- a/packages/context/time-context/src/index.ts
 +++ b/packages/context/time-context/src/index.ts
 @@ -110,7 +110,7 @@ function renderText(
@@ -11,56 +11,8 @@ index 493630a8..5fedad78 100644
      + `Elapsed since the preceding ${baseline}: ${elapsed}.`
  }
  
-diff --git a/packages/context/time-context/src/invariant.ts b/packages/context/time-context/src/invariant.ts
-index e9f362c7..2246397a 100644
---- a/packages/context/time-context/src/invariant.ts
-+++ b/packages/context/time-context/src/invariant.ts
-@@ -14,7 +14,7 @@ const SOURCE_NAME = 'time-context'
- const READING = new RegExp(
-   '^Time sampled while preparing turn (\\d+), step (\\d+): '
-   + '(\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(?:Z|[+-]\\d{2}:\\d{2})\\[[^\\]]+\\])\\n'
--  + '(Browser time zone for this request: .+)\\n'
-+  + '(?:(Browser time zone for this request: .+)\\n)?'
-   + 'Elapsed since the preceding (model-visible message|step context): '
-   + '(?:unavailable|(?:(?:\\d+d )?(?:\\d+h )?(?:\\d+m )?\\d+s))\\.$',
- )
-@@ -126,7 +126,10 @@ function validateReading(
-   const renderedBrowserContext = match[4]
-   const browserContext = deriveBrowserTimeZoneContext(requestMessages(history, turn))
-   const expectedBrowserContext = renderBrowserTimeZoneContext(browserContext)
--  if (renderedBrowserContext !== expectedBrowserContext) {
-+  // Old missing-zone rows remain valid history; new non-browser readings omit it.
-+  if (renderedBrowserContext === undefined
-+    ? browserContext.kind !== 'missing'
-+    : renderedBrowserContext !== expectedBrowserContext) {
-     fail('time-context browser-zone text does not match current-turn user messages')
-   }
-   const baseline = match[5]
-diff --git a/packages/context/time-context/tests/invariant.spec.ts b/packages/context/time-context/tests/invariant.spec.ts
-index cba6fc48..fbe9fdf0 100644
---- a/packages/context/time-context/tests/invariant.spec.ts
-+++ b/packages/context/time-context/tests/invariant.spec.ts
-@@ -347,3 +347,18 @@ describe('time-context invariants', () => {
-     }).not.toThrow()
-   })
- })
-+
-+
-+it('accepts new host-neutral readings and historical missing-zone readings', async () => {
-+  const ctx = await setup()
-+  const legacy = reading()
-+  const current = legacy.split('\n').filter(line => !line.startsWith('Browser time zone')).join('\n')
-+  expect(() => { ctx.emit('session/event', preparing(1, 1), event(current)) }).not.toThrow()
-+  expect(() => { ctx.emit('session/event', preparing(1, 1), event(legacy)) }).not.toThrow()
-+  expect(() => { ctx.emit('session/event', preparing(1, 1, 'Asia/Shanghai'), event(current)) }).toThrow(/browser-zone/)
-+  const mixed = preparing(1, 1, 'Asia/Shanghai')
-+  mixed.append('user/message', createUserMessage({ content: [{ type: 'text', text: 'steer' }],
-+    source: { kind: 'user', rpcId: 'steer', clientTimeZone: 'America/New_York' } as never,
-+  }), { surfaceOp: 'append' })
-+  expect(() => { ctx.emit('session/event', mixed, event(current)) }).toThrow(/browser-zone/)
-+})
 diff --git a/packages/context/time-context/tests/time-context.spec.ts b/packages/context/time-context/tests/time-context.spec.ts
-index 92499007..b81b651d 100644
+index 92499007d1abfad8b1e08dcc37d353a9229bee3d..ba0bed0227e9dcf3aa8b3cc98766761051b9ced8 100644
 --- a/packages/context/time-context/tests/time-context.spec.ts
 +++ b/packages/context/time-context/tests/time-context.spec.ts
 @@ -201,6 +201,8 @@ describe('durable step context', () => {
@@ -80,3 +32,31 @@ index 92499007..b81b651d 100644
        + 'Elapsed since the preceding step context: 1m 1s.',
      )
    })
+@@ -541,3 +542,27 @@ describe('real Loader export path', () => {
+     expect(contextTexts(session)[0]).toContain('Time sampled while preparing turn 1, step 1:')
+   })
+ })
++
++
++it('cold-restores historical unavailable-zone readings without rewriting them', async () => {
++  const legacy = 'Time sampled while preparing turn 1, step 1: 2026-07-14T00:00:00+00:00[UTC]\n'
++    + 'Browser time zone for this request: unavailable. Ask the user to clarify otherwise-unqualified dates and times.\n'
++    + 'Elapsed since the preceding model-visible message: unavailable.'
++  const source = Session.create(SessionId('legacy-time-source'))
++  openMessageTurn(source, 1)
++  source.append('user/message', createUserMessage({ content: [{ type: 'text', text: legacy }],
++    source: { kind: 'time-context', form: 'snapshot', sections: [{ name: 'time-context', text: legacy }] },
++  }), { surfaceOp: 'append' })
++  const resumed = Session.create(SessionId('legacy-time-resumed'), source.snapshotEvents())
++  const { ctx } = await mount({ refreshIntervalMs: 0 })
++  vi.setSystemTime(BASE + 61_000)
++  await fire(ctx, sessionAgent(resumed), 1, 2)
++  expect(contextTexts(resumed)[0]).toBe(legacy)
++  expect(contextTexts(resumed)[1]).not.toContain('Browser time zone')
++  expect(contextTexts(resumed)[1]).toContain('Elapsed since the preceding step context: 1m 1s.')
++  const reading = resumed.snapshotEvents().at(-1)
++  expect(reading?.type === 'user/message' && reading.data.source).toEqual({
++    kind: 'time-context', form: 'snapshot', sections: [{ name: 'time-context', text: contextTexts(resumed)[1] }],
++  })
++  await ctx.fiber.dispose()
++})

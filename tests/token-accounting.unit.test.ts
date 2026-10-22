@@ -1,8 +1,9 @@
 import { CompactionId } from "@deepseek-ai/dsh-compaction";
 import { MessageId, freezeMessage, type TokenUsage } from "@deepseek-ai/dsh-llm";
 import { RetryId } from "@deepseek-ai/dsh-llm-retry";
-import { Session, SessionId, SessionSeq } from "@deepseek-ai/dsh-session";
+import { Session, SessionId, SessionSeq, type SessionEvent } from "@deepseek-ai/dsh-session";
 import {
+  deriveSummaryTokenUsage,
   deriveCompletedSessionTokenUsage,
   deriveCompletedTurnTokenUsage,
   deriveAccruedTurnTokenUsage,
@@ -87,4 +88,17 @@ describe("provider token accounting", () => {
     expect(exactReportedUsage({ inputTokens: 7, outputTokens: 2, cacheReadTokens: 0, cacheWriteTokens: 0, totalTokens: 20 })).toBeUndefined();
     expect(exactReportedUsage({ inputTokens: Number.MAX_SAFE_INTEGER, outputTokens: 1, cacheReadTokens: 0, cacheWriteTokens: 0 })).toBeUndefined();
   });
+});
+
+it.each([undefined, 1, 2, 0, 3, 1.5, Number.NaN])("validates restored summary call provenance %s without multiplying aggregated usage", (calls) => {
+  const event: SessionEvent<"compaction/summary"> = { type: "compaction/summary", seq: SessionSeq(0), time: 1, data: {
+    compactionId: CompactionId("summary-provenance"), provider: "fixture-summary", model: "summary-model",
+    summary: [{ type: "text", text: "checkpoint" }], rawOutput: [{ type: "text", text: "checkpoint" }],
+    llmStreamCall: true, ...(calls === undefined ? {} : { llmStreamCallCount: calls }),
+    shadowedRange: { start: SessionSeq(0), end: SessionSeq(1) }, shadowedSeqs: [SessionSeq(0)], shadowedTokenCount: 10,
+    usage: { inputTokens: 100, outputTokens: 10, cacheReadTokens: 20, cacheWriteTokens: 5, totalTokens: 135 },
+  } };
+  const result = deriveSummaryTokenUsage([event]);
+  if (calls === undefined || calls === 1 || calls === 2) expect(result?.totalTokens).toBe(135);
+  else expect(result).toBeUndefined();
 });

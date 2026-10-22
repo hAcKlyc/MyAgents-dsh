@@ -22,6 +22,7 @@ import * as SessionCheckpointPolicy from "@deepseek-ai/dsh-session-checkpoint-po
 import * as SessionStats from "@deepseek-ai/dsh-session-stats";
 import * as SessionTurnOutline from "@deepseek-ai/dsh-session-turn-outline";
 import { SessionId, SessionStore, type Session } from "@deepseek-ai/dsh-session";
+import { WorkingDirectoryService } from "@deepseek-ai/dsh-working-directory";
 import * as RepeatToolReminder from "@deepseek-ai/dsh-repeat-tool-reminder";
 import * as TimeContext from "@deepseek-ai/dsh-time-context";
 import { LocalJobRegistry } from "@deepseek-ai/dsh-jobs-local";
@@ -1262,11 +1263,13 @@ export const installCanonicalToolPlane = async (
     fibers.push(await root.plugin(SandboxPolicyService, { mode: "workspace-write" }));
     fibers.push(await root.plugin(LocalSandboxProvider));
     fibers.push(await root.plugin(LocalWorkspaceFileSystem, { platform }));
+    fibers.push(await root.plugin(WorkingDirectoryService));
     // Use the native search spill service; its locators are ordinary absolute
     // files readable through the existing Read/sandbox authorization path.
     fibers.push(await root.plugin(LocalSpillStore, { root: platform.normalizeAbsolutePath(`${temporaryRoot}/search-output`) }));
     fibers.push(await root.plugin(AgentInstructions, {
       candidateSelection: "first",
+      globalInstructionRoots: ["dsh"],
       fileTouchToolNames: ["read", "read_image", "write", "edit"],
       instructionFileCandidates: ["CLAUDE.md", "AGENTS.override.md", "AGENTS.md"],
       localInstructionFileCandidates: [],
@@ -1325,12 +1328,16 @@ export const installCanonicalToolPlane = async (
     // Native runtime reads Host-owned limits at each delegation/admission.
     // Construct its public service with read-only config references so updates
     // do not restart it and discard live children.
-    fibers.push(await root.plugin(function HostConfiguredSubagentRuntime(ctx: Context) {
+    const HostConfiguredSubagentRuntime = function (ctx: Context) {
       return new SubagentRuntime(ctx, {
         maxDepth: { get: () => authority.hostModelAuthority?.collaborationConfig()?.maxDepth ?? 2 },
         maxActiveSubagents: { get: () => authority.hostModelAuthority?.collaborationConfig()?.maxActiveChildren ?? 32 },
       });
-    }));
+    };
+    // Constructing the service with live Host config still requires its native
+    // dependency scope; service availability alone does not grant plugin access.
+    HostConfiguredSubagentRuntime.inject = SubagentRuntime.inject;
+    fibers.push(await root.plugin(HostConfiguredSubagentRuntime));
     fibers.push(await root.plugin(SubagentSpawnInProcess, { providerName: "native-spawn" }));
     fibers.push(await root.plugin(SubagentForkInProcess, { providerName: "native-fork" }));
     fibers.push(await root.plugin(SkillRegistry));
@@ -1668,10 +1675,10 @@ export const installCanonicalToolPlane = async (
     fibers.push(await root.plugin(ToolJobs, { completionDelivery: "quiet" }));
 
     fibers.push(await root.plugin(ToolSubagent, {
-      provider: "native-spawn", toolName: "subagent", backgroundMode: "continuable",
+      provider: "native-spawn", toolName: "subagent",
     }));
     fibers.push(await root.plugin(ToolSubagent, {
-      provider: "native-fork", toolName: "fork_agent", backgroundMode: "continuable",
+      provider: "native-fork", toolName: "fork_agent",
     }));
     fibers.push(await root.plugin(ToolSubagentControl));
     fibers.push(await root.plugin(ToolSubagentList));
@@ -2582,7 +2589,8 @@ export const composeDshRootServices = async (
           return root.productComponents.captureOperationBirth(params, birth);
         },
       }),
-      drainOwnedWork: () => Promise.resolve(),
+      waitOwnedWork: (agent) => root.subagents.waitForChildren(agent),
+      drainOwnedWork: (agent) => root.subagents.drainDescendants([agent]),
       inputAuthority: Object.freeze({
         prepare: async (
           input: MethodParams<"turn/start">["input"],

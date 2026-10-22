@@ -1,8 +1,8 @@
 diff --git a/packages/ai/src/api/anthropic-messages.ts b/packages/ai/src/api/anthropic-messages.ts
-index f25b2b11d26fd1cbfd1d822aea91875cff03b00d..53c259d17d243c473ff406fbfe585ef702ebbbc1 100644
+index 452a3ccd03892e33b562997e0b1de69a61d4d94a..a7b8fa1c2a654353d2cae705ecbdac0aa54aa621 100644
 --- a/packages/ai/src/api/anthropic-messages.ts
 +++ b/packages/ai/src/api/anthropic-messages.ts
-@@ -20,6 +20,8 @@ import type {
+@@ -27,6 +27,8 @@ import type {
  	Model,
  	ProviderEnv,
  	ProviderHeaders,
@@ -11,7 +11,7 @@ index f25b2b11d26fd1cbfd1d822aea91875cff03b00d..53c259d17d243c473ff406fbfe585ef7
  	SimpleStreamOptions,
  	StopReason,
  	StreamFunction,
-@@ -337,6 +339,65 @@ const ANTHROPIC_MESSAGE_EVENTS: ReadonlySet<string> = new Set([
+@@ -397,6 +399,65 @@ const ANTHROPIC_MESSAGE_EVENTS: ReadonlySet<string> = new Set([
  	"content_block_stop",
  ]);
  
@@ -77,7 +77,7 @@ index f25b2b11d26fd1cbfd1d822aea91875cff03b00d..53c259d17d243c473ff406fbfe585ef7
  function flushSseEvent(state: SseDecoderState): ServerSentEvent | null {
  	if (!state.event && state.data.length === 0) {
  		return null;
-@@ -596,7 +657,9 @@ export const stream: StreamFunction<"anthropic-messages", AnthropicOptions> = (
+@@ -658,7 +719,9 @@ export const stream: StreamFunction<"anthropic-messages", AnthropicOptions> = (
  			stream.push({ type: "start", partial: output });
  
  			type Block = (ThinkingContent | TextContent | (ToolCall & { partialJson: string })) & { index: number };
@@ -87,8 +87,8 @@ index f25b2b11d26fd1cbfd1d822aea91875cff03b00d..53c259d17d243c473ff406fbfe585ef7
 +			const providerCallIds = new Set<string>();
  
  			for await (const event of iterateAnthropicEvents(response, options?.signal)) {
- 				if (event.type === "message_start") {
-@@ -670,6 +733,43 @@ export const stream: StreamFunction<"anthropic-messages", AnthropicOptions> = (
+ 				await options?.onProviderStreamEvent?.(event, model);
+@@ -733,6 +796,43 @@ export const stream: StreamFunction<"anthropic-messages", AnthropicOptions> = (
  						};
  						output.content.push(block);
  						stream.push({ type: "toolcall_start", contentIndex: output.content.length - 1, partial: output });
@@ -132,7 +132,7 @@ index f25b2b11d26fd1cbfd1d822aea91875cff03b00d..53c259d17d243c473ff406fbfe585ef7
  					}
  				} else if (event.type === "content_block_delta") {
  					if (event.delta.type === "text_delta") {
-@@ -708,6 +808,10 @@ export const stream: StreamFunction<"anthropic-messages", AnthropicOptions> = (
+@@ -771,6 +871,10 @@ export const stream: StreamFunction<"anthropic-messages", AnthropicOptions> = (
  								delta: event.delta.partial_json,
  								partial: output,
  							});
@@ -143,7 +143,7 @@ index f25b2b11d26fd1cbfd1d822aea91875cff03b00d..53c259d17d243c473ff406fbfe585ef7
  						}
  					} else if (event.delta.type === "signature_delta") {
  						const index = blocks.findIndex((b) => b.index === event.index);
-@@ -747,6 +851,20 @@ export const stream: StreamFunction<"anthropic-messages", AnthropicOptions> = (
+@@ -810,6 +914,20 @@ export const stream: StreamFunction<"anthropic-messages", AnthropicOptions> = (
  								toolCall: block,
  								partial: output,
  							});
@@ -164,7 +164,7 @@ index f25b2b11d26fd1cbfd1d822aea91875cff03b00d..53c259d17d243c473ff406fbfe585ef7
  						}
  					}
  				} else if (event.type === "message_delta") {
-@@ -1359,6 +1477,8 @@ function convertMessages(
+@@ -1443,6 +1561,8 @@ function convertMessages(
  						name: isOAuthToken ? toClaudeCodeName(block.name) : block.name,
  						input: block.arguments ?? {},
  					});
@@ -174,10 +174,10 @@ index f25b2b11d26fd1cbfd1d822aea91875cff03b00d..53c259d17d243c473ff406fbfe585ef7
  			}
  			if (blocks.length === 0) continue;
 diff --git a/packages/ai/src/api/mistral-conversations.ts b/packages/ai/src/api/mistral-conversations.ts
-index 837d1ec115a3d5e1a4b22ccc637db8669892a669..7b10334405c7944aa0d003c2e788cff427ad6c8b 100644
+index de7552ad64206e3495d054ee7f998a99f7933179..bf8626d1c3649475c98c29f897fdbc9951f65af8 100644
 --- a/packages/ai/src/api/mistral-conversations.ts
 +++ b/packages/ai/src/api/mistral-conversations.ts
-@@ -832,6 +832,7 @@ function toChatMessages(messages: Message[], supportsImages: boolean): MistralCh
+@@ -843,6 +843,7 @@ function toChatMessages(messages: Message[], supportsImages: boolean): MistralCh
  					}
  					continue;
  				}
@@ -186,7 +186,7 @@ index 837d1ec115a3d5e1a4b22ccc637db8669892a669..7b10334405c7944aa0d003c2e788cff4
  					id: block.id,
  					type: "function",
 diff --git a/packages/ai/src/providers/faux.ts b/packages/ai/src/providers/faux.ts
-index a38c18774e53155641a75bbda7233d5e93216680..dec501bed284aee9c9c48999b64fa3ea19ca6fb2 100644
+index c3771cc2c3e0662d19abab5c7e7af374011c4acb..403e19550ac9024483dc10ca3db80f1b535a0f82 100644
 --- a/packages/ai/src/providers/faux.ts
 +++ b/packages/ai/src/providers/faux.ts
 @@ -1,5 +1,6 @@
@@ -217,7 +217,7 @@ index a38c18774e53155641a75bbda7233d5e93216680..dec501bed284aee9c9c48999b64fa3ea
  		})
  		.join("\n");
  }
-@@ -405,6 +409,13 @@ async function streamWithDeltas(
+@@ -422,6 +426,13 @@ async function streamWithDeltas(
  			continue;
  		}
  
@@ -232,10 +232,10 @@ index a38c18774e53155641a75bbda7233d5e93216680..dec501bed284aee9c9c48999b64fa3ea
  		stream.push({ type: "toolcall_start", contentIndex: index, partial: { ...partial } });
  		for (const chunk of splitStringByTokenSize(JSON.stringify(block.arguments), minTokenSize, maxTokenSize)) {
 diff --git a/packages/ai/src/types.ts b/packages/ai/src/types.ts
-index 7646a9c05c68991f88b63eba46285f5493a4f053..0ac57ef6bb6ba637b2ba191f275c1d88fcd466ce 100644
+index 4b5f2038a1f3d5f01c0d1f533007dee3bc460d5b..e84cf54f4b746be3fa4926df069fdeeeb5d270a8 100644
 --- a/packages/ai/src/types.ts
 +++ b/packages/ai/src/types.ts
-@@ -393,6 +393,32 @@ export interface ToolCall {
+@@ -430,6 +430,32 @@ export interface ToolCall {
  	namespace?: string;
  }
  
@@ -268,7 +268,7 @@ index 7646a9c05c68991f88b63eba46285f5493a4f053..0ac57ef6bb6ba637b2ba191f275c1d88
  export interface Usage {
  	input: number;
  	output: number;
-@@ -514,7 +540,7 @@ export interface UserMessage {
+@@ -551,7 +577,7 @@ export interface UserMessage {
  
  export interface AssistantMessage {
  	role: "assistant";
@@ -277,7 +277,7 @@ index 7646a9c05c68991f88b63eba46285f5493a4f053..0ac57ef6bb6ba637b2ba191f275c1d88
  	api: Api;
  	provider: ProviderId;
  	model: string;
-@@ -660,6 +686,13 @@ export type AssistantMessageEvent =
+@@ -796,6 +822,13 @@ export type AssistantMessageEvent =
  	| { type: "toolcall_start"; contentIndex: number; partial: AssistantMessage }
  	| { type: "toolcall_delta"; contentIndex: number; delta: string; partial: AssistantMessage }
  	| { type: "toolcall_end"; contentIndex: number; toolCall: ToolCall; partial: AssistantMessage }
@@ -292,7 +292,7 @@ index 7646a9c05c68991f88b63eba46285f5493a4f053..0ac57ef6bb6ba637b2ba191f275c1d88
  			type: "done";
  			reason: Extract<StopReason, "stop" | "length" | "toolUse" | "deferred">;
 diff --git a/packages/ai/src/utils/estimate.ts b/packages/ai/src/utils/estimate.ts
-index 165b4d4d2f90a9e26d6db61eafcbb7957fde15c0..603f5b13e34b228dca6a514afab90e252df63de3 100644
+index 21c59db00df4b62c2ea9c266c8b259cf1ca82583..3b6493df781e8a490938abff788272eeb2b7274a 100644
 --- a/packages/ai/src/utils/estimate.ts
 +++ b/packages/ai/src/utils/estimate.ts
 @@ -61,8 +61,10 @@ export function estimateMessageTokens(message: Message): number {
@@ -321,15 +321,15 @@ index 5798ed346fb36fe7c1376a8b6c75e6ba794e12c8..14848adfdc6663d0c70bff507dafad24
  /** Extract and join text from message content. */
  export function contentText(content: string | readonly Content[], separator = "\n"): string {
 diff --git a/packages/ai/test/anthropic-sse-parsing.test.ts b/packages/ai/test/anthropic-sse-parsing.test.ts
-index 36de46d267ff1de7c66eba4d58529199ec8f0113..ea120a2e48641e40eb070478e1fbc9a5aa79726e 100644
+index 66f4b319226064b72c3bbcf0869e31ed9dee17ee..96f7b0cc9c314c46ea6e1c0468dec907c90fbb63 100644
 --- a/packages/ai/test/anthropic-sse-parsing.test.ts
 +++ b/packages/ai/test/anthropic-sse-parsing.test.ts
 @@ -4,7 +4,7 @@ import { describe, expect, it } from "vitest";
  import { stream as streamAnthropic } from "../src/api/anthropic-messages.ts";
  import { transformMessages } from "../src/api/transform-messages.ts";
  import { getModel, normalizeContext } from "../src/compat.ts";
--import type { Model, ToolCall } from "../src/types.ts";
-+import type { Context, Model, ProviderToolCall, ProviderToolResult, ToolCall } from "../src/types.ts";
+-import type { Api, Model, ToolCall } from "../src/types.ts";
++import type { Api, Context, Model, ProviderToolCall, ProviderToolResult, ToolCall } from "../src/types.ts";
  
  function createSseResponse(events: Array<{ event: string; data: string }>): Response {
  	const body = events.map(({ event, data }) => `event: ${event}\ndata: ${data}\n`).join("\n");
@@ -352,7 +352,7 @@ index 36de46d267ff1de7c66eba4d58529199ec8f0113..ea120a2e48641e40eb070478e1fbc9a5
  			},
  		},
  	} as unknown as Anthropic;
-@@ -167,6 +168,208 @@ describe("Anthropic raw SSE parsing", () => {
+@@ -196,6 +197,208 @@ describe("Anthropic raw SSE parsing", () => {
  		expect(result.usage.cost.output).toBeCloseTo(0.0001, 10);
  	});
  

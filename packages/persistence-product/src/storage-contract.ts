@@ -43,6 +43,13 @@ const validateProductPayload = (event: SessionEvent): void => {
   }
 };
 
+/** Trusted JSONL extension callback; native envelope/freezing and native vocabulary remain upstream. */
+export const validateProductEventExtension = (event: SessionEvent): boolean => {
+  if (!productTypes.has(event.type)) return false;
+  validateProductPayload(event);
+  return true;
+};
+
 /** Validate metadata through the public native Session owner; the physical cut remains separate. */
 export const materializeProductSessionHeader = (
   header: SessionHeader,

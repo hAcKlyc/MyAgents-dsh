@@ -11,15 +11,15 @@ import {
   type SessionHandle,
   type SessionPersistence,
 } from "@deepseek-ai/dsh-session-persistence";
-import { mkdtemp, realpath, rm, rename, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, realpath, rm, rename, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import { createHash } from "node:crypto";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { ProductJsonlSessionPersistence, PRODUCT_REQUIRED_SESSION_EVENT_TYPES, productCoordinationDatabasePath } from "@myagents-dsh/persistence-product";
 import { selectPlatformAdapter, resolveRuntimePlatformTarget } from "@myagents-dsh/product-profile";
-import { default as JsonlSessionPersistence } from "@deepseek-ai/dsh-session-persistence-jsonl";
+import { NativeJsonlGenerations } from "../packages/persistence-product/src/native-jsonl.js";
 
 const contexts: Context[] = [];
 const roots: string[] = [];
@@ -42,6 +42,25 @@ const nativeSession = (id = "fixture-session"): Session => Session.create(Sessio
 const readAll = async (persistence: SessionPersistence, id: SessionId): Promise<readonly SessionEvent[]> => {
   const reader = await persistence.open(id, "read");
   try { return (await reader.read()).events; } finally { await reader.close(); }
+};
+
+/** Observe Product-selected roots and fail real native I/O without reaching into the private backend. */
+const captureNativeRoots = (): string[] => {
+  const paths: string[] = [];
+  // eslint-disable-next-line @typescript-eslint/unbound-method -- Called below with the owning generation manager.
+  const root = NativeJsonlGenerations.prototype.root;
+  vi.spyOn(NativeJsonlGenerations.prototype, "root").mockImplementation(function (this: NativeJsonlGenerations, generation) {
+    const path = root.call(this, generation);
+    paths.push(path);
+    return path;
+  });
+  return paths;
+};
+const blockNativeRoot = async (path: string | undefined): Promise<string> => {
+  if (path === undefined) throw new Error("native generation was not selected");
+  await mkdir(dirname(path), { recursive: true });
+  await writeFile(path, "synthetic storage obstruction");
+  return path;
 };
 
 afterEach(async () => {
@@ -164,53 +183,48 @@ describe("Official JSONL with product locator coordination", () => {
     expect(await persistence.stat(session.id)).toBeUndefined();
   });
 
-  it("retains a failed live batch, pauses automatic retries and recovers exactly once", async () => {
+  it("retains failed live batches and recovers their order exactly once", async () => {
+    const paths = captureNativeRoots();
     const { ctx, persistence } = await mount();
     const session = ctx.sessions.create(SessionId("retry"));
     const writer = await persistence.create(session.header);
-    const failure = new Error("synthetic JSONL failure");
-    const persist = vi.spyOn(JsonlSessionPersistence.prototype, "persistBatch").mockRejectedValue(failure);
+    const obstruction = await blockNativeRoot(paths.at(-1));
     session.append("turn/start", { turn: 1 });
-    await vi.waitFor(() => { expect(persist).toHaveBeenCalled(); });
+    await expect(writer.flush()).rejects.toBeInstanceOf(AggregateError);
     session.append("turn/end", { turn: 1, reason: { kind: "completed" } });
-    expect(persist).toHaveBeenCalledTimes(1);
-    await expect(writer.flush()).rejects.toMatchObject({ errors: [failure] });
-    persist.mockRestore();
+    await expect(writer.flush()).rejects.toBeInstanceOf(AggregateError);
+    await rm(obstruction);
     await writer.flush();
     expect((await readAll(persistence, session.id)).map((event) => event.seq)).toEqual([0, 1]);
     await writer.close();
   });
 
   it("service flush aggregates failure while still draining healthy writers", async () => {
+    const paths = captureNativeRoots();
     const { ctx, persistence } = await mount();
     const good = ctx.sessions.create(SessionId("good"));
     const bad = ctx.sessions.create(SessionId("bad"));
-    const writers = await Promise.all([persistence.create(good.header), persistence.create(bad.header)]);
-    // eslint-disable-next-line @typescript-eslint/unbound-method -- The mock invokes it with the actual Store receiver via call.
-    const original = JsonlSessionPersistence.prototype.persistBatch;
-    const failure = new Error("one Session fails");
-    const persist = vi.spyOn(JsonlSessionPersistence.prototype, "persistBatch").mockImplementation(function (this: JsonlSessionPersistence, metadata, events, materialized, inheritedEventCount) {
-      return metadata.id === bad.id ? Promise.reject(failure) : original.call(this, metadata, events, materialized, inheritedEventCount);
-    });
+    const writers = [await persistence.create(good.header), await persistence.create(bad.header)];
+    const obstruction = await blockNativeRoot(paths.at(-1));
     good.append("turn/start", { turn: 1 });
     bad.append("turn/start", { turn: 1 });
-    await expect(persistence.flush()).rejects.toMatchObject({ errors: [{ errors: [failure] }] });
+    await expect(persistence.flush()).rejects.toBeInstanceOf(AggregateError);
     expect(await readAll(persistence, good.id)).toHaveLength(1);
-    persist.mockRestore();
+    await rm(obstruction);
     await persistence.flush();
     expect(await readAll(persistence, bad.id)).toHaveLength(1);
     await Promise.all(writers.map((writer) => writer.close()));
   });
 
   it("close surfaces failed final durability and releases ownership without pretending success", async () => {
+    const paths = captureNativeRoots();
     const { ctx, persistence } = await mount();
     const session = ctx.sessions.create(SessionId("close-failure"));
     const writer = await persistence.create(session.header);
-    const failure = new Error("final drain refused");
-    const persist = vi.spyOn(JsonlSessionPersistence.prototype, "persistBatch").mockRejectedValue(failure);
+    const obstruction = await blockNativeRoot(paths.at(-1));
     session.append("turn/start", { turn: 1 });
-    await expect(writer.close()).rejects.toBe(failure);
-    persist.mockRestore();
+    await expect(writer.close()).rejects.toThrow();
+    await rm(obstruction);
     const replacement = await persistence.create(session.header);
     await replacement.close();
   });

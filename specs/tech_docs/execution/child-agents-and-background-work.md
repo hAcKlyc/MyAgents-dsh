@@ -2,7 +2,7 @@
 type: technical-architecture
 status: implemented
 module: child-agents-and-background-work
-updated: 2026-10-02
+updated: 2026-10-23
 patch_authority: ../../dsh/seam-decisions-v1.json
 ---
 
@@ -10,11 +10,11 @@ patch_authority: ../../dsh/seam-decisions-v1.json
 
 ## Native child execution
 
-The sole official composition installs DSH's model-facing `subagent`, `fork_agent`, `send_message`, and `interrupt_agent`. `list_agents` also uses the official public plugin; 0.2.0-rc.2 fixes its export, so the former distribution adapter is removed. DSH's SubagentRuntime, spawn/fork providers, Session, Inbox, and Jobs own child and background execution. The former ProductWork lifecycle and role compiler have been removed.
+The sole official composition installs DSH's model-facing `subagent`, `fork_agent`, `send_message`, and `interrupt_agent`. `list_agents` also uses the official public plugin. DSH's SubagentRuntime, spawn/fork providers, Session, Inbox, and Jobs own child and background execution. The former ProductWork lifecycle and role compiler have been removed.
 
-`subagent` creates a fresh child Session; `fork_agent` inherits the parent's completed history. Each supports the official one-shot or continuable mode. A one-shot child returns a result to its caller and cannot subsequently be assigned shared work by ID. A continuable child has a stable Session ID, accepts native follow-up messages, and may be interrupted during its current turn. Interrupting a turn does not close the child or its descendants. The model-visible schemas and cancellation semantics are those of the locked DSH packages; the Host does not add ProductWork task IDs, role names, or subtree-stop semantics.
+`subagent` creates a fresh child Session; `fork_agent` inherits the parent's completed history. Both now use the official unified asynchronous activation path: the tool immediately returns a stable child Session ID, and DSH delivers its final result to the parent after cleanup. Local children accept native follow-up messages and may be interrupted during their current turn. The removed foreground/background argument no longer selects a separate execution path. Interrupting a turn does not close the child or its descendants. The model-visible schemas and cancellation semantics are those of the locked DSH packages; the Host does not add ProductWork task IDs, role names, or subtree-stop semantics.
 
-The Host's admitted collaboration config supplies the native runtime's `maxDepth` and `maxActiveSubagents` through read-only config references. Defaults are depth 2 (root 0, child 1, grandchild 2) and 32 active continuable children. The same service remains live across configuration changes; no child lifecycle is restarted or duplicated. Model admission rollback restores the prior effective limits. Retained-child capacity and legacy role/message settings are not native runtime capacity controls.
+The Host's admitted collaboration config supplies the native runtime's `maxDepth` and `maxActiveSubagents` through read-only config references. The composition plugin forwards `SubagentRuntime.inject` so its native manager retains access to the working-directory service; installing that service at the root alone does not grant a plugin dependency scope. Defaults are depth 2 (root 0, child 1, grandchild 2) and 32 active native children. The same service remains live across configuration changes; no child lifecycle is restarted or duplicated. Model admission rollback restores the prior effective limits. Retained-child capacity and legacy role/message settings are not native runtime capacity controls.
 
 The Host's model, approval, sandbox, workspace, permission, and execution-environment policy still applies to native children. The child publication callback inherits its parent's effective approval and sandbox mode before model execution.
 
@@ -30,11 +30,15 @@ The Task tools are separate from child lifecycle. Each Agent has a personal Task
 
 `subagent/list` reads DSH's persisted parent catalogs, including inactive children. `subagent/tasks` reads an Agent's personal list or the root shared list from the live Session or persisted owned event suffix; a fork's inherited parent events never become its personal tasks. `subagent/prompt` and `subagent/interrupt` address an exact continuable child through DSH's public control service. The MyAgents client projects this catalog as an Agent tree and presents the task lists separately. It does not infer native identity from historical ProductWork IDs or portray a turn interrupt as subtree disposal.
 
+Product operation completion joins native `waitForChildren` outside admission serialization, then validates the exact root generation, idle state and unchanged Session sequence. This lets child reports admit and finish a parent turn before a Product terminal is committed. A lifecycle join failure fences recovery and uses the existing primary settlement-failure signal to end the Host wait; ordinary child success/failure comes from native turn-end facts. Each quiescent mutation obtains a fresh, abortable native observation. Host child prompt admission shares the operation serialization and invalidates previous observations, including parked-child wakes that do not change the root log. Primary retirement drains native descendants and waits for the existing join before releasing the root.
+
 DSH Jobs remain the owner of Shell background processes and their `job_output`, `job_list`, and `job_kill` tools. They are distinct from delegated Agent Sessions.
 
 ## Historical Session compatibility
 
 Historical `myagents/work/*` events remain readable in persisted Sessions. The read-only decoder validates their original payloads and message provenance; it does not create, resume, stop or message legacy children. Those records are not migrated into the native catalog. The former `work/*` RPC method names remain reserved in protocol v6 and return `method_unavailable`; Hosts use `subagent/*` controls. Historical role descriptors have no current compiler.
+
+Released native child descriptor v5 is read through the native descriptor owner. Parent/default settlement children preserve their ID, lineage, route, tool restrictions and literal persona choice on cold continuation, without rewriting the log. An external settlement owner is explicitly read-only and fails before materialization or message insertion; the Host receives the bounded `subagent_not_resumable` refusal rather than private native diagnostics. New descriptors use upstream v3. A previous distribution that only understands v5 cannot continue a newly written v3 child; this candidate does not promise automatic downgrade compatibility.
 
 ## Implementation map
 

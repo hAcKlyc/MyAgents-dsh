@@ -557,6 +557,29 @@ const rawResponse = async (
 };
 
 describe("native RPC Cordis service", () => {
+  it("lists local child Sessions while excluding native external executions", async () => {
+    const harness = await createHarness();
+    try {
+      harness.root.provide("subagents", { listDescendants: () => Promise.resolve([
+        { kind: "child", id: "legacy-child", parentId: "catalog-root", depth: 1,
+          mode: "continuable", activity: "inactive", label: "Released read-only child", hasChildren: false },
+        { kind: "child", id: "external-execution", parentId: "catalog-root", depth: 1,
+          mode: "external", activity: "inactive", hasChildren: false },
+        { kind: "diagnostic", id: "unreadable", parentId: "catalog-root", depth: 1, reason: "unavailable" },
+      ]) } as never);
+      await harness.client.initialize(initializeParams());
+      await vi.waitFor(() => expect(harness.server.phase).toBe("await_initialized"));
+      await harness.client.initialized();
+      await harness.client.sessionCreate(sessionParams("catalog-root", "catalog-create"));
+      await expect(harness.client.subagentList({})).resolves.toEqual({ items: [
+        { id: "legacy-child", parentId: "catalog-root", depth: 1, mode: "continuable",
+          activity: "inactive", label: "Released read-only child" },
+      ] });
+    } finally {
+      await harness.close();
+    }
+  });
+
   it("registers every advertised handler and routes catalog and turn reads through existing owners", async () => {
     const harness = await createHarness();
     const within = async <Value>(label: string, operation: Promise<Value>): Promise<Value> => {

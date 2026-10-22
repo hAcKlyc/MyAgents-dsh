@@ -2,7 +2,7 @@
 type: technical-architecture
 status: implemented
 module: tool-runtime-and-policy
-updated: 2026-10-02
+updated: 2026-10-23
 ---
 
 # Tool runtime and policy
@@ -119,7 +119,7 @@ opened-root/file identity revalidation. `ls` explains whether entry count or byt
 
 Read/Write/Edit now invoke the official `tool-fs` executors through public definition factories.
 MyAgents retains internal policy identities, permission/deadline admission, durable read receipts and checkpoint settlement.
-There is one DSH tool execution and one filesystem provider; no internal second tool dispatch.
+There is one DSH tool execution and one filesystem provider; no internal second tool dispatch. Native executors resolve through the composed working-directory service and return canonical absolute result paths, matching the target pinned by Product authorization. The profile does not expose directory switching.
 The official reader owns line windows and streaming; image reads use its actual calling-model
 capability gate and return image content blocks through the existing Host attachment request scope.
 PNG/JPEG/WebP/GIF and extension-less normalized images are supported when the route accepts images.
