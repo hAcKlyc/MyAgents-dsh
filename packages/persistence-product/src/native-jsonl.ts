@@ -1,18 +1,14 @@
 import { Context } from "@deepseek-ai/cordis";
-import { default as JsonlSessionPersistence } from "@deepseek-ai/dsh-session-persistence-jsonl";
+import { withStoredEventValidation } from "@deepseek-ai/dsh-session-persistence-jsonl";
 import type { Session, SessionEvent, SessionHeader, SessionId, SessionLogOffset } from "@deepseek-ai/dsh-session";
 import { SessionPersistenceCorruptionError, type SessionInspection, type SessionPersistence } from "@deepseek-ai/dsh-session-persistence";
 import { resolve } from "node:path";
 import { rm } from "node:fs/promises";
 import { canonicalSessionReadData } from "@myagents-dsh/protocol";
-import { materializeProductSessionHeader, validateProductStoredEvents } from "./storage-contract.js";
+import { materializeProductSessionHeader, validateProductEventExtension, validateProductStoredEvents } from "./storage-contract.js";
 
-/** Only recognition/payload policy is extended; physical storage and handles remain upstream. */
-class ProductEventJsonlPersistence extends JsonlSessionPersistence {
-  protected override validateStoredEvents(meta: SessionHeader, events: SessionEvent[]): SessionEvent[] {
-    return validateProductStoredEvents(meta, events);
-  }
-}
+/** Keep the official provider's consumer-before-tracker teardown; only payload vocabulary is extended. */
+const ProductEventJsonlPersistence = withStoredEventValidation(validateProductEventExtension);
 
 /** Product locators select immutable generations, each encoded entirely by official JSONL. */
 export class NativeJsonlGenerations {

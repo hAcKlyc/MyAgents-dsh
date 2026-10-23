@@ -1,6 +1,6 @@
 # Official file tools with product mutation authority
 
-Current DSH `0.2.0-rc.2` disposition: retained as patch 0011; official file tools use guarded Product publication. The [seam registry](../dsh/seam-decisions-v1.json) owns exact current patch identity; dated evidence below is historical.
+Current DSH `0.2.1-rc.2` disposition: retained as patch 0011; official file tools use guarded Product publication. The [seam registry](../dsh/seam-decisions-v1.json) owns exact current patch identity; dated evidence below is historical.
 
 Accepted 2026-09-08 for UPG-W16.
 
@@ -36,3 +36,7 @@ An unsandboxed deployment can still reject a path through its product filesystem
 that structured error when no official sandbox policy exists; do not dereference an absent mode and
 replace the denial with a TypeError. The regression runs the stock Write executor against a denying
 product provider and verifies both the original error and unchanged bytes/checkpoint abort.
+
+## DSH 0.2.1-rc.2 refresh (2026-10-23)
+
+Disposition: rebase. Native enable/disable switches do not replace factories, exact stored-edit preparation or the post-staging publication guard. Factories retain the candidate's canonical `processPath` result metadata and current-directory service resolution. Product authorization pins that same resolved target before invoking the stock executor, and the existing checkpoint journal remains the only directory-creation owner. Native platform evidence must be rebuilt for the resulting artifact.

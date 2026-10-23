@@ -1182,7 +1182,19 @@
                                 "requiresToolResultName": {
                                   "type": "boolean"
                                 },
+                                "supportsAdditionalTools": {
+                                  "type": "boolean"
+                                },
                                 "supportsDeveloperRole": {
+                                  "type": "boolean"
+                                },
+                                "supportsMidConvoSystemMessages": {
+                                  "type": "boolean"
+                                },
+                                "supportsMidConvoToolAdditions": {
+                                  "type": "boolean"
+                                },
+                                "supportsMidConvoToolChanges": {
                                   "type": "boolean"
                                 },
                                 "supportsReasoningEffort": {
@@ -1195,6 +1207,9 @@
                                   "type": "boolean"
                                 },
                                 "supportsTemperature": {
+                                  "type": "boolean"
+                                },
+                                "supportsToolSearch": {
                                   "type": "boolean"
                                 },
                                 "supportsUsageInStreaming": {
@@ -1291,7 +1306,19 @@
                                 "requiresToolResultName": {
                                   "type": "boolean"
                                 },
+                                "supportsAdditionalTools": {
+                                  "type": "boolean"
+                                },
                                 "supportsDeveloperRole": {
+                                  "type": "boolean"
+                                },
+                                "supportsMidConvoSystemMessages": {
+                                  "type": "boolean"
+                                },
+                                "supportsMidConvoToolAdditions": {
+                                  "type": "boolean"
+                                },
+                                "supportsMidConvoToolChanges": {
                                   "type": "boolean"
                                 },
                                 "supportsReasoningEffort": {
@@ -1304,6 +1331,9 @@
                                   "type": "boolean"
                                 },
                                 "supportsTemperature": {
+                                  "type": "boolean"
+                                },
+                                "supportsToolSearch": {
                                   "type": "boolean"
                                 },
                                 "supportsUsageInStreaming": {
@@ -1400,7 +1430,19 @@
                                 "requiresToolResultName": {
                                   "type": "boolean"
                                 },
+                                "supportsAdditionalTools": {
+                                  "type": "boolean"
+                                },
                                 "supportsDeveloperRole": {
+                                  "type": "boolean"
+                                },
+                                "supportsMidConvoSystemMessages": {
+                                  "type": "boolean"
+                                },
+                                "supportsMidConvoToolAdditions": {
+                                  "type": "boolean"
+                                },
+                                "supportsMidConvoToolChanges": {
                                   "type": "boolean"
                                 },
                                 "supportsReasoningEffort": {
@@ -1413,6 +1455,9 @@
                                   "type": "boolean"
                                 },
                                 "supportsTemperature": {
+                                  "type": "boolean"
+                                },
+                                "supportsToolSearch": {
                                   "type": "boolean"
                                 },
                                 "supportsUsageInStreaming": {
@@ -1766,7 +1811,19 @@
                           "requiresToolResultName": {
                             "type": "boolean"
                           },
+                          "supportsAdditionalTools": {
+                            "type": "boolean"
+                          },
                           "supportsDeveloperRole": {
+                            "type": "boolean"
+                          },
+                          "supportsMidConvoSystemMessages": {
+                            "type": "boolean"
+                          },
+                          "supportsMidConvoToolAdditions": {
+                            "type": "boolean"
+                          },
+                          "supportsMidConvoToolChanges": {
                             "type": "boolean"
                           },
                           "supportsReasoningEffort": {
@@ -1779,6 +1836,9 @@
                             "type": "boolean"
                           },
                           "supportsTemperature": {
+                            "type": "boolean"
+                          },
+                          "supportsToolSearch": {
                             "type": "boolean"
                           },
                           "supportsUsageInStreaming": {
@@ -1875,7 +1935,19 @@
                           "requiresToolResultName": {
                             "type": "boolean"
                           },
+                          "supportsAdditionalTools": {
+                            "type": "boolean"
+                          },
                           "supportsDeveloperRole": {
+                            "type": "boolean"
+                          },
+                          "supportsMidConvoSystemMessages": {
+                            "type": "boolean"
+                          },
+                          "supportsMidConvoToolAdditions": {
+                            "type": "boolean"
+                          },
+                          "supportsMidConvoToolChanges": {
                             "type": "boolean"
                           },
                           "supportsReasoningEffort": {
@@ -1888,6 +1960,9 @@
                             "type": "boolean"
                           },
                           "supportsTemperature": {
+                            "type": "boolean"
+                          },
+                          "supportsToolSearch": {
                             "type": "boolean"
                           },
                           "supportsUsageInStreaming": {
@@ -1984,7 +2059,19 @@
                           "requiresToolResultName": {
                             "type": "boolean"
                           },
+                          "supportsAdditionalTools": {
+                            "type": "boolean"
+                          },
                           "supportsDeveloperRole": {
+                            "type": "boolean"
+                          },
+                          "supportsMidConvoSystemMessages": {
+                            "type": "boolean"
+                          },
+                          "supportsMidConvoToolAdditions": {
+                            "type": "boolean"
+                          },
+                          "supportsMidConvoToolChanges": {
                             "type": "boolean"
                           },
                           "supportsReasoningEffort": {
@@ -1997,6 +2084,9 @@
                             "type": "boolean"
                           },
                           "supportsTemperature": {
+                            "type": "boolean"
+                          },
+                          "supportsToolSearch": {
                             "type": "boolean"
                           },
                           "supportsUsageInStreaming": {
@@ -7951,7 +8041,7 @@
                 "type": "string"
               },
               "distributionVersion": {
-                "const": "0.1.18",
+                "const": "0.1.19",
                 "type": "string"
               },
               "name": {
@@ -7959,7 +8049,7 @@
                 "type": "string"
               },
               "version": {
-                "const": "0.2.0-rc.2.myagents.639ed0153972.56bce4eb7e07",
+                "const": "0.2.1-rc.2.myagents.687f282e8625.fd9ed793f1e9",
                 "type": "string"
               }
             },
@@ -7978,7 +8068,7 @@
             "type": "string"
           },
           "runtimeVersion": {
-            "const": "0.1.18",
+            "const": "0.1.19",
             "type": "string"
           },
           "schemaSha256": {
@@ -9343,7 +9433,19 @@
                                 "requiresToolResultName": {
                                   "type": "boolean"
                                 },
+                                "supportsAdditionalTools": {
+                                  "type": "boolean"
+                                },
                                 "supportsDeveloperRole": {
+                                  "type": "boolean"
+                                },
+                                "supportsMidConvoSystemMessages": {
+                                  "type": "boolean"
+                                },
+                                "supportsMidConvoToolAdditions": {
+                                  "type": "boolean"
+                                },
+                                "supportsMidConvoToolChanges": {
                                   "type": "boolean"
                                 },
                                 "supportsReasoningEffort": {
@@ -9356,6 +9458,9 @@
                                   "type": "boolean"
                                 },
                                 "supportsTemperature": {
+                                  "type": "boolean"
+                                },
+                                "supportsToolSearch": {
                                   "type": "boolean"
                                 },
                                 "supportsUsageInStreaming": {
@@ -9452,7 +9557,19 @@
                                 "requiresToolResultName": {
                                   "type": "boolean"
                                 },
+                                "supportsAdditionalTools": {
+                                  "type": "boolean"
+                                },
                                 "supportsDeveloperRole": {
+                                  "type": "boolean"
+                                },
+                                "supportsMidConvoSystemMessages": {
+                                  "type": "boolean"
+                                },
+                                "supportsMidConvoToolAdditions": {
+                                  "type": "boolean"
+                                },
+                                "supportsMidConvoToolChanges": {
                                   "type": "boolean"
                                 },
                                 "supportsReasoningEffort": {
@@ -9465,6 +9582,9 @@
                                   "type": "boolean"
                                 },
                                 "supportsTemperature": {
+                                  "type": "boolean"
+                                },
+                                "supportsToolSearch": {
                                   "type": "boolean"
                                 },
                                 "supportsUsageInStreaming": {
@@ -9561,7 +9681,19 @@
                                 "requiresToolResultName": {
                                   "type": "boolean"
                                 },
+                                "supportsAdditionalTools": {
+                                  "type": "boolean"
+                                },
                                 "supportsDeveloperRole": {
+                                  "type": "boolean"
+                                },
+                                "supportsMidConvoSystemMessages": {
+                                  "type": "boolean"
+                                },
+                                "supportsMidConvoToolAdditions": {
+                                  "type": "boolean"
+                                },
+                                "supportsMidConvoToolChanges": {
                                   "type": "boolean"
                                 },
                                 "supportsReasoningEffort": {
@@ -9574,6 +9706,9 @@
                                   "type": "boolean"
                                 },
                                 "supportsTemperature": {
+                                  "type": "boolean"
+                                },
+                                "supportsToolSearch": {
                                   "type": "boolean"
                                 },
                                 "supportsUsageInStreaming": {
@@ -9933,7 +10068,19 @@
                           "requiresToolResultName": {
                             "type": "boolean"
                           },
+                          "supportsAdditionalTools": {
+                            "type": "boolean"
+                          },
                           "supportsDeveloperRole": {
+                            "type": "boolean"
+                          },
+                          "supportsMidConvoSystemMessages": {
+                            "type": "boolean"
+                          },
+                          "supportsMidConvoToolAdditions": {
+                            "type": "boolean"
+                          },
+                          "supportsMidConvoToolChanges": {
                             "type": "boolean"
                           },
                           "supportsReasoningEffort": {
@@ -9946,6 +10093,9 @@
                             "type": "boolean"
                           },
                           "supportsTemperature": {
+                            "type": "boolean"
+                          },
+                          "supportsToolSearch": {
                             "type": "boolean"
                           },
                           "supportsUsageInStreaming": {
@@ -10042,7 +10192,19 @@
                           "requiresToolResultName": {
                             "type": "boolean"
                           },
+                          "supportsAdditionalTools": {
+                            "type": "boolean"
+                          },
                           "supportsDeveloperRole": {
+                            "type": "boolean"
+                          },
+                          "supportsMidConvoSystemMessages": {
+                            "type": "boolean"
+                          },
+                          "supportsMidConvoToolAdditions": {
+                            "type": "boolean"
+                          },
+                          "supportsMidConvoToolChanges": {
                             "type": "boolean"
                           },
                           "supportsReasoningEffort": {
@@ -10055,6 +10217,9 @@
                             "type": "boolean"
                           },
                           "supportsTemperature": {
+                            "type": "boolean"
+                          },
+                          "supportsToolSearch": {
                             "type": "boolean"
                           },
                           "supportsUsageInStreaming": {
@@ -10151,7 +10316,19 @@
                           "requiresToolResultName": {
                             "type": "boolean"
                           },
+                          "supportsAdditionalTools": {
+                            "type": "boolean"
+                          },
                           "supportsDeveloperRole": {
+                            "type": "boolean"
+                          },
+                          "supportsMidConvoSystemMessages": {
+                            "type": "boolean"
+                          },
+                          "supportsMidConvoToolAdditions": {
+                            "type": "boolean"
+                          },
+                          "supportsMidConvoToolChanges": {
                             "type": "boolean"
                           },
                           "supportsReasoningEffort": {
@@ -10164,6 +10341,9 @@
                             "type": "boolean"
                           },
                           "supportsTemperature": {
+                            "type": "boolean"
+                          },
+                          "supportsToolSearch": {
                             "type": "boolean"
                           },
                           "supportsUsageInStreaming": {
@@ -10780,7 +10960,7 @@
                 "additionalProperties": false,
                 "properties": {
                   "contractSha256": {
-                    "const": "cc4ff4710d2a1f7b2569e17c834a5e3377269ca45cfe31e086d8d9b6bbb93efa",
+                    "const": "2c94637da82a6f839b51fdc62eaade4538d562abea104776c6377702ab4a92dd",
                     "type": "string"
                   },
                   "diagnostics": {
@@ -13539,7 +13719,19 @@
                                 "requiresToolResultName": {
                                   "type": "boolean"
                                 },
+                                "supportsAdditionalTools": {
+                                  "type": "boolean"
+                                },
                                 "supportsDeveloperRole": {
+                                  "type": "boolean"
+                                },
+                                "supportsMidConvoSystemMessages": {
+                                  "type": "boolean"
+                                },
+                                "supportsMidConvoToolAdditions": {
+                                  "type": "boolean"
+                                },
+                                "supportsMidConvoToolChanges": {
                                   "type": "boolean"
                                 },
                                 "supportsReasoningEffort": {
@@ -13552,6 +13744,9 @@
                                   "type": "boolean"
                                 },
                                 "supportsTemperature": {
+                                  "type": "boolean"
+                                },
+                                "supportsToolSearch": {
                                   "type": "boolean"
                                 },
                                 "supportsUsageInStreaming": {
@@ -13648,7 +13843,19 @@
                                 "requiresToolResultName": {
                                   "type": "boolean"
                                 },
+                                "supportsAdditionalTools": {
+                                  "type": "boolean"
+                                },
                                 "supportsDeveloperRole": {
+                                  "type": "boolean"
+                                },
+                                "supportsMidConvoSystemMessages": {
+                                  "type": "boolean"
+                                },
+                                "supportsMidConvoToolAdditions": {
+                                  "type": "boolean"
+                                },
+                                "supportsMidConvoToolChanges": {
                                   "type": "boolean"
                                 },
                                 "supportsReasoningEffort": {
@@ -13661,6 +13868,9 @@
                                   "type": "boolean"
                                 },
                                 "supportsTemperature": {
+                                  "type": "boolean"
+                                },
+                                "supportsToolSearch": {
                                   "type": "boolean"
                                 },
                                 "supportsUsageInStreaming": {
@@ -13757,7 +13967,19 @@
                                 "requiresToolResultName": {
                                   "type": "boolean"
                                 },
+                                "supportsAdditionalTools": {
+                                  "type": "boolean"
+                                },
                                 "supportsDeveloperRole": {
+                                  "type": "boolean"
+                                },
+                                "supportsMidConvoSystemMessages": {
+                                  "type": "boolean"
+                                },
+                                "supportsMidConvoToolAdditions": {
+                                  "type": "boolean"
+                                },
+                                "supportsMidConvoToolChanges": {
                                   "type": "boolean"
                                 },
                                 "supportsReasoningEffort": {
@@ -13770,6 +13992,9 @@
                                   "type": "boolean"
                                 },
                                 "supportsTemperature": {
+                                  "type": "boolean"
+                                },
+                                "supportsToolSearch": {
                                   "type": "boolean"
                                 },
                                 "supportsUsageInStreaming": {
@@ -14129,7 +14354,19 @@
                           "requiresToolResultName": {
                             "type": "boolean"
                           },
+                          "supportsAdditionalTools": {
+                            "type": "boolean"
+                          },
                           "supportsDeveloperRole": {
+                            "type": "boolean"
+                          },
+                          "supportsMidConvoSystemMessages": {
+                            "type": "boolean"
+                          },
+                          "supportsMidConvoToolAdditions": {
+                            "type": "boolean"
+                          },
+                          "supportsMidConvoToolChanges": {
                             "type": "boolean"
                           },
                           "supportsReasoningEffort": {
@@ -14142,6 +14379,9 @@
                             "type": "boolean"
                           },
                           "supportsTemperature": {
+                            "type": "boolean"
+                          },
+                          "supportsToolSearch": {
                             "type": "boolean"
                           },
                           "supportsUsageInStreaming": {
@@ -14238,7 +14478,19 @@
                           "requiresToolResultName": {
                             "type": "boolean"
                           },
+                          "supportsAdditionalTools": {
+                            "type": "boolean"
+                          },
                           "supportsDeveloperRole": {
+                            "type": "boolean"
+                          },
+                          "supportsMidConvoSystemMessages": {
+                            "type": "boolean"
+                          },
+                          "supportsMidConvoToolAdditions": {
+                            "type": "boolean"
+                          },
+                          "supportsMidConvoToolChanges": {
                             "type": "boolean"
                           },
                           "supportsReasoningEffort": {
@@ -14251,6 +14503,9 @@
                             "type": "boolean"
                           },
                           "supportsTemperature": {
+                            "type": "boolean"
+                          },
+                          "supportsToolSearch": {
                             "type": "boolean"
                           },
                           "supportsUsageInStreaming": {
@@ -14347,7 +14602,19 @@
                           "requiresToolResultName": {
                             "type": "boolean"
                           },
+                          "supportsAdditionalTools": {
+                            "type": "boolean"
+                          },
                           "supportsDeveloperRole": {
+                            "type": "boolean"
+                          },
+                          "supportsMidConvoSystemMessages": {
+                            "type": "boolean"
+                          },
+                          "supportsMidConvoToolAdditions": {
+                            "type": "boolean"
+                          },
+                          "supportsMidConvoToolChanges": {
                             "type": "boolean"
                           },
                           "supportsReasoningEffort": {
@@ -14360,6 +14627,9 @@
                             "type": "boolean"
                           },
                           "supportsTemperature": {
+                            "type": "boolean"
+                          },
+                          "supportsToolSearch": {
                             "type": "boolean"
                           },
                           "supportsUsageInStreaming": {
@@ -14977,7 +15247,7 @@
                 "additionalProperties": false,
                 "properties": {
                   "contractSha256": {
-                    "const": "cc4ff4710d2a1f7b2569e17c834a5e3377269ca45cfe31e086d8d9b6bbb93efa",
+                    "const": "2c94637da82a6f839b51fdc62eaade4538d562abea104776c6377702ab4a92dd",
                     "type": "string"
                   },
                   "diagnostics": {

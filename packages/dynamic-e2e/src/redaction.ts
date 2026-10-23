@@ -76,13 +76,13 @@ export const sanitizeEvidence = (
     }
     if (candidate === null || typeof candidate === "boolean") return candidate;
     if (typeof candidate === "number") {
-      if (!Number.isFinite(candidate) || !Number.isSafeInteger(candidate)) {
-        throw new TypeError("evidence numbers must be finite safe integers");
+      if (!Number.isFinite(candidate)) {
+        throw new TypeError("evidence numbers must be finite JSON numbers");
       }
       return candidate;
     }
     if (typeof candidate === "string") {
-      if (candidate.includes("\0")) throw new TypeError("evidence strings may not contain NUL");
+      // Native instruction scopes contain NUL separators; JSON escapes them losslessly.
       if (canaries.some((canary) => candidate.includes(canary))) {
         throw new Error("secret canary reached the evidence boundary");
       }

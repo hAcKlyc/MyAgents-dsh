@@ -1,24 +1,70 @@
+diff --git a/packages/session/session-persistence-jsonl/README.md b/packages/session/session-persistence-jsonl/README.md
+index 5782c614689a590f95cf0370bac9d55af44e3c7d..5cbc0e506edc282505cd97a568c961f5f05b29a2 100644
+--- a/packages/session/session-persistence-jsonl/README.md
++++ b/packages/session/session-persistence-jsonl/README.md
+@@ -179,3 +179,5 @@ These limits define when this backend is a poor fit or needs special operational
+ None.
+ 
+ </details>
++
++Trusted builders may use `withStoredEventValidation(validator)` to recognize additional required event payloads. The callback receives immutable non-native events, returns true only after complete validation, and throws for malformed known extensions even when ignorable. Native events always retain native validation. The factory uses the same plugin lifecycle and ordered consumer/tracker teardown as stock JSONL; it exposes no backend class or tracker.
 diff --git a/packages/session/session-persistence-jsonl/src/index.ts b/packages/session/session-persistence-jsonl/src/index.ts
+index 3c3c13589fbcf74842ba8090a74e2d12e7baad79..bb370f24c97cdc79c1e0b0895818497080a33aa7 100644
 --- a/packages/session/session-persistence-jsonl/src/index.ts
 +++ b/packages/session/session-persistence-jsonl/src/index.ts
-@@ -300,6 +300,16 @@
+@@ -34,7 +34,7 @@ import {
+ } from '@deepseek-ai/dsh-session-persistence'
+ import { JsonlBackendTracker, JsonlSessionHandle, type StorageHandleState } from './storage.ts'
+ import { SessionWriteLease } from './lease.ts'
+-import { SESSION_FORMAT_VERSION, SessionId as makeSessionId, SessionLogOffset } from '@deepseek-ai/dsh-session'
++import { adoptSessionEvent, KNOWN_SESSION_EVENT_TYPES, SESSION_FORMAT_VERSION, SessionId as makeSessionId, SessionLogOffset } from '@deepseek-ai/dsh-session'
+ import type { SessionEvent, SessionId, SessionHeader, SessionLogOffset as SessionLogOffsetType } from '@deepseek-ai/dsh-session'
+ import {
+   assertNoRetiredHeaderFields, encodeSegment, eventLines, generationLogFilename, generationLogPath, logPath, logSuffix,
+@@ -313,7 +313,12 @@ class JsonlSessionPersistence extends SessionPersistence {
+   /** One joinable decode/migration operation per selected historical Session file revision. */
+   private readonly migrationPreparations = new Map<SessionId, MigrationPreparation>()
+ 
+-  constructor(ctx: Context, public config: Config, private readonly tracker: JsonlBackendTracker) {
++  constructor(
++    ctx: Context,
++    public config: Config,
++    private readonly tracker: JsonlBackendTracker,
++    private readonly validateExtension?: StoredEventExtensionValidator,
++  ) {
+     super(ctx)
+     /* v8 ignore next 5 -- generated catalog and Session source share one build-time version owner. */
+     if (sessionFormatCatalog.currentVersion !== SESSION_FORMAT_VERSION) {
+@@ -346,6 +351,28 @@ class JsonlSessionPersistence extends SessionPersistence {
      return { kind: 'jsonl', path: logPath(this.root, meta.cwd, meta.id, this.compression) }
    }
  
-+  /**
-+   * Extend stored-event validation through trusted build-time composition.
-+   * The default retains the native fail-closed vocabulary and validation.
-+   * Overrides must validate every native and extension event; unknown required
-+   * events must never be silently admitted. This changes no physical format.
-+   */
-+  protected validateStoredEvents(meta: SessionHeader, events: SessionEvent[], location?: SessionLocation): SessionEvent[] {
-+    return validateStoredEvents(meta, events, location)
++  /** Native validation remains authoritative; trusted extensions only add required payload vocabulary. */
++  private validateStoredEvents(meta: SessionHeader, events: SessionEvent[], location?: SessionLocation): SessionEvent[] {
++    for (const [index, event] of events.entries()) {
++      if (!KNOWN_SESSION_EVENT_TYPES.has(event.type) && this.validateExtension !== undefined) {
++        try {
++          const adopted = adoptSessionEvent(event)
++          freezeStoredEvent(adopted)
++          if (this.validateExtension(adopted)) {
++            events[index] = adopted
++            continue
++          }
++        } catch (cause: unknown) {
++          throw new SessionPersistenceCorruptionError('stored extension Session event failed validation', { cause })
++        }
++      }
++      const [validated] = validateStoredEvents(meta, [event], location)
++      if (validated === undefined) throw new Error('native stored event validation lost its record')
++      events[index] = validated
++    }
++    return events
 +  }
 +
    // --- SessionPersistence service API ---
  
    /**
-@@ -672,7 +682,7 @@
+@@ -725,7 +752,7 @@ class JsonlSessionPersistence extends SessionPersistence {
      const meta = this.currentHeader(prepared.artifact.header)
      assertStoredId(id, meta)
      const events = prepared.artifact.events as SessionEvent[]
@@ -27,7 +73,7 @@ diff --git a/packages/session/session-persistence-jsonl/src/index.ts b/packages/
      const stored: PreparedStoredLog = {
        status: 'prepared',
        validateRelatedSources,
-@@ -804,7 +814,7 @@
+@@ -857,7 +884,7 @@ class JsonlSessionPersistence extends SessionPersistence {
      signal?.throwIfAborted()
      assertStoredId(expectedId, parsed.meta)
      const location = this.locate(parsed.meta)
@@ -36,3 +82,158 @@ diff --git a/packages/session/session-persistence-jsonl/src/index.ts b/packages/
      const { events, ...rest } = parsed
      const stored: CurrentStoredLog = {
        status: 'current',
+@@ -1820,6 +1847,37 @@ export const Config: z<Config> = z.object({
+  * @returns resolves when the service is ready.
+  */
+ export async function apply(ctx: Context, config: Config): Promise<void> {
++  await mount(ctx, config)
++}
++
++/**
++ * Validate a non-native event already adopted and frozen by the Session owner.
++ * Return true only for a recognized event after validating its complete payload;
++ * false retains native unknown-required refusal. Known native events never enter
++ * this callback. Throw to refuse a malformed known extension, even if ignorable.
++ */
++export type StoredEventExtensionValidator = (event: SessionEvent) => boolean
++
++/**
++ * Build a trusted persistence plugin with additional required event vocabulary.
++ * This is build-time composition, not serializable deployment configuration.
++ * The official plugin retains its codec, tracker, handles and ordered teardown.
++ * @param validateExtension - exact owner payload validation for non-native events.
++ * @returns a plugin with the same loader schema and lifecycle as stock JSONL.
++ */
++export function withStoredEventValidation(validateExtension: StoredEventExtensionValidator) {
++  if (typeof validateExtension !== 'function') throw new TypeError('stored event validator must be a function')
++  return Object.freeze({
++    name,
++    Config,
++    apply(ctx: Context, config: Config): Promise<void> {
++      return mount(ctx, config, validateExtension)
++    },
++  })
++}
++
++/** Keep every plugin variant on the same consumer-before-tracker teardown path. */
++async function mount(ctx: Context, config: Config, validateExtension?: StoredEventExtensionValidator): Promise<void> {
+   let service!: Fiber
+   // Keep this generator synchronous so thenable disposers are registered as functions, not awaited.
+   ctx.effect(function* () {
+@@ -1828,7 +1886,7 @@ export async function apply(ctx: Context, config: Config): Promise<void> {
+     service = ctx.plugin({
+       name: 'session-persistence-jsonl-service',
+       apply(serviceCtx: Context) {
+-        new JsonlSessionPersistence(serviceCtx, config, tracker)
++        new JsonlSessionPersistence(serviceCtx, config, tracker, validateExtension)
+       },
+     })
+     yield service.dispose
+diff --git a/packages/session/session-persistence-jsonl/tests/extension-event-admission.spec.ts b/packages/session/session-persistence-jsonl/tests/extension-event-admission.spec.ts
+new file mode 100644
+index 0000000000000000000000000000000000000000..adc993a45499361ce5f7053330f6917c613a8f73
+--- /dev/null
++++ b/packages/session/session-persistence-jsonl/tests/extension-event-admission.spec.ts
+@@ -0,0 +1,80 @@
++import { Context } from '@deepseek-ai/cordis'
++import { SESSION_FORMAT_VERSION, SessionId } from '@deepseek-ai/dsh-session'
++import * as Jsonl from '@deepseek-ai/dsh-session-persistence-jsonl'
++import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
++import { tmpdir } from 'node:os'
++import { dirname, join } from 'node:path'
++import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
++import { generationLogPath } from '../src/format.ts'
++
++declare module '@deepseek-ai/dsh-session' {
++  interface SessionEventMap { 'fixture/required': { revision: string } }
++}
++
++const id = SessionId('extension-admission')
++const header = { type: 'session', version: SESSION_FORMAT_VERSION, id, createdAt: 1000, isSeeded: false, delegationDepth: 0 }
++
++describe('trusted stored extension validation', () => {
++  let root: string
++  let ctx: Context
++  const validate = vi.fn<Jsonl.StoredEventExtensionValidator>((event) => {
++    if (event.type !== 'fixture/required') return false
++    expect(Object.isFrozen(event)).toBe(true)
++    expect(Object.isFrozen(event.data)).toBe(true)
++    if ((event.data as { revision?: unknown }).revision !== 'valid') throw new Error('invalid fixture revision')
++    return true
++  })
++
++  beforeEach(async () => {
++    validate.mockClear()
++    root = await mkdtemp(join(tmpdir(), 'dsh-extension-admission-'))
++    ctx = new Context()
++    await ctx.plugin(Jsonl.withStoredEventValidation(validate), { root, compression: 'none' })
++  })
++  afterEach(async () => {
++    try { await ctx.fiber.dispose() }
++    finally { await rm(root, { recursive: true, force: true }) }
++  })
++
++  async function store(event: object): Promise<string> {
++    const path = generationLogPath(root, undefined, id, SESSION_FORMAT_VERSION, 'none')
++    await mkdir(dirname(path), { recursive: true })
++    await writeFile(path, [header, event].map(row => JSON.stringify(row)).join('\n') + '\n')
++    return path
++  }
++
++  it('cold restores a required extension without weakening native unknown-event admission', async () => {
++    const event = { type: 'fixture/required', seq: 0, time: 1, data: { revision: 'valid' } }
++    await store(event)
++    const handle = await ctx.sessionPersistence.open(id, 'read')
++    try { expect((await handle.read()).events).toEqual([event]) }
++    finally { await handle.close() }
++    expect(validate).toHaveBeenCalledTimes(1)
++  })
++
++  it.each([false, true])('refuses malformed recognized extension even with ignorable=%s', async (ignorable) => {
++    const path = await store({ type: 'fixture/required', seq: 0, time: 1, data: { revision: 'bad' }, ...(ignorable ? { ignorable } : {}) })
++    const bytes = await readFile(path)
++    await expect(ctx.sessionPersistence.open(id, 'write')).rejects.toThrow('stored extension Session event failed validation')
++    expect(await readFile(path)).toEqual(bytes)
++  })
++
++  it('keeps an unknown required event fail-closed', async () => {
++    await store({ type: 'future/required', seq: 0, time: 1, data: {} })
++    await expect(ctx.sessionPersistence.open(id, 'read')).rejects.toThrow('unknown to this harness and not marked ignorable')
++  })
++
++  it('retains an unknown ignorable event', async () => {
++    const event = { type: 'future/optional', seq: 0, time: 1, data: {}, ignorable: true }
++    await store(event)
++    const handle = await ctx.sessionPersistence.open(id, 'read')
++    try { expect((await handle.read()).events).toEqual([event]) }
++    finally { await handle.close() }
++  })
++
++  it('never lets an extension callback bypass native refusal', async () => {
++    await store({ type: 'request/header', seq: 0, time: 1, data: { reason: 'fallback', header: { config: { provider: 'mock', model: 'mock' } } } })
++    await expect(ctx.sessionPersistence.open(id, 'read')).rejects.toThrow('request/header is outside an open turn')
++    expect(validate).not.toHaveBeenCalled()
++  })
++})
+diff --git a/packages/session/session-persistence-jsonl/tests/teardown-loader.e2e.ts b/packages/session/session-persistence-jsonl/tests/teardown-loader.e2e.ts
+index e8f301a85109f857cd03bda0867c97f6126747e0..d7dfd4c7684162296ae0aab04eb338d86033705f 100644
+--- a/packages/session/session-persistence-jsonl/tests/teardown-loader.e2e.ts
++++ b/packages/session/session-persistence-jsonl/tests/teardown-loader.e2e.ts
+@@ -14,7 +14,7 @@ import { pathToFileURL } from 'node:url'
+ import { expect, it } from 'vitest'
+ import { logPath } from '../src/format.ts'
+ 
+-it('waits for injected consumer teardown, persists its final event, and releases listeners and leases', async () => {
++it.each([JsonlPlugin, JsonlPlugin.withStoredEventValidation(() => false)])('waits for injected consumer teardown, persists its final event, and releases listeners and leases (%#)', async (plugin) => {
+   const root = await mkdtemp(join(tmpdir(), 'dsh-jsonl-teardown-'))
+   const ctx = new Context()
+   const entered = Promise.withResolvers<undefined>()
+@@ -67,7 +67,7 @@ it('waits for injected consumer teardown, persists its final event, and releases
+       async import(specifier: string) {
+         switch (specifier) {
+           case '@deepseek-ai/dsh-session': return SessionPlugin
+-          case '@deepseek-ai/dsh-session-persistence-jsonl': return JsonlPlugin
++          case '@deepseek-ai/dsh-session-persistence-jsonl': return plugin
+           case 'async-persistence-consumer': return consumer
+           default: throw new Error(`Unexpected plugin: ${specifier}`)
+         }

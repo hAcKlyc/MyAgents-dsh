@@ -1,0 +1,62 @@
+diff --git a/packages/context/time-context/src/index.ts b/packages/context/time-context/src/index.ts
+index 493630a8118206fade80d7229dd049f2b83f12f9..5fedad78c7419625f82474434ff49a9a494be310 100644
+--- a/packages/context/time-context/src/index.ts
++++ b/packages/context/time-context/src/index.ts
+@@ -110,7 +110,7 @@ function renderText(
+   const baseline = step === 1 ? 'model-visible message' : 'step context'
+   const browserText = renderBrowserTimeZoneContext(browserContext)
+   return `Time sampled while preparing turn ${turn}, step ${step}: ${formatTimestamp(now, formatter, timeZone)}\n`
+-    + `${browserText}\n`
++    + (browserContext.kind === 'missing' ? '' : `${browserText}\n`)
+     + `Elapsed since the preceding ${baseline}: ${elapsed}.`
+ }
+ 
+diff --git a/packages/context/time-context/tests/time-context.spec.ts b/packages/context/time-context/tests/time-context.spec.ts
+index 92499007d1abfad8b1e08dcc37d353a9229bee3d..ba0bed0227e9dcf3aa8b3cc98766761051b9ced8 100644
+--- a/packages/context/time-context/tests/time-context.spec.ts
++++ b/packages/context/time-context/tests/time-context.spec.ts
+@@ -201,6 +201,8 @@ describe('durable step context', () => {
+ 
+     await fire(ctx, sessionAgent(session), 1, 1)
+ 
++    expect(contextTexts(session)[0]).not.toContain('Browser time zone')
++    expect(contextTexts(session)[0]).not.toContain('Ask the user to clarify')
+     expect(contextTexts(session)[0]).toContain(
+       'Elapsed since the preceding model-visible message: unavailable.',
+     )
+@@ -218,7 +220,6 @@ describe('durable step context', () => {
+ 
+     expect(contextTexts(session)[1]).toBe(
+       'Time sampled while preparing turn 3, step 2: 2026-07-14T00:01:01+00:00[UTC]\n'
+-      + 'Browser time zone for this request: unavailable. Ask the user to clarify otherwise-unqualified dates and times.\n'
+       + 'Elapsed since the preceding step context: 1m 1s.',
+     )
+   })
+@@ -541,3 +542,27 @@ describe('real Loader export path', () => {
+     expect(contextTexts(session)[0]).toContain('Time sampled while preparing turn 1, step 1:')
+   })
+ })
++
++
++it('cold-restores historical unavailable-zone readings without rewriting them', async () => {
++  const legacy = 'Time sampled while preparing turn 1, step 1: 2026-07-14T00:00:00+00:00[UTC]\n'
++    + 'Browser time zone for this request: unavailable. Ask the user to clarify otherwise-unqualified dates and times.\n'
++    + 'Elapsed since the preceding model-visible message: unavailable.'
++  const source = Session.create(SessionId('legacy-time-source'))
++  openMessageTurn(source, 1)
++  source.append('user/message', createUserMessage({ content: [{ type: 'text', text: legacy }],
++    source: { kind: 'time-context', form: 'snapshot', sections: [{ name: 'time-context', text: legacy }] },
++  }), { surfaceOp: 'append' })
++  const resumed = Session.create(SessionId('legacy-time-resumed'), source.snapshotEvents())
++  const { ctx } = await mount({ refreshIntervalMs: 0 })
++  vi.setSystemTime(BASE + 61_000)
++  await fire(ctx, sessionAgent(resumed), 1, 2)
++  expect(contextTexts(resumed)[0]).toBe(legacy)
++  expect(contextTexts(resumed)[1]).not.toContain('Browser time zone')
++  expect(contextTexts(resumed)[1]).toContain('Elapsed since the preceding step context: 1m 1s.')
++  const reading = resumed.snapshotEvents().at(-1)
++  expect(reading?.type === 'user/message' && reading.data.source).toEqual({
++    kind: 'time-context', form: 'snapshot', sections: [{ name: 'time-context', text: contextTexts(resumed)[1] }],
++  })
++  await ctx.fiber.dispose()
++})

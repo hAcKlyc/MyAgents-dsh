@@ -2,7 +2,7 @@
 type: technical-architecture
 status: implemented
 module: operations-messages-and-turns
-updated: 2026-10-02
+updated: 2026-10-23
 ---
 
 # Operations, messages and turns
@@ -54,6 +54,10 @@ turn/start
 
 All terminals require quiescent owned turns/messages. Success additionally requires a final completed turn with an owned non-empty durable assistant completion and request-context proof. New admissions persist `tokenAccounting: native-attempts-v1`: official DSH attempt folding owns retry/stream accounting, compaction summary/repair usage is added once, and missing provider buckets remain unknown without failing a valid completion. Unmarked historical admissions retain their original terminal derivation. Budget admission still requires provable usage and the frozen rate card before another request. Zero-turn cancellation or a pre-turn limit may still terminate without an assistant. Interrupt, failure, context exhaustion, output/turn/budget limits and uncertain transport remain distinguishable outcomes.
 
+Native asynchronous delegation additionally requires the public descendant join before a live operation can terminate. The operation owner keeps only an in-memory proof of the exact root Agent and Session sequence observed by `waitForChildren`. It releases admission serialization while that native wait runs, allowing child result messages to pass the existing pre-step correlation path. Changed prefixes and observed work force a fresh check. A failed native lifecycle join fences recovery and requests primary retirement through the existing settlement-failure signal; the Runtime exits and the Host releases its terminal waiter without another request. An ordinary child execution failure remains a native child result and does not trigger this path. A quiescent mutation waits outside serialization and commits only after the serialized final recheck. Retirement drains native descendants, joins that same outstanding wait, and then uses lifecycle-owned terminal settlement.
+
+Host `subagent/prompt` admission shares this serialization only until the native Inbox accepts the message, never until child execution completes. Its admission watermark invalidates an older descendant observation even when a parked child wakes without changing the root log. Each independent mutation obtains a fresh native observation. Component replacement still queues behind active root operations; an idle root with independently running children waits for their native quiescent boundary and remains abortable. Child interruption stays reachable outside this admission queue.
+
 ## 5. Input operations
 
 | Method | Meaning |
@@ -69,7 +73,7 @@ New follow-up intents persist `deliveryTiming`; identity retries cannot change t
 
 Method receipts expose `queued`, `admitted`, `delivered` or `cancelled`. The durable Product message event records `queued` or `cancelled`; Inbox insertion/claim and projection derive admitted/delivered observation. The protocol provides independent steer, follow-up, cancel and interrupt methods, not an atomic “force send” transaction or mandatory combination order. A Host that implements “send now” must define its own composition of those methods and reconcile Runtime results/events; it must not invent a second transcript item locally.
 
-The root DSH Inbox is shared infrastructure. `myagents-operation` messages require a matching durable operation claim. Owned native Jobs and child messages are proven by the DSH catalog and exact Inbox insertion through `ownsRootContextMessage`; historical ProductWork messages use a read-only proof over persisted creation/message facts. Unknown root context fences. Cold validation, live observers, retirement and projection use the same predicate with the exact Session and root Cordis context. No live ProductWork registry or replacement lifecycle is needed.
+The root DSH Inbox is shared infrastructure. `myagents-operation` messages require a matching durable operation claim. Native instruction updates are proven by their exact Session-owned Inbox insertion (message id and full source), including deltas removed by instruction reconciliation before direct context injection; they do not require Product cancellation events. Owned native Jobs and child messages are proven by the DSH catalog and exact Inbox insertion through `ownsRootContextMessage`; historical ProductWork messages use a read-only proof over persisted creation/message facts. Unknown root context fences. Cold validation, live observers, retirement and projection use the same predicate with the exact Session and root Cordis context. No live ProductWork registry or replacement lifecycle is needed.
 
 Resume may derive an exact pending terminal after the candidate Agent has passed persisted
 validation but before ProductSession publishes it as the live primary. `reconcileResumed(agent)`

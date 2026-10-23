@@ -1,6 +1,6 @@
 # ADR 0008 — Keep capacity-safe compaction inside the official DSH engine
 
-Current DSH `0.2.0-rc.2` disposition: retained as patch 0007; bounded structured compaction remains required. The [seam registry](../dsh/seam-decisions-v1.json) owns exact current patch identity; dated evidence below is historical.
+Current DSH `0.2.1-rc.2` disposition: retained as patch 0007; bounded structured compaction remains required. The [seam registry](../dsh/seam-decisions-v1.json) owns exact current patch identity; dated evidence below is historical.
 
 - Status: accepted
 - Date: 2026-08-29
@@ -33,3 +33,7 @@ Carry one minimal, ordered, upstream-ready DSH patch. It exposes complete reques
 ## DSH 0.1.2-rc.1 refresh (2026-09-05)
 
 Disposition: rebase. The official candidate does not supply the complete capacity/repair seam. Patch 0007 preserves unknown per-call usage and optional buckets across summary repair instead of reporting partial totals as complete. Eighteen isolated capacity regressions cover this behavior; final artifact acceptance is recorded by the accepted artifact manifest.
+
+## DSH 0.2.1-rc.2 refresh (2026-10-23)
+
+Disposition: rebase. Native range, transaction, pruner and model authority remain the owners. The removed invariant framework is not recreated: direct-call count validation now runs in the existing summary transaction before publication. Product accounting refuses malformed restored call counts and preserves the legacy omitted-count meaning of one; valid summary/repair usage is already aggregated and is added once. New source and artifact evidence is required for this revision.

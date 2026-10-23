@@ -83,7 +83,7 @@ const renderText = (_args: unknown, value: unknown): ContentBlock[] => textBlock
 type SearchRootAuthority = LocalSearchTargetAuthority;
 
 export class CanonicalFileTools extends Service {
-  static inject = ["fs", "tools", "productProcesses", "productTools"];
+  static inject = ["fs", "tools", "workingDirectory", "productProcesses", "productTools"];
   readonly #intents = new AsyncLocalStorage<Readonly<{ target: FsTarget; intent: FsWriteIntent }>>();
   readonly #attachments: CanonicalFileToolsConfig["attachments"];
 

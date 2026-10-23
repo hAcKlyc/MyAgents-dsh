@@ -9,6 +9,8 @@ import * as ToolJobs from "@deepseek-ai/dsh-tool-jobs";
 import { Context } from "@deepseek-ai/cordis";
 import { AgentRegistry, type Agent } from "@deepseek-ai/dsh-agent";
 import { SessionStore, SessionId } from "@deepseek-ai/dsh-session";
+import { SessionProjectionRegistry } from "@deepseek-ai/dsh-session-projection";
+import { WorkingDirectoryService } from "@deepseek-ai/dsh-working-directory";
 import { ApprovalService } from "@deepseek-ai/dsh-user-approval";
 import { UserQuestionService } from "@deepseek-ai/dsh-user-questions";
 import { LocalJobRegistry } from "@deepseek-ai/dsh-jobs-local";
@@ -242,12 +244,12 @@ const harness = async (options: Readonly<{
   await context.plugin(AgentRegistry);
   const fakeSubprocess = context.subprocess as FakeSubprocessRuntime;
   const inject = vi.fn<(message: unknown) => void>();
-  if (options.realPermission) await context.plugin(SessionStore);
-  const session = options.realPermission ? context.sessions.create(SessionId("process-agent"), { meta: { cwd: workspace } }) : undefined;
-  session?.append("turn/start", { turn: 1 });
+  await context.plugin(SessionStore);
+  const session = context.sessions.create(SessionId("process-agent"), { meta: { cwd: workspace } });
+  session.append("turn/start", { turn: 1 });
   const agent = {
     id: "process-agent",
-    session: session ?? { id: "process-agent", header: { id: "process-agent", cwd: workspace } },
+    session,
     status: "busy",
     inject,
   } as unknown as Agent;
@@ -334,6 +336,8 @@ const harness = async (options: Readonly<{
     executableSha256,
   });
   await context.plugin(SystemPrompt);
+  await context.plugin(SessionProjectionRegistry);
+  await context.plugin(WorkingDirectoryService);
   await context.plugin(ShellPresentationToolRuntime, { mode: "native" });
   await context.plugin(ToolCallTimeoutPolicy);
   let permissionDecision: "allow" | "deny" = "allow";

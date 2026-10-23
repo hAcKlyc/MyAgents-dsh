@@ -291,13 +291,13 @@
         },
         "runtimeEngine": {
           "distribution": "myagents-dsh",
-          "distributionVersion": "0.1.18",
+          "distributionVersion": "0.1.19",
           "name": "deepseek-harness",
-          "version": "0.2.0-rc.2.myagents.639ed0153972.56bce4eb7e07"
+          "version": "0.2.1-rc.2.myagents.687f282e8625.fd9ed793f1e9"
         },
         "runtimeGeneration": "generation-1",
-        "runtimeVersion": "0.1.18",
-        "schemaSha256": "341c84d8885b8a5be48f6c3fe02c4e27224219d9eaf374b139b961e970b7e539",
+        "runtimeVersion": "0.1.19",
+        "schemaSha256": "68ee3824528bddc1fe56207cd42ab4a91b5fca11e97ccc2b8c5e233a61de1811",
         "sessionFormat": "dsh-session-events-v2"
       }
     },
@@ -326,7 +326,7 @@
         "runtimeSessionId": "runtime-session-1",
         "state": "ready",
         "toolCatalog": {
-          "contractSha256": "cc4ff4710d2a1f7b2569e17c834a5e3377269ca45cfe31e086d8d9b6bbb93efa",
+          "contractSha256": "2c94637da82a6f839b51fdc62eaade4538d562abea104776c6377702ab4a92dd",
           "diagnostics": [
             {
               "available": true,
@@ -437,7 +437,7 @@
               "tool": "TaskUpdate"
             }
           ],
-          "digest": "30e16c58dc7190090517bfd9c4317f8a64a715148eb004490e7c1d51918df95a",
+          "digest": "f4ce36e26fc4341afc9d5290f63cef8eaeafdb55c1733369cc145338db3ff714",
           "effectiveTools": [
             "read",
             "read_image",
@@ -1229,7 +1229,7 @@
     }
   ],
   "protocolVersion": "6.2.0",
-  "schemaSha256": "341c84d8885b8a5be48f6c3fe02c4e27224219d9eaf374b139b961e970b7e539",
+  "schemaSha256": "68ee3824528bddc1fe56207cd42ab4a91b5fca11e97ccc2b8c5e233a61de1811",
   "valid": [
     {
       "frame": {
@@ -1432,13 +1432,13 @@
           },
           "runtimeEngine": {
             "distribution": "myagents-dsh",
-            "distributionVersion": "0.1.18",
+            "distributionVersion": "0.1.19",
             "name": "deepseek-harness",
-            "version": "0.2.0-rc.2.myagents.639ed0153972.56bce4eb7e07"
+            "version": "0.2.1-rc.2.myagents.687f282e8625.fd9ed793f1e9"
           },
           "runtimeGeneration": "generation-1",
-          "runtimeVersion": "0.1.18",
-          "schemaSha256": "341c84d8885b8a5be48f6c3fe02c4e27224219d9eaf374b139b961e970b7e539",
+          "runtimeVersion": "0.1.19",
+          "schemaSha256": "68ee3824528bddc1fe56207cd42ab4a91b5fca11e97ccc2b8c5e233a61de1811",
           "sessionFormat": "dsh-session-events-v2"
         }
       },

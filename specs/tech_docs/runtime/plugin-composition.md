@@ -2,7 +2,7 @@
 type: technical-architecture
 status: implemented
 module: runtime-plugin-composition
-updated: 2026-10-02
+updated: 2026-10-23
 patch_authority: ../../dsh/seam-decisions-v1.json
 ---
 
@@ -20,7 +20,7 @@ It is a maintained projection, not a competing executable inventory. Exact insta
 - `packages/product-profile/src/candidate-runtime-profile.ts` for the separately maintained profile allowlist;
 - `specs/dsh/seam-decisions-v1.json` for exact DSH patch order, hashes and removal conditions.
 
-The current [source baseline](../../dsh/dsh-baseline-v1.json) is official DeepSeek Harness `0.2.0-rc.2`, composed with the eleven isolated patches in the [seam registry](../../dsh/seam-decisions-v1.json). A `.myagents...` package-version suffix identifies the content-addressed patched artifact as a whole; it does not mean every packed DSH package has source changes. The installed pi-ai core is separately pinned and patched under `specs/pi-ai/`; it remains one adapter dependency, not another AgentLoop.
+The current [source baseline](../../dsh/dsh-baseline-v1.json) is official DeepSeek Harness `0.2.1-rc.2`, composed with the thirteen isolated patches in the [seam registry](../../dsh/seam-decisions-v1.json). A `.myagents...` package-version suffix identifies the content-addressed patched artifact as a whole; it does not mean every packed DSH package has source changes. The pi-ai core is separately pinned to `1.1.0` with two source patches under `specs/pi-ai/`; it remains one adapter dependency. Candidate `0.1.19` is not a published release and requires fresh artifact, native and Host evidence.
 
 ### 1.1 Relationships
 
@@ -52,17 +52,17 @@ The inventory uses five relationship terms:
 | Plugin | Responsibility | Source | Relationship | DSH patch impact |
 | --- | --- | --- | --- | --- |
 | `@deepseek-ai/dsh-session:SessionStore` | Register and own DSH Session lifecycle | DSH official | Retain | Direct: 0004 publication guards |
-| `@deepseek-ai/dsh-session-projection:SessionProjectionRegistry` | Own in-memory per-Session projection cells, consistent cuts and change feed | DSH official | Enable | No; official TokenMeter publishes projection units through it |
+| `@deepseek-ai/dsh-session-projection:SessionProjectionRegistry` | Own in-memory per-Session projection cells, consistent cuts and change feed | DSH official | Enable | Direct: 0014 public registration types; runtime behavior is unchanged |
 | `@deepseek-ai/dsh-agent:AgentRegistry` | Register Agent identities and scopes | DSH official | Retain | Direct: 0001/0002 Agent public types; 0004 publication guards |
 | `@deepseek-ai/dsh-llm:LlmRuntime` | Route adapters and stream model requests through `ctx.llm` | DSH official | Retain | No |
-| `@deepseek-ai/dsh-system-prompt:SystemPrompt` | Assemble Runtime, Host, project, Skill and child prompt contributions | DSH official | Retain | Direct: 0012 literal Runtime context; section interpolation is stock |
+| `@deepseek-ai/dsh-system-prompt:SystemPrompt` | Assemble Runtime, Host, project, Skill and child prompt contributions | DSH official | Retain | No; section and dynamic-context interpolation flags are stock |
 | `@deepseek-ai/dsh-tools:ToolRuntime` | Own the sole tool registry, validation and dispatch pipeline | DSH official | Retain | No |
 | `@deepseek-ai/dsh-token-meter:TokenMeter` | Record usage and estimate complete model requests | DSH official | Enable | Direct: 0007 capacity-safe compaction |
 | `@deepseek-ai/dsh-compaction-tool-result-pruner:ToolResultPruner` | Prune oversized old tool results before semantic compaction | DSH official | Enable | No; consumes the patched meter |
 | `@deepseek-ai/dsh-compaction-basic:BasicCompactionEngine` | Perform automatic and explicit durable context compaction | DSH official | Enable | Direct: 0007 capacity-safe compaction |
 | `@deepseek-ai/dsh-agent-loop:AgentLoop` | Own the only model/turn/tool Agent loop | DSH official | Retain | Direct: 0001 pending wake; 0002 pre-assistant commit |
 | `@myagents-dsh/host-ports:HostPortService` | Own Runtime-to-Host reverse RPC admission and settlement | MyAgents | Add product capability | No |
-| `@myagents-dsh/runtime-product:ProductSessionService` | Enforce one primary root Session and bind product workspace/configuration/mutations | MyAgents | Extend SessionStore and AgentRegistry | Indirect: 0004 publication guards; 0012 literal Host Runtime context |
+| `@myagents-dsh/runtime-product:ProductSessionService` | Enforce one primary root Session and bind product workspace/configuration/mutations | MyAgents | Extend SessionStore and AgentRegistry | Indirect: 0004 publication guards; literal Host context is stock |
 | `@myagents-dsh/operation-runtime:SdkOperationService` | Own durable operation admission, queueing, steering, follow-up and terminal settlement | MyAgents | Add product capability | Indirect: 0001 |
 | `@myagents-dsh/component-runtime:ProductComponentService` | Prepare, atomically promote, drain and report declarative component generations | MyAgents | Add product capability | No |
 | `@myagents-dsh/host-ports:HostCredentialProvider` | Resolve secrets from the Host only inside a request or connection scope | MyAgents | Replace a Runtime-local credential owner | No |
@@ -71,7 +71,7 @@ The inventory uses five relationship terms:
 | `@myagents-dsh/runtime-product:adapterRegistration` (`HostDeepSeekLlmAdapter`) | Bind the Host profile and credentials to the official native DeepSeek adapter | MyAgents | Replace stock static DeepSeek composition, while retaining the official adapter implementation | No; native rc.2 stream identity replaces the retired 0006 patch |
 | `@myagents-dsh/runtime-product:ProductUtilityService` | Execute bounded idempotent non-conversation model utility requests | MyAgents | Add product capability | No |
 
-The tool plane also mounts official `SandboxPolicyService`, `LocalSandboxProvider`, `LocalSpillStore` and `SubagentForkInProcess`. Sandbox mode/approval are bound to each Session and inherited by children.
+The tool plane also mounts official `SandboxPolicyService`, `LocalSandboxProvider`, `LocalSpillStore`, `WorkingDirectoryService` and `SubagentForkInProcess`. Sandbox mode/approval are bound to each Session and inherited by children. Working-directory resolution stays within existing Host workspace/sandbox roots; no directory-switching or worktree tool is enabled.
 
 The current root composition also mounts official `SessionStats`, `SessionTurnOutline`, `TimeContext`, `RepeatToolReminder` and `SessionCheckpointPolicy`. `DSH_ROOT_SERVICE_ORDER` in `packages/runtime-product/src/composition.ts` owns their executable order; the allowlist records their identities but remains a partial inventory of the full graph.
 
@@ -85,8 +85,8 @@ The current root composition also mounts official `SessionStats`, `SessionTurnOu
 | `@deepseek-ai/dsh-agent-instructions:AgentInstructions` | Discover and durably reconcile project instruction files | DSH official | Enable with MyAgents candidate order and tool names | Direct: 0009 instruction selection |
 | `@myagents-dsh/host-ports:HostAttachmentStore` | Acquire, verify, stage and release Host-owned attachments | MyAgents | Replace the stock local attachment Provider | No |
 | Tool timeout middleware | Retain DSH timeout behavior for unchanged tools; Product-native tools start deadlines after authorization | MyAgents composition / public DSH timeout primitives | Extend | No |
-| `@deepseek-ai/dsh-subagent:SubagentRuntime` | Own continuable child Agent creation, recovery and retirement | DSH official | Retain | Direct: 0005 lifecycle; 0008 literal child persona |
-| `@deepseek-ai/dsh-subagent-spawn-in-process:SubagentSpawnInProcess` | Materialize child Agent scopes in the current Runtime process | DSH official | Retain | Indirect: its in-process driver is changed by 0008 |
+| `@deepseek-ai/dsh-subagent:SubagentRuntime` | Own asynchronous child activation, continuation, waiting and retirement | DSH official | Retain | Direct: 0005 released descriptor version 5 admission; 0008 historical literal persona |
+| `@deepseek-ai/dsh-subagent-spawn-in-process:SubagentSpawnInProcess` | Materialize child Agent scopes in the current Runtime process | DSH official | Retain | No; historical descriptor restoration remains in SubagentRuntime |
 | `@deepseek-ai/dsh-skill:SkillRegistry` | Own layered Skill registration and discovery | DSH official | Retain | No |
 | `@deepseek-ai/dsh-user-approval:ApprovalService` | Provide the base approval service | DSH official | Retain | No |
 | `@deepseek-ai/dsh-user-questions:UserQuestionService` | Provide the base structured question service | DSH official | Retain | No |
@@ -114,7 +114,7 @@ Windows mounts official PowerShell instead of Bash. The same policy Provider del
 | `@myagents-dsh/rpc-server:NativeRpcServer` | Serve bidirectional stdio RPC and carry validated DSH/Product projections onto `runtime/event` | MyAgents | Replace the stock DSH SDK RPC server | No |
 | `@myagents-dsh/persistence-product:ProductJsonlSessionPersistence` | Coordinate product locators, fork/rewind/delete journals and checkpoints over official native logs | MyAgents | Extend the official JSONL persistence through public handles | Indirect: 0003 Product event validation; seam 004 remains public composition |
 
-Each used native generation mounts official `@deepseek-ai/dsh-session-persistence-jsonl` in its own Cordis context. Those scoped persistence instances own native handles, physical leases, buffers and codecs; they are not a fixed root-plugin count. The Product Provider supplies only the event validation policy and locator coordination.
+Each used native generation mounts official `@deepseek-ai/dsh-session-persistence-jsonl` in its own Cordis context. Those scoped persistence instances own native handles, physical leases, buffers and codecs; they are not a fixed root-plugin count. The Product Provider supplies only the payload validation policy through `withStoredEventValidation` and locator coordination. The factory delegates to the official plugin lifecycle; native tracker classes remain private and consumers unload before the tracker.
 
 The composition also installs the official `SqliteSessionQueryEngine` as the session-search projection owner, using an in-memory index with bounded windows. It does not become a second durable conversation owner. General proxy installation is a generation-owned public DSH helper; per-request model transport remains under the existing Host credential scope. See [Web/network](../boundaries/web-and-network.md).
 
@@ -149,29 +149,31 @@ The allowlist remains partial. Current source and exact packed composition, rath
 
 ## 9. Current patch relationship
 
-The current eleven-patch series is:
+The current thirteen-patch series is:
 
 | Patch | Protected semantic | Installed plugin surfaces |
 | --- | --- | --- |
-| 0001 | Wake an existing pending Inbox identity without reinsertion | `AgentLoop`, Agent public API; consumed by `SdkOperationService` and by `SubagentRuntime` through patch 0005, with native child authority |
+| 0001 | Wake an existing pending Inbox identity without reinsertion | `AgentLoop`, Agent public API; consumed by `SdkOperationService` without replacing native child scheduling |
 | 0002 | Transform authoritative tool input before assistant/tool commit | `AgentLoop`, Agent/scope events; consumed by `ProductHookRuntime` |
-| 0003 | Admit exact required Product events during native JSONL reads | Official JSONL protected validation hook; native codec, leases, buffering and recovery remain unchanged |
+| 0003 | Admit exact required Product events during native JSONL reads | Official JSONL validator plugin factory; private tracker, codec, leases, buffering and recovery remain native |
 | 0004 | Guard Session and Agent publication before visibility | `SessionStore`, `AgentRegistry`; consumed by `ProductSessionService` |
-| 0005 | Public continuable child lifecycle seams | `SubagentRuntime`; consumed by native child composition |
+| 0005 | Read released version 5 child descriptors and retain settlement authority | `SubagentRuntime`; active scheduling uses stock public APIs |
 | 0007 | Capacity-safe request estimation and compaction | `TokenMeter`, `BasicCompactionEngine` and compaction contracts |
-| 0008 | Preserve literal child persona through continuation and cold resume | Subagent runtime/driver; consumed by native child composition |
+| 0008 | Restore released version 5 literal child persona | `SubagentRuntime`; new version 3 writes use native semantics |
 | 0009 | Select mutually exclusive project instruction candidates | `AgentInstructions` |
 | 0010 | Preserve generic Provider-owned content and exact same-route replay | `dsh-llm-pi-ai`; consumed by the native Runtime event projector through native live chunks and durable assistant messages |
-| 0011 | Compose official file executors behind Product policy | `tool-fs` and `tool-fs-search`; consumed by `CanonicalFileTools` |
-| 0012 | Register literal Runtime context without prompt interpolation | `SystemPrompt`; consumed by the Product Workspace context contributor |
+| 0011 | Compose official file executors behind Product policy | `tool-fs` and `fs-local`; consumed by `CanonicalFileTools` and `LocalWorkspaceFileSystem` |
+| 0013 | Omit inapplicable browser policy from native time context | `TimeContext`; historical missing-zone readings remain accepted |
+| 0014 | Keep registration types valid with client-only projection declarations | `SessionProjectionRegistry`; state/wire constraints only, no runtime change |
+| 0015 | Admit exact-model conversation capabilities into both metadata and Provider wire | `dsh-llm-pi-ai` configuration and resolution; sibling models retain independent capabilities within one route |
 
-Patch 0006 remains retired: native DeepSeek stream identity supplies that semantic. Patch 0003 is reduced to the missing Product event validation hook in official JSONL; it does not implement storage. MyAgents owns only product locators, mutation journals and checkpoints. Native conversation event bytes belong to official JSONL. Patch 0007 likewise strengthens the official compaction engine; MyAgents does not install a second compaction plugin.
+Patch 0006 remains retired: native DeepSeek stream identity supplies that semantic. Patch 0012 also retires because native `PromptContext.interpolate` covers literal dynamic context. Patch 0003 rebases the missing Product event validation seam onto the official JSONL plugin factory; it does not implement storage. MyAgents owns only product locators, mutation journals and checkpoints. Native conversation event bytes belong to official JSONL. Patch 0007 likewise strengthens the official compaction engine; MyAgents does not install a second compaction plugin.
 
 ## 10. Management and change boundary
 
 The current official Runtime is a fixed trusted build-time composition. Its root/session/loop/tool/RPC/persistence/security owners are not dynamically replaceable by a Host or ordinary user setting. Trusted harness builders may create a different distribution by changing composition source and rebuilding the complete verified artifact.
 
-Trusted root composition accepts the rc.2 SystemPrompt fields `personaPrefix` and `personaSuffix`; the obsolete `persona` field is rejected. These deployment fragments retain the native strict template contract. Session-scoped Host prompt bodies replace the prefix slot through the literal contribution seam; they do not remove the deployment suffix. The packed fixture checks that assembled result.
+Trusted root composition accepts the rc.2 SystemPrompt fields `personaPrefix` and `personaSuffix`; the obsolete `persona` field is rejected. These deployment fragments retain the native strict template contract. Session-scoped Host prompt bodies replace the prefix slot through the stock literal contribution API; they do not remove the deployment suffix. The packed fixture checks that assembled result.
 
 The existing runtime-configurable surface is narrower:
 

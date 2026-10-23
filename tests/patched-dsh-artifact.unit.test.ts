@@ -17,7 +17,7 @@ import {
 } from "../scripts/build-patched-dsh-artifact.js";
 import { expectedDshDependencies } from "../scripts/dsh-baseline-policy.js";
 import { DSH_SEAM_PATCHES, DSH_SEAM_SOURCE } from "../scripts/dsh-seam-decisions.js";
-import { PI_AI_PATCH } from "../scripts/pi-ai-seam.js";
+import { PI_AI_PATCHES } from "../scripts/pi-ai-seam.js";
 import {
   PATCHED_DSH_ARTIFACT_PACKAGE_COUNT,
   PATCHED_DSH_ACCEPTED_EXTERNAL_PACKAGES,
@@ -81,7 +81,7 @@ const completeEvidence = (
 describe("patched DSH artifact authority", () => {
   it("keeps exact patch bytes LF on Windows checkouts", () => {
     const repositoryRoot = resolve(import.meta.dirname, "..");
-    const patches = [...DSH_SEAM_PATCHES, PI_AI_PATCH];
+    const patches = [...DSH_SEAM_PATCHES, ...PI_AI_PATCHES];
     expect(readFileSync(resolve(repositoryRoot, ".gitattributes"), "utf8"))
       .toContain("*.patch text eol=lf");
     for (const path of patches) {
@@ -97,11 +97,11 @@ describe("patched DSH artifact authority", () => {
     expect(first).toEqual(second);
     expect(first.artifactVersion).toBe(`${DSH_SEAM_SOURCE.declaredRelease}.myagents.${first.sourceCommit.slice(0, 12)}.${first.patchSeriesSha256.slice(0, 12)}`);
     expect(first.patchSeriesSha256).toMatch(/^[a-f0-9]{64}$/u);
-    expect(first.patches).toHaveLength(11);
+    expect(first.patches).toHaveLength(13);
     expect(first.toolchain).toEqual({
       node: "24.20.0",
       npm: "11.19.0",
-      pnpm: "11.7.0",
+      pnpm: "11.28.5",
       typescript: "5.9.3",
     });
     expect(first.externalDependencyAuthority.dshBaselineSha256).toMatch(/^[a-f0-9]{64}$/u);
@@ -120,7 +120,7 @@ describe("patched DSH artifact authority", () => {
     })).toEqual([
       "npm must be 11.19.0; received 11.13.0",
       "Runtime artifact build requires Node 24.20.0; received v24.17.0",
-      "pnpm must be 11.7.0; received 11.8.0",
+      "pnpm must be 11.28.5; received 11.8.0",
     ]);
   });
 

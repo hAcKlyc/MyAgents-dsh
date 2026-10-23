@@ -16,7 +16,7 @@ On Windows PowerShell, run `./setup.ps1`. Both call `scripts/setup.mjs` through 
 
 `npm run build` builds source and Reference Web. It does not produce a MyAgents integration handoff. `npm ci` alone also leaves ordinary registry DSH packages in place and is not the completed checked setup.
 
-The verified install also pins the temporary root Zod dependency to the accepted consumer's exact version. Native session schemas cross into Product code, so allowing an unpinned transitive Zod upgrade beside the workspace pin can break source composition even when every DSH tarball is correct. This does not change the committed package manifest or lockfile.
+The verified install also pins temporary root external dependencies to the accepted consumer's exact versions, including Cordis plugins and Zod. Re-resolving plugin ranges can otherwise select a newer plugin with incompatible Cordis peers. Native session schemas cross into Product code, so allowing an unpinned transitive Zod upgrade beside the workspace pin can break source composition even when every DSH tarball is correct. This does not change the committed package manifest or lockfile.
 
 ## Modify DSH and build a local native handoff
 
@@ -30,7 +30,7 @@ On Windows PowerShell, use `npm.cmd exec -- node scripts/build-local-handoff.mjs
 
 If setup used existing DSH or pi-ai repositories through `--dsh-source` or `--pi-ai-source`, pass those same absolute paths to this command. Otherwise it uses setup's sources under `tmp/setup/sources/`. An accepted patched artifact at a different location can be selected with `--artifact /absolute/path`.
 
-The command reuses the accepted patched DSH artifact, runs source/pre-artifact checks, builds the Runtime, and generates `/absolute/path/to/new-local-work/handoff`. Its JSON result includes the handoff path, SHA-256, native target, pending validation claim, and source commit. Local Dev packaging does not require a model key or a native campaign. The handoff records `implementation-complete_pending-native-validation`; the Release path runs deterministic packed Runtime self-check and installed-process conformance on each target and records `verified`, without a model key. Live Provider campaigns are explicit optional acceptance work, separate from packaging. This command does not create or push a tag or GitHub Release.
+The command verifies and installs the accepted patched DSH artifact, builds and checks the packed Runtime composition, and generates `/absolute/path/to/new-local-work/handoff`. Its JSON result includes the handoff path, SHA-256, native target, pending validation claim, and source commit. The source/typecheck/lint/test/build checks above remain separate prerequisites; `check:pre-artifact` can record them against a clean commit. Local Dev packaging does not require a model key or a native campaign. The handoff records `implementation-complete_pending-native-validation`; the Release path runs deterministic packed Runtime self-check and installed-process conformance on each target and records `verified`, without a model key. Live Provider campaigns are explicit optional acceptance work, separate from packaging. This command does not create or push a tag or GitHub Release.
 
 ## Package MyAgents with those exact bytes
 

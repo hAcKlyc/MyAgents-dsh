@@ -1,41 +1,17 @@
-# ADR 0009 — Preserve external Prompt contributions as literal text
+# ADR 0009 — Preserve external prompt contributions as literal text
 
-Current DSH `0.2.0-rc.2` disposition: retained as patch 0008 for child persona and patch 0012 for literal runtime context. The [seam registry](../dsh/seam-decisions-v1.json) owns exact current patch identity; dated evidence below is historical.
+Status: accepted; revised for DSH `0.2.1-rc.2` on 2026-10-23.
 
-RC2 upgrade (2026-09-25): official 0.1.7-rc.2 supplies literal `PromptSection.interpolate`. Patch 0008 now carries only child persona semantics; patch 0012 carries the still-missing literal dynamic context behavior. Both default to upstream interpolation when the flag is omitted. The fixed source, patch order and evidence are recorded in [the seam registry](../dsh/seam-decisions-v1.json).
-
-- Status: accepted
-- Date: 2026-09-01
-- Scope: `B3-XR-SCTX`, `SCX-03`, `SCX-09`, `SCX-10`
-
-Historical disposition (2026-09-01): retained as `DSH-SEAM-009` / patch 0008.
-
-## Context
-
-Pinned DSH strictly interpolates every `{{...}}` group in every system section and runtime context.
-Host Markdown, Skill descriptions, custom-Agent prompts, and preloaded Skill bodies are external data
-and may legitimately contain brace examples. Treating those bodies as templates can fail a model
-step or substitute an unrelated Runtime variable.
+The [seam registry](../dsh/seam-decisions-v1.json) owns exact patch identities. `DSH-SEAM-009` is reduced to historical child persona restoration. `DSH-SEAM-013` retires: official `PromptContext.interpolate`, context assembly/rendering and `refreshContext` now provide its complete semantic. Official `PromptSection.interpolate` remains the persona rendering primitive.
 
 ## Decision
 
-Use the stock optional `PromptSection.interpolate` flag and add the same optional flag to dynamic
-`PromptContext` assembly and rendering. Omission preserves strict interpolation; `false` renders
-the resolved text literally. Thread the same choice through public child composition as
-`personaInterpolate` and persist it for continuable children. Descriptor versions 3 and 4 are
-refused after the development reset. MyAgents sets literal mode for external bodies and leaves
-Runtime-owned templates on the default behavior.
+Host Markdown, Skill descriptions and preloaded Skill bodies are data and can contain literal `{{...}}` examples. Current runtime context composition supplies `interpolate: false` through the official API. Omitted or true flags retain strict template behavior. DSH remains the only prompt assembler and renderer; no escaping or Product-side template engine is introduced.
 
-## Consequences
+Released version-5 child descriptors may contain `persona` and `personaInterpolate`. Their historical parser preserves and validates the boolean. Native cold materialization forwards it to the existing persona section, so a literal persona retains exactly the same bytes. This is read compatibility, not a new child-start option: new native activation APIs do not accept `personaInterpolate`, and new descriptor writes use the unchanged native version-3 schema. External-owner v5 children remain read-only under [ADR 0006](./0006-product-owned-continuable-lifecycle.md).
 
-- DSH remains the only Prompt assembler and renderer.
-- The wire does not expose Prompt variables or interpolation controls to Hosts.
-- Fresh and cold-resumed ProductWork children render the same persona bytes.
-- The patched artifact and all dependent Runtime/handoff evidence must be rebuilt.
+## Evidence and removal
 
-## Rejected alternatives
+The upstream `legacy-descriptor.spec.ts` fixture reads an official persisted v5 child and continues it with unknown and malformed template braces, verifies the actual model request and checks that its descriptor is not rewritten. Invalid flags and legacy-only fields on native v3 records fail closed. Official prompt tests retain default strict interpolation coverage; Product system-context tests cover literal root and child context after refresh.
 
-- reject Markdown containing braces;
-- escape and later unescape arbitrary external text;
-- hide complete bodies in synthetic Prompt variables;
-- add a product-side Prompt renderer.
+Remove patch 0008 once upstream cold restoration explicitly supports the released v5 literal persona flag. The retired patch 0012 and obsolete one-shot/persona start API must not return merely to satisfy historical compile fixtures.

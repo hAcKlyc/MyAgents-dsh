@@ -1,6 +1,6 @@
 # ADR 0002 — Authoritative pre-assistant-commit waterfall
 
-Current DSH `0.2.0-rc.2` disposition: retained as patch 0002; governed final tool arguments still need one authoritative commit. The [seam registry](../dsh/seam-decisions-v1.json) owns exact current patch identity; dated evidence below is historical.
+Current DSH `0.2.1-rc.2` disposition: retained as patch 0002; governed final tool arguments still need one authoritative commit. The [seam registry](../dsh/seam-decisions-v1.json) owns exact current patch identity; dated evidence below is historical.
 
 Status: accepted on 2026-08-16 for the fixed DSH source baseline
 
@@ -31,3 +31,7 @@ All calls are prepared before any call is appended or dispatched. Product schema
 ## Consequences and removal
 
 The waterfall is a narrow upstream patch, not a product AgentLoop. The official profile remains inactive until the patched artifact and complete Batch 1 tests pass. Remove it after an installed DSH release exposes an equivalent tested seam. Supersession requires the full atomicity, replay, repair, cancellation, HMR, and no-listener matrix.
+
+## Candidate 0.2.1-rc.2 adaptation
+
+The event now uses the official fused `AgentEventDispatch` scope carrier and its type-derived event surface. The deleted generated scope resolver/invariant framework is not restored. The real loop regression explicitly checks matching scope, sibling exclusion and disposal in addition to argument atomicity and cold native JSONL replay.

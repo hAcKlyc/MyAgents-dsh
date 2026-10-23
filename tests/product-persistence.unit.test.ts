@@ -19,7 +19,6 @@ import { mkdirSync, mkdtempSync, realpathSync } from "node:fs";
 import { glob, link, mkdir, mkdtemp, readFile, realpath, rename, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { constants as zstdConstants, zstdCompressSync, zstdDecompressSync } from "node:zlib";
-import { default as JsonlSessionPersistence } from "@deepseek-ai/dsh-session-persistence-jsonl";
 import { NativeJsonlGenerations } from "../packages/persistence-product/src/native-jsonl.js";
 import { join, resolve } from "node:path";
 import { DatabaseSync, type SQLInputValue } from "node:sqlite";
@@ -978,13 +977,17 @@ describe("ProductJsonlSessionPersistence", () => {
       targetWorkspaceIdentity: "fork-target-workspace-1",
     })).rejects.toThrow(/already owns another Session/u);
 
-    const fail = vi.spyOn(JsonlSessionPersistence.prototype, "persistBatch").mockRejectedValueOnce(new Error("candidate append interrupted"));
+    // Make the target native store unavailable using a real filesystem failure,
+    // without depending on the official backend's now-private implementation.
+    await mkdir(committedTargetHome, { recursive: true });
+    const obstruction = join(committedTargetHome, "sessions");
+    await writeFile(obstruction, "candidate storage interrupted");
     await expect(persistence.prepareFork({
       clientMutationId: "fork-client-1", runtimeSessionId: sourceId, sourceStableBoundaryId: boundaryId,
       targetPersistenceRef: "fork-target-persistence-1", targetRuntimeHome: committedTargetHome,
       targetRuntimeSessionId: "product-persistence-fork-target", targetWorkspaceIdentity: "fork-target-workspace-1",
-    })).rejects.toThrow("candidate append interrupted");
-    fail.mockRestore();
+    })).rejects.toThrow();
+    await rm(obstruction);
     const prepared = await persistence.prepareFork({
       clientMutationId: "fork-client-1",
       runtimeSessionId: sourceId,

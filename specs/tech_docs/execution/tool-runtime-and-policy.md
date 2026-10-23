@@ -2,7 +2,7 @@
 type: technical-architecture
 status: implemented
 module: tool-runtime-and-policy
-updated: 2026-10-02
+updated: 2026-10-23
 ---
 
 # Tool runtime and policy
@@ -84,9 +84,7 @@ Native Glob/Grep return its complete-result locator and retrieval hint; Read use
 filesystem/sandbox path for that absolute file. There is no additional search store or transcript.
 Invalid regex errors quote the submitted pattern and parser reason rather than the internal wrapper.
 
-Each assembled Agent context identifies its native DSH Agent id, allowing children to recognize shared
-offers without exposing unrelated personal lists. This runtime identity is separate from MyAgents CLI's
-configured workspace Agent ids; the context directs callers to `myagents agent list` for that namespace.
+Generic context keeps the root Runtime Session ID internal. Task personal lists and claims resolve the caller from execution context; native child controls consume IDs returned by Agent tools. Product Agent and Session identities belong to the Host.
 Native interrupt requests reject unknown ids using
 DSH's live registry and durable descendant catalog; known inactive children retain native no-op semantics.
 Unresolved dependency errors identify only visible blockers and their status, explain reopen/delete,
@@ -121,7 +119,7 @@ opened-root/file identity revalidation. `ls` explains whether entry count or byt
 
 Read/Write/Edit now invoke the official `tool-fs` executors through public definition factories.
 MyAgents retains internal policy identities, permission/deadline admission, durable read receipts and checkpoint settlement.
-There is one DSH tool execution and one filesystem provider; no internal second tool dispatch.
+There is one DSH tool execution and one filesystem provider; no internal second tool dispatch. Native executors resolve through the composed working-directory service and return canonical absolute result paths, matching the target pinned by Product authorization. The profile does not expose directory switching.
 The official reader owns line windows and streaming; image reads use its actual calling-model
 capability gate and return image content blocks through the existing Host attachment request scope.
 PNG/JPEG/WebP/GIF and extension-less normalized images are supported when the route accepts images.

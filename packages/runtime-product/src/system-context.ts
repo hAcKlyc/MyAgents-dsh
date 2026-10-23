@@ -28,7 +28,7 @@ export const runtimeWorkspaceContextText = (canonicalRoot: string): string => [
   "Current workspace root:",
   canonicalRoot,
   "",
-  "Use this exact absolute path for file and search tools that require one. The available Shell tool runs in this workspace. Do not infer access outside it.",
+  "Use this exact absolute path for file and search tools that require one. The available Shell tool runs in this workspace. Workspace location does not define access permissions; follow the current file policy and tool decisions.",
 ].join("\n");
 
 export const registerRuntimeWorkspaceContext = (

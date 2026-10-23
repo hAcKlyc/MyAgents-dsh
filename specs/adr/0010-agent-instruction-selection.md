@@ -1,6 +1,6 @@
 # ADR 0010 — Reuse DSH for mutually exclusive project instructions
 
-Current DSH `0.2.0-rc.2` disposition: retained as patch 0009; first-candidate selection and guidance propagation remain required. The [seam registry](../dsh/seam-decisions-v1.json) owns exact current patch identity; dated evidence below is historical.
+Current DSH `0.2.1-rc.2` disposition: retained as patch 0009; first-candidate selection and guidance propagation remain required. The [seam registry](../dsh/seam-decisions-v1.json) owns exact current patch identity; dated evidence below is historical.
 
 - Status: accepted
 - Date: 2026-09-01
@@ -18,7 +18,7 @@ and `Edit`.
 
 ## Decision
 
-Extend the plugin with two narrow configuration values. `candidateSelection: "first"` selects the
+Extend the plugin with narrow composition configuration values. `candidateSelection: "first"` selects the
 first confirmed non-empty candidate, preserves the last visible winner when a higher-priority file
 is unavailable, and emits winner removal/addition in one existing durable change batch.
 `fileTouchToolNames` selects which successful tools contribute their existing `file_path` argument.
@@ -37,3 +37,9 @@ Defaults retain the original all-candidates and lowercase-tool behavior.
 - maintain another recursive watcher or digest state machine;
 - hard-code MyAgents canonical tool names in DSH;
 - add a generic path-extractor DSL.
+
+## DSH 0.2.1-rc.2 refresh (2026-10-23)
+
+The candidate adds a shared agents-home root and groups it with the harness-home root for deduplication and unavailable-read rollback. The first-candidate project policy reuses that rollback and excludes both global scope kinds from project mutual exclusion. `globalInstructionRoots` defaults to the native `dsh` and `agents` roots in native order; MyAgents explicitly selects `dsh` to preserve its existing discovery authority. This selects existing roots without creating another scanner or changing process home resolution.
+
+The candidate working-directory service is composed as required by native instructions/file tools. Directory state does not grant sandbox access, and the current Product profile does not expose directory-switching tools. Native `read_image` remains included among successful file touches.

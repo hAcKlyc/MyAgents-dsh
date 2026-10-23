@@ -137,6 +137,13 @@ import toolContractMetaJson from "@myagents-dsh/tool-contracts/tool-contract-met
   type: "json",
 };
 
+const fixtureArguments = process.argv.slice(2);
+assert.ok(fixtureArguments.length === 0 || (fixtureArguments.length === 2
+  && fixtureArguments[0] === "--delegation-tool"
+  && (fixtureArguments[1] === "subagent" || fixtureArguments[1] === "fork_agent")),
+"Expected only optional --delegation-tool subagent|fork_agent");
+const hostModelDelegationTool = fixtureArguments[1] ?? "subagent";
+
 assert.equal(Object.isFrozen(CANONICAL_TOOL_NAMES), true);
 assert.equal(CANONICAL_TOOL_NAMES.length, 24);
 assert.equal(toolContractMetaJson.contractSha256, CANONICAL_TOOL_CONTRACT_SHA256);
@@ -1820,17 +1827,18 @@ const hostModelSecret = "artifact-host-model-secret-canary";
 const hostModelCredentialValueField = ["api", "Key"].join("") as "apiKey";
 hostModelPeer.registerRequestHandler("host/credential/resolve", (params) => {
   hostModelCredentialCalls.push(structuredClone(params));
-  return params.purpose === "availability"
-    ? {
-        authoritativeCredentialRevision: "artifact-credential-v1",
-        available: true,
-        kind: "availability" as const,
-      }
-    : {
-        authoritativeCredentialRevision: "artifact-credential-v1",
-        kind: "material" as const,
-        material: { [hostModelCredentialValueField]: hostModelSecret },
-      };
+  if (params.purpose === "availability") return {
+    authoritativeCredentialRevision: "artifact-credential-v1",
+    available: true,
+    kind: "availability" as const,
+  };
+  assert.ok(params.subject === "provider");
+  return {
+    authoritativeCredentialRevision: "artifact-credential-v1",
+    kind: "material" as const,
+    // Request-specific canaries prove each wire request uses its own authority.
+    material: { [hostModelCredentialValueField]: `${hostModelSecret}:${params.modelRequestId}` },
+  };
 });
 hostModelPeer.registerRequestHandler("host/attachment/put", async (params) => {
   assert.ok(params.stagingPath.startsWith(`${fixtureAttachmentStaging}${sep}`));
@@ -1895,7 +1903,17 @@ await hostModelComposition.context.productSession.bindCreate({
 });
 const previousFetch = globalThis.fetch;
 const hostModelAuthorization: string[] = [];
-let hostModelFetchSequence = 0;
+const hostModelWireOwners: string[] = [];
+const hostModelWireAuthority = new Map<string, MethodParams<"host/credential/resolve">>();
+const hostModelChildPrompt = "Return one concise child result through the approved Host model route.";
+const hostModelChildResult = "child credential route verified";
+const hostModelChildResponse = Promise.withResolvers<undefined>();
+let hostModelChildRequested = false;
+const hostModelNativeRootSession = hostModelComposition.context.productSession.requireAgent().session;
+const hostModelRootEvents: SessionEvent[] = [];
+hostModelComposition.context.on("session/event", (session, event) => {
+  if (session === hostModelNativeRootSession) hostModelRootEvents.push(event);
+});
 const hostModelMessagesSse = (block: { type: "text"; text: string } | {
   type: "tool_use"; id: string; name: string; input: Record<string, unknown>;
 }): string => {
@@ -1914,24 +1932,70 @@ const hostModelMessagesSse = (block: { type: "text"; text: string } | {
   ];
   return events.map((event) => `event: ${event.type}\ndata: ${JSON.stringify(event)}\n\n`).join("");
 };
-globalThis.fetch = (_input: string | URL | Request, init?: RequestInit): Promise<Response> => {
-  hostModelAuthorization.push(new Headers(init?.headers).get("x-api-key") ?? "");
-  hostModelFetchSequence += 1;
-  const block = hostModelFetchSequence === 1
-    ? { type: "tool_use" as const, id: "artifact-host-model-child-call", name: "subagent", input: {
-        description: "Verify child model lineage",
-        prompt: "Return one concise child result through the approved Host model route.",
-        run_in_background: false,
-      } }
-    : hostModelFetchSequence === 2
-      ? { type: "text" as const, text: "child credential route verified" }
-      : hostModelFetchSequence === 3
-        ? { type: "tool_use" as const, id: "artifact-host-model-mcp-call", name: "mcp__artifact-mcp__echo", input: { value: "ping" } }
-        : { type: "text" as const, text: "root credential and MCP route verified" };
-  return Promise.resolve(new Response(hostModelMessagesSse(block), {
-    headers: { "content-type": "text/event-stream" },
-    status: 200,
-  }));
+globalThis.fetch = async (_input: string | URL | Request, init?: RequestInit): Promise<Response> => {
+  const authorization = new Headers(init?.headers).get("x-api-key") ?? "";
+  hostModelAuthorization.push(authorization);
+  const credential = hostModelCredentialCalls.find((request) => request.subject === "provider"
+    && request.purpose === "model_request" && `${hostModelSecret}:${request.modelRequestId}` === authorization);
+  assert.ok(credential?.subject === "provider" && credential.purpose === "model_request");
+  assert.equal(hostModelWireAuthority.has(credential.modelRequestId), false);
+  hostModelWireAuthority.set(credential.modelRequestId, credential);
+  const requestBody = init?.body;
+  assert.ok(typeof requestBody === "string");
+  const body = JSON.parse(requestBody) as {
+    messages: { role: string; content: { type: string; text?: string; tool_use_id?: string; is_error?: boolean }[] }[];
+    tools?: { name: string }[];
+  };
+  const userBlocks = body.messages.filter(({ role }) => role === "user").flatMap(({ content }) => content);
+  const userText = userBlocks.filter(({ type }) => type === "text").map(({ text }) => text);
+  const results = userBlocks.filter(({ type }) => type === "tool_result");
+  const operationId = credential.authority.clientOperationId;
+  let block: Parameters<typeof hostModelMessagesSse>[0];
+  if (operationId?.startsWith("artifact-host-model-utility-") === true) {
+    assert.deepEqual(body.tools ?? [], []);
+    assert.equal(results.length, 0);
+    assert.deepEqual(userText, [operationId.endsWith("v1")
+      ? "Return one concise utility result."
+      : "Return one concise utility result after configuration replacement."]);
+    hostModelWireOwners.push(operationId);
+    block = { type: "text", text: "utility credential route verified" };
+  } else if (credential.authority.rootCallId?.startsWith("child-model-") === true) {
+    assert.equal(operationId, "artifact-host-model-operation");
+    assert.ok(userText.includes(hostModelChildPrompt));
+    assert.equal(hostModelChildRequested, false);
+    hostModelChildRequested = true;
+    hostModelWireOwners.push("child");
+    await hostModelChildResponse.promise;
+    block = { type: "text", text: hostModelChildResult };
+  } else {
+    assert.equal(operationId, "artifact-host-model-operation");
+    assert.ok(userText.includes("verify Host-scoped model credentials"));
+    assert.ok(body.tools?.some(({ name }) => name === hostModelDelegationTool));
+    assert.ok(body.tools?.some(({ name }) => name === "mcp__artifact-mcp__echo"));
+    const childCall = results.find(({ tool_use_id }) => tool_use_id === "artifact-host-model-child-call");
+    const mcpCall = results.find(({ tool_use_id }) => tool_use_id === "artifact-host-model-mcp-call");
+    if (childCall === undefined) {
+      assert.equal(credential.authority.dshTurn, 1);
+      hostModelWireOwners.push("root-delegate");
+      block = { type: "tool_use", id: "artifact-host-model-child-call", name: hostModelDelegationTool, input: {
+        description: "Verify child model lineage", prompt: hostModelChildPrompt,
+      } };
+    } else if (mcpCall === undefined) {
+      assert.notEqual(childCall.is_error, true);
+      assert.equal(credential.authority.dshTurn, 1);
+      hostModelWireOwners.push("root-mcp");
+      block = { type: "tool_use", id: "artifact-host-model-mcp-call", name: "mcp__artifact-mcp__echo", input: { value: "ping" } };
+    } else {
+      assert.notEqual(mcpCall.is_error, true);
+      const childDelivered = userText.includes(hostModelChildResult);
+      assert.equal(credential.authority.dshTurn, childDelivered ? 2 : 1);
+      hostModelWireOwners.push(childDelivered ? "root-child-result" : "root-idle");
+      block = { type: "text", text: "root credential and MCP route verified" };
+    }
+  }
+  return new Response(hostModelMessagesSse(block), {
+    headers: { "content-type": "text/event-stream" }, status: 200,
+  });
 };
 try {
   assert.deepEqual(await hostModelComposition.context.sdkOperations.start({
@@ -1942,14 +2006,32 @@ try {
     extensionDigest: hostModelComposition.context.productComponents.catalog().digest,
     executionEnvironmentRevision: initializeRequest.executionEnvironment.revision,
     executionEnvironmentDigest: initializeRequest.executionEnvironment.digest,
-    limits: { maxTurns: 1, maxDurationMs: 30_000 },
+    limits: { maxTurns: 2, maxDurationMs: 30_000 },
     origin: { kind: "headless", scenario: "artifact-host-model" },
   }), {
     state: "accepted",
     clientOperationId: "artifact-host-model-operation",
   });
   const hostModelAgent = hostModelComposition.context.productSession.requireAgent();
+  await waitUntil(() => hostModelChildRequested, "native child model request admitted");
   await hostModelAgent.whenIdle();
+  await hostModelComposition.context.sdkOperations.reconcile();
+  const heldOperation = hostModelComposition.context.sdkOperations.lookup("artifact-host-model-operation");
+  assert.equal(heldOperation?.state, "settling");
+  assert.equal(heldOperation.terminal, undefined);
+  const runningChildren = await hostModelComposition.context.subagents.listChildren(hostModelAgent.id);
+  assert.equal(runningChildren.length, 1);
+  const childRow = runningChildren[0];
+  assert.ok(childRow?.mode === "continuable");
+  const hostModelChild = hostModelComposition.context.agents.get(childRow.id);
+  assert.ok(hostModelChild !== undefined && hostModelChild !== hostModelAgent);
+  assert.equal(hostModelChild.session.header.parentSession, hostModelAgent.id);
+  assert.equal(hostModelChild.session.header.origin, "subagent");
+  assert.equal(hostModelComposition.context.workingDirectory.get(hostModelAgent.session), fixtureWorkspace);
+  assert.equal(hostModelComposition.context.workingDirectory.get(hostModelChild.session), fixtureWorkspace);
+  assert.equal(hostModelRootEvents.some((event) => event.type === "user/message"
+    && event.data.source.kind === "subagent-settled"), false);
+  hostModelChildResponse.resolve(undefined);
   await waitUntil(
     () => hostModelComposition.context.sdkOperations.lookup("artifact-host-model-operation")?.state
       === "terminal",
@@ -1958,6 +2040,19 @@ try {
   const hostModelTerminal = hostModelComposition.context.sdkOperations
     .lookup("artifact-host-model-operation")?.terminal;
   assert.equal(hostModelTerminal?.kind, "succeeded");
+  assert.deepEqual(hostModelComposition.context.sdkOperations.lookup("artifact-host-model-operation")?.dshTurns, [1, 2]);
+  const childDeliveries = hostModelRootEvents.filter((event) => event.type === "user/message"
+    && event.data.source.kind === "subagent-settled");
+  assert.equal(childDeliveries.length, 1);
+  const childDelivery = childDeliveries[0];
+  assert.ok(childDelivery?.type === "user/message" && childDelivery.data.source.kind === "subagent-settled");
+  assert.equal(childDelivery.data.source.senderSessionId, runningChildren[0]?.id);
+  assert.ok(childDelivery.data.content.some((part) => part.type === "text" && part.text === hostModelChildResult));
+  const deliveredContext = hostModelComposition.context.sdkOperations.lookup("artifact-host-model-operation")
+    ?.messages.find(({ messageId }) => messageId === childDelivery.data.id);
+  assert.equal(deliveredContext?.contextMessage, true);
+  assert.equal(deliveredContext.state, "claimed");
+  assert.equal(deliveredContext.dshTurn, 2);
   const utilityBeforeConfig = await hostModelClient.utilityRun({
     clientOperationId: "artifact-host-model-utility-v1",
     prompt: "Return one concise utility result.",
@@ -1966,7 +2061,7 @@ try {
     maxTokens: 32,
   });
   assert.equal(utilityBeforeConfig.state, "succeeded", JSON.stringify(utilityBeforeConfig));
-  assert.equal(utilityBeforeConfig.text, "root credential and MCP route verified");
+  assert.equal(utilityBeforeConfig.text, "utility credential route verified");
   const nextHostModelProfile = Object.freeze({
     ...hostModelProfile,
     revision: "artifact-host-model-profile-v2",
@@ -2003,23 +2098,27 @@ try {
     maxTokens: 32,
   });
   assert.equal(utilityAfterConfig.state, "succeeded");
-  assert.equal(utilityAfterConfig.text, "root credential and MCP route verified");
+  assert.equal(utilityAfterConfig.text, "utility credential route verified");
 } finally {
+  hostModelChildResponse.resolve(undefined);
   globalThis.fetch = previousFetch;
 }
-assert.deepEqual(hostModelAuthorization, Array.from({ length: 6 }, () => hostModelSecret));
+const hostModelChildJoined = hostModelWireOwners.includes("root-child-result");
+assert.equal(hostModelChildJoined, true);
+assert.deepEqual([...hostModelWireOwners].sort(), [
+  "child", "root-delegate", "root-mcp", "root-idle", "root-child-result",
+  "artifact-host-model-utility-v1", "artifact-host-model-utility-v2",
+].sort());
+const hostModelMaterialRequests = hostModelCredentialCalls.filter((request) =>
+  request.subject === "provider" && request.purpose === "model_request");
+assert.deepEqual([...hostModelAuthorization].sort(), hostModelMaterialRequests.map((request) =>
+  `${hostModelSecret}:${request.modelRequestId}`).sort());
+assert.equal(hostModelWireAuthority.size, 7);
 assert.ok(hostModelInteractionCalls.length > 0);
-assert.equal(hostModelCredentialCalls.length, 8);
-assert.deepEqual(hostModelCredentialCalls.map(({ purpose }) => purpose), [
-  "availability",
-  "model_request",
-  "model_request",
-  "model_request",
-  "model_request",
-  "model_request",
-  "availability",
-  "model_request",
-]);
+assert.equal(hostModelCredentialCalls.length, 9);
+assert.deepEqual(hostModelCredentialCalls.filter((request) => request.subject === "provider" && request.purpose === "availability")
+  .map(({ profileRevision }) => profileRevision), [hostModelProfile.revision, "artifact-host-model-profile-v2"]);
+assert.equal(hostModelMaterialRequests.length, 7);
 const hostModelMaterialRequest = hostModelCredentialCalls[1];
 assert.ok(hostModelMaterialRequest?.subject === "provider"
   && hostModelMaterialRequest.purpose === "model_request");
@@ -2044,7 +2143,11 @@ const hostModelRequestAuthorityBound = hostModelCredentialCalls
     && request.authority.expectedConfigRevision === "artifact-host-model-config-v1"
     && request.authority.expectedCredentialRevision === "artifact-credential-v1"
     && request.authority.runtimeSessionId === "artifact-host-model-runtime-session"
-    && request.authority.dshTurn === 1);
+    && request.authority.turnId === hostModelMaterialRequest.authority.turnId
+    && (request.authority.dshTurn === 1 || request.authority.dshTurn === 2));
+assert.deepEqual(hostModelMaterialRequests.filter((request) =>
+  request.authority.clientOperationId === "artifact-host-model-operation")
+  .map((request) => request.authority.dshTurn).sort(), [1, 1, 1, 1, 2]);
 const hostModelUtilityRequests = hostModelCredentialCalls.flatMap((request) => {
   if (request.subject !== "provider" || request.purpose !== "model_request"
     || request.authority.clientOperationId?.startsWith("artifact-host-model-utility-") !== true) {
@@ -2628,7 +2731,7 @@ const runtimeContext = runtimeContexts[0];
 assert.ok(runtimeContext);
 const contextText = runtimeContext.content.flatMap((block) => block.type === "text" ? [block.text] : []).join("\n");
 assert.ok(contextText.includes(fixtureWorkspace));
-assert.ok(contextText.includes(`Your Agent id is "${String(primaryAgent.id)}"`));
+assert.ok(!contextText.includes(String(primaryAgent.id)), "internal root Session identity stays out of generic context");
 assert.ok(contextText.includes("fixture-audit") && contextText.includes("release-audit"));
 assert.ok(contextText.includes("Approval policy: ask."));
 const approvalContextMessage = { role: runtimeContext.role, content: runtimeContext.content };
@@ -2638,6 +2741,11 @@ const primarySystemMessage = {
 };
 const timeReadings = primaryAgent.session.deriveMessages().filter(({ source }) => source.kind === "time-context");
 assert.ok(timeReadings.length >= 1, "official time context must enter durable model history");
+for (const reading of timeReadings) {
+  const text = reading.content.flatMap(block => block.type === "text" ? [block.text] : []).join("\n");
+  assert.ok(!text.includes("Browser time zone"), "MyAgents operations have no browser-zone policy");
+  assert.ok(!text.includes("Ask the user to clarify"));
+}
 assert.ok(timeReadings.every(({ content }) => content.some((block) =>
   block.type === "text" && block.text.startsWith("Time sampled while preparing turn "))));
 assert.deepEqual(primaryAgent.session.deriveMessages()
@@ -3149,7 +3257,7 @@ const shellMeta = (callId: string): Record<string, unknown> => {
   assert.ok(event.data.meta !== null && typeof event.data.meta === "object" && !Array.isArray(event.data.meta));
   return event.data.meta;
 };
-assert.deepEqual(shellMeta("artifact-bash-call"), { exitCode: 0, status: "completed" });
+assert.deepEqual(shellMeta("artifact-bash-call"), { cwd: fixtureWorkspace, exitCode: 0, status: "completed" });
 const backgroundRecord = { jobId: shellMeta("artifact-background-bash-call").jobId };
 const backgroundFloodRecord = { jobId: shellMeta("artifact-background-flood-call").jobId };
 assert.equal(typeof backgroundRecord.jobId, "string");
@@ -4867,9 +4975,12 @@ writeSync(1, `${JSON.stringify({
   hostPortLifecycleAuthorityVerified,
   hostPortMethodOrder: reverseMethodOrder,
   hostCredentialModelEvidence: {
+    delegationTool: hostModelDelegationTool,
     adapterAuthorityHidden: hostModelAdapterAuthorityHidden,
     credentialPurposes: hostModelCredentialCalls.map(({ purpose }) => purpose),
     childModelRequestBound: hostModelChildMaterialRequest.authority.rootCallId?.startsWith("child-model-"),
+    nativeAsyncChildJoined: hostModelChildJoined,
+    requestCredentialIsolationVerified: hostModelAuthorization.length === hostModelWireAuthority.size,
     publicControllerHidden: hostCredentialPublicControllerHidden,
     providerRouteId: hostModelProfile.providerRouteId,
     profileRevision: hostModelProfile.revision,

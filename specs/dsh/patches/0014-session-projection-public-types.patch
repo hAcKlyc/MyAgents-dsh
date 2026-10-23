@@ -1,0 +1,137 @@
+diff --git a/docs/subsystems/session-projection.md b/docs/subsystems/session-projection.md
+index 8580b94c4d7dd36f942ff10d77e13d2dc70b7e8b..dbbe0760e6fa265331691d20d3a508fe0cf80de6 100644
+--- a/docs/subsystems/session-projection.md
++++ b/docs/subsystems/session-projection.md
+@@ -215,7 +215,7 @@ Source: [`packages/session/session-projection-cache/src/index.ts`](../../package
+  * @param definition - key, state schema, pure unit functions, and stateVersion.
+  * @returns the exact disposer that unregisters this unit.
+  */
+-register< K extends keyof SessionProjectionMap, S extends SessionProjectionStateMap[K], >( definition: Omit<ProjectionDefinition<K, S>, 'wire'> & { wire: NonNullable<ProjectionDefinition<K, S>['wire']> }, ): () => void
++register< K extends keyof SessionProjectionStateMap, S extends SessionProjectionStateMap[K], >( definition: Omit<ProjectionDefinition<K, S>, 'wire'> & { wire: NonNullable<ProjectionDefinition<K, S>['wire']> }, ): () => void
+ 
+ /**
+  * Register one host-only unit. Its state is omitted from client snapshots
+diff --git a/docs/subsystems/session-projection.zh.md b/docs/subsystems/session-projection.zh.md
+index b98d348a36c51aab973bc3397ddbf744860245a4..ce2ed99a2d623c6cf87578abfa48b52f3ae4f8ab 100644
+--- a/docs/subsystems/session-projection.zh.md
++++ b/docs/subsystems/session-projection.zh.md
+@@ -215,7 +215,7 @@ Source: [`packages/session/session-projection-cache/src/index.ts`](../../package
+  * @param definition - key, state schema, pure unit functions, and stateVersion.
+  * @returns the exact disposer that unregisters this unit.
+  */
+-register< K extends keyof SessionProjectionMap, S extends SessionProjectionStateMap[K], >( definition: Omit<ProjectionDefinition<K, S>, 'wire'> & { wire: NonNullable<ProjectionDefinition<K, S>['wire']> }, ): () => void
++register< K extends keyof SessionProjectionStateMap, S extends SessionProjectionStateMap[K], >( definition: Omit<ProjectionDefinition<K, S>, 'wire'> & { wire: NonNullable<ProjectionDefinition<K, S>['wire']> }, ): () => void
+ 
+ /**
+  * Register one host-only unit. Its state is omitted from client snapshots
+diff --git a/packages/extensions/tool-cordis/src/api-catalog.ts b/packages/extensions/tool-cordis/src/api-catalog.ts
+index 261170fcd0e397b2d28ebfdfe207c2f455c78313..c6f37f07450ad7c7becf24779f2eb04ba3d4b098 100644
+--- a/packages/extensions/tool-cordis/src/api-catalog.ts
++++ b/packages/extensions/tool-cordis/src/api-catalog.ts
+@@ -2314,7 +2314,7 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
+     description: '`ctx.sessionProjections`: the projection unit table and its drive. The service subscribes to `session/event` once; every committed event passes every registered unit\'s `apply` (eager drive). A changed state reference computes the next client view; the change feed is notified only when its raw result changes by `Object.is`. Cells build lazily — a unit registered after events flowed, or a session older than the registry, folds `init` over the in-memory log on first touch (event or read). Registration is an effect (disposer rides the calling fiber): an unloaded domain plugin\'s key disappears from snapshots and clients read it as capability absence. A host reader either declares `sessionProjections` in its plugin `inject` or fails explicitly when the registry or required key is absent. Contributors may preserve optional registration through `ctx.inject([\'sessionProjections\'], ...)`. Registrants sharing a key share one unit and are counted: the same tool package mounted in N agent presets registers N times, and the key survives until the last one unloads.',
+     methods: [
+       {
+-        signature: 'register< K extends keyof SessionProjectionMap, S extends SessionProjectionStateMap[K], >( definition: Omit<ProjectionDefinition<K, S>, \'wire\'> & { wire: NonNullable<ProjectionDefinition<K, S>[\'wire\']> }, ): () => void',
++        signature: 'register< K extends keyof SessionProjectionStateMap, S extends SessionProjectionStateMap[K], >( definition: Omit<ProjectionDefinition<K, S>, \'wire\'> & { wire: NonNullable<ProjectionDefinition<K, S>[\'wire\']> }, ): () => void',
+         description: 'Register one domain\'s unit. The registration is an effect on the calling context\'s fiber: disposing the fiber (or calling the returned disposer) removes the key — and the unit\'s cached cells — from subsequent drives and snapshots.',
+         parameters: [{ name: 'definition', description: 'key, state schema, pure unit functions, and stateVersion.' }],
+         returns: 'the exact disposer that unregisters this unit.',
+diff --git a/packages/session/session-projection/src/index.ts b/packages/session/session-projection/src/index.ts
+index ac6e63458f840f6f8b1c95541e3fbf62912eccd8..da474fbf43fa199a6b42cd0edeec69a5667d5020 100644
+--- a/packages/session/session-projection/src/index.ts
++++ b/packages/session/session-projection/src/index.ts
+@@ -231,7 +231,7 @@ export class SessionProjectionRegistry extends Service {
+    * @returns the exact disposer that unregisters this unit.
+    */
+   register<
+-    K extends keyof SessionProjectionMap,
++    K extends keyof SessionProjectionStateMap,
+     S extends SessionProjectionStateMap[K],
+   >(
+     definition: Omit<ProjectionDefinition<K, S>, 'wire'> & {
+diff --git a/packages/session/session-projection/tests/registration-types.spec.ts b/packages/session/session-projection/tests/registration-types.spec.ts
+new file mode 100644
+index 0000000000000000000000000000000000000000..b4f1a21fb58ea496947513cdb18366f4821625f8
+--- /dev/null
++++ b/packages/session/session-projection/tests/registration-types.spec.ts
+@@ -0,0 +1,79 @@
++/** Wire-only client augmentations must not require importing private host folds. */
++import { resolve } from 'node:path'
++import ts from 'typescript'
++import { expect, it } from 'vitest'
++
++const root = resolve(import.meta.dirname, '../../../..')
++const probePath = resolve(import.meta.dirname, '__registration_probe.ts')
++const registryPath = resolve(root, 'packages/session/session-projection/src/index.ts')
++
++const probe = `
++import type { ProjectionDefinition, SessionProjectionRegistry } from '@deepseek-ai/dsh-session-projection'
++
++declare module '@deepseek-ai/dsh-session-projection/types' {
++  interface SessionProjectionMap {
++    'test/client-only': string
++    'test/registered-wire': string
++  }
++  interface SessionProjectionStateMap {
++    'test/registered-wire': number
++    'test/registered-host': number
++  }
++}
++
++declare const registry: SessionProjectionRegistry
++declare const wire: Omit<ProjectionDefinition<'test/registered-wire'>, 'wire'> & {
++  wire: NonNullable<ProjectionDefinition<'test/registered-wire'>['wire']>
++}
++declare const hostOnly: ProjectionDefinition<'test/registered-host'>
++registry.register(wire)
++registry.register(hostOnly)
++const clientOnly = { ...wire, key: 'test/client-only' as const }
++// @ts-expect-error -- a client-only key has no declared host state to register.
++registry.register(clientOnly)
++const { wire: omittedWire, ...missingWire } = wire
++// @ts-expect-error -- a client-visible host unit must supply its wire projection.
++registry.register(missingWire)
++const wrongState = { ...wire, init: () => 'not the declared numeric state' }
++// @ts-expect-error -- registration must retain the declared state contract.
++registry.register(wrongState)
++`
++
++it('checks registration against host state without requiring every client key to have an imported fold', { timeout: 60_000 }, () => {
++  const parsed = ts.getParsedCommandLineOfConfigFile(resolve(root, 'tsconfig.host.json'), {}, {
++    ...ts.sys,
++    onUnRecoverableConfigFileDiagnostic(diagnostic) {
++      throw new Error(ts.flattenDiagnosticMessageText(diagnostic.messageText, '\n'))
++    },
++  })
++  expect(parsed).toBeDefined()
++  const options: ts.CompilerOptions = {
++    ...parsed!.options,
++    composite: false,
++    incremental: false,
++    noEmit: true,
++    declaration: false,
++    declarationMap: false,
++    skipLibCheck: false,
++    noUnusedLocals: false,
++    noUnusedParameters: false,
++  }
++  const base = ts.createCompilerHost(options, true)
++  const host: ts.CompilerHost = {
++    ...base,
++    fileExists: path => resolve(path) === probePath || base.fileExists(path),
++    readFile: path => resolve(path) === probePath ? probe : base.readFile(path),
++    getSourceFile(path, languageVersion, onError, shouldCreateNewSourceFile) {
++      return resolve(path) === probePath
++        ? ts.createSourceFile(path, probe, languageVersion, true)
++        : base.getSourceFile(path, languageVersion, onError, shouldCreateNewSourceFile)
++    },
++  }
++  const program = ts.createProgram([probePath], options, host)
++  const diagnostics = [probePath, registryPath].flatMap((path) => {
++    const source = program.getSourceFile(path)
++    if (source === undefined) throw new Error(`missing typecheck source: ${path}`)
++    return [...program.getSyntacticDiagnostics(source), ...program.getSemanticDiagnostics(source)]
++  })
++  expect(diagnostics.map(diagnostic => ts.flattenDiagnosticMessageText(diagnostic.messageText, '\n'))).toEqual([])
++})

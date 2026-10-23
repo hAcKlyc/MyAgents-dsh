@@ -20,6 +20,8 @@ const expectedRuntimePackageNames = Object.freeze([
   "@deepseek-ai/dsh-fs-local",
   "@deepseek-ai/dsh-fs-sandbox",
   "@deepseek-ai/dsh-tool-fs",
+  "@deepseek-ai/dsh-jobs",
+  "@deepseek-ai/dsh-jobs-local",
   "@deepseek-ai/dsh-llm",
   "@deepseek-ai/dsh-llm-deepseek",
   "@deepseek-ai/dsh-llm-pi-ai",
@@ -29,6 +31,7 @@ const expectedRuntimePackageNames = Object.freeze([
   "@deepseek-ai/dsh-sandbox-local",
   "@deepseek-ai/dsh-sandbox-windows-acl",
   "@deepseek-ai/dsh-session",
+  "@deepseek-ai/dsh-session-persistence",
   "@deepseek-ai/dsh-session-persistence-jsonl",
   "@deepseek-ai/dsh-session-checkpoint-policy",
   "@deepseek-ai/dsh-session-query",
@@ -40,6 +43,9 @@ const expectedRuntimePackageNames = Object.freeze([
   "@deepseek-ai/dsh-spill-policy",
   "@deepseek-ai/dsh-subagent",
   "@deepseek-ai/dsh-subagent-fork-in-process",
+  "@deepseek-ai/dsh-subagent-spawn-in-process",
+  "@deepseek-ai/dsh-subprocess",
+  "@deepseek-ai/dsh-subprocess-local",
   "@deepseek-ai/dsh-system-prompt",
   "@deepseek-ai/dsh-time-context",
   "@deepseek-ai/dsh-token-meter",
@@ -50,6 +56,7 @@ const expectedRuntimePackageNames = Object.freeze([
   "@deepseek-ai/dsh-tool-pwsh",
   "@deepseek-ai/dsh-tools",
   "@deepseek-ai/dsh-util-values",
+  "@deepseek-ai/dsh-working-directory",
 ] as const);
 
 export type AcceptedDshRuntimePackageName = typeof expectedRuntimePackageNames[number];
@@ -60,31 +67,26 @@ export interface AcceptedPatchedDshArtifactAuthority {
   readonly manifestSha256: string;
   readonly sha256SumsSha256: string;
   readonly consumerLockSha256: string;
-  readonly packageCount: 105;
+  readonly packageCount: 104;
   readonly runtimePackages: Readonly<Record<AcceptedDshRuntimePackageName, string>>;
   readonly requiredPatchedSeams: readonly [
     "agent.wakePending",
     "agent/pre-assistant-commit",
-    "sessionPersistenceJsonl.validateStoredEvents",
+    "sessionPersistenceJsonl.withStoredEventValidation",
     "agents.setPublicationGuard",
     "sessions.setPublicationGuard",
-    "subagents.continuableSetup",
-    "subagents.externalSettlementDelivery",
-    "subagents.strictExternalSettlementDurability",
-    "subagents.drainContinuableChildren",
-    "subagents.resumeContinuable",
-    "subagents.deliverContinuable",
-    "subagents.independentExternalSettlement",
-    "subagents.withContinuableAncestors",
+    "subagents.legacyDescriptorV5",
     "compaction.capacitySafeCheckpoint",
-    "subagents.literalPersona",
-    "systemPrompt.literalContext",
+    "subagents.legacyLiteralPersona",
     "agentInstructions.firstCandidateSelection",
     "llm-pi-ai.providerContent",
     "tool-fs.definitionFactories",
     "fs-local.prepareTextEdit",
     "fs-local.beforePublish",
     "fs-local.createParents",
+    "timeContext.hostNeutralPolicy",
+    "sessionProjections.stateBoundRegistration",
+    "llm-pi-ai.modelConversationUpdates",
   ];
 }
 
@@ -118,7 +120,7 @@ const buildAcceptedAuthority = (value: unknown): AcceptedPatchedDshArtifactAutho
     "runtimePackages",
     "requiredPatchedSeams",
   ], "accepted patched DSH artifact authority");
-  if (authority.formatVersion !== 1 || authority.packageCount !== 105
+  if (authority.formatVersion !== 1 || authority.packageCount !== 104
     || typeof authority.artifactVersion !== "string"
     || !/^\d+\.\d+\.\d+-rc\.\d+\.myagents\.[a-f0-9]{12}\.[a-f0-9]{12}$/u.test(authority.artifactVersion)) {
     throw new TypeError("accepted patched DSH artifact identity is invalid");
@@ -130,7 +132,7 @@ const buildAcceptedAuthority = (value: unknown): AcceptedPatchedDshArtifactAutho
   const runtimePackages = runtimeValue as Record<string, unknown>;
   exactKeys(runtimePackages, expectedRuntimePackageNames, "accepted patched DSH runtime package authority");
   for (const name of expectedRuntimePackageNames) {
-    const expectedVersion = name === "@deepseek-ai/cordis" ? "4.0.4" : authority.artifactVersion;
+    const expectedVersion = name === "@deepseek-ai/cordis" ? "4.0.5" : authority.artifactVersion;
     if (runtimePackages[name] !== expectedVersion) {
       throw new TypeError(`${name} differs from the accepted patched DSH artifact version`);
     }
@@ -139,26 +141,21 @@ const buildAcceptedAuthority = (value: unknown): AcceptedPatchedDshArtifactAutho
   const expectedSeams = [
     "agent.wakePending",
     "agent/pre-assistant-commit",
-    "sessionPersistenceJsonl.validateStoredEvents",
+    "sessionPersistenceJsonl.withStoredEventValidation",
     "agents.setPublicationGuard",
     "sessions.setPublicationGuard",
-    "subagents.continuableSetup",
-    "subagents.externalSettlementDelivery",
-    "subagents.strictExternalSettlementDurability",
-    "subagents.drainContinuableChildren",
-    "subagents.resumeContinuable",
-    "subagents.deliverContinuable",
-    "subagents.independentExternalSettlement",
-    "subagents.withContinuableAncestors",
+    "subagents.legacyDescriptorV5",
     "compaction.capacitySafeCheckpoint",
-    "subagents.literalPersona",
-    "systemPrompt.literalContext",
+    "subagents.legacyLiteralPersona",
     "agentInstructions.firstCandidateSelection",
     "llm-pi-ai.providerContent",
     "tool-fs.definitionFactories",
     "fs-local.prepareTextEdit",
     "fs-local.beforePublish",
     "fs-local.createParents",
+    "timeContext.hostNeutralPolicy",
+    "sessionProjections.stateBoundRegistration",
+    "llm-pi-ai.modelConversationUpdates",
   ];
   if (!Array.isArray(requiredPatchedSeams)
     || JSON.stringify(requiredPatchedSeams) !== JSON.stringify(expectedSeams)) {
@@ -174,7 +171,7 @@ const buildAcceptedAuthority = (value: unknown): AcceptedPatchedDshArtifactAutho
     manifestSha256: exactSha256(authority.manifestSha256, "accepted patched DSH manifest"),
     sha256SumsSha256: exactSha256(authority.sha256SumsSha256, "accepted patched DSH SHA256SUMS"),
     consumerLockSha256: exactSha256(authority.consumerLockSha256, "accepted patched DSH consumer lock"),
-    packageCount: 105,
+    packageCount: 104,
     runtimePackages: frozenPackages,
     requiredPatchedSeams: Object.freeze(expectedSeams) as AcceptedPatchedDshArtifactAuthority["requiredPatchedSeams"],
   });

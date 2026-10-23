@@ -67,6 +67,8 @@ type PiAiModelProfile = Readonly<{
   maxTokens: number;
   input: Array<"text" | "image">;
   reasoningEfforts: false | PiAiReasoningEfforts;
+  compat?: Pick<PiAiCompatProfile, "supportsMidConvoSystemMessages" | "supportsMidConvoToolChanges"
+    | "supportsMidConvoToolAdditions" | "supportsAdditionalTools" | "supportsToolSearch">;
 }>;
 type PiAiProviderProfile = Readonly<{
   apiKeyEnv: string;
@@ -306,10 +308,14 @@ export const validateHostDeepSeekProfile = (profile: ProviderProfile): ProviderP
 
 const PI_AI_COMPATIBILITY_FIELDS = Object.freeze({
   "anthropic-messages": new Set([
+    "supportsMidConvoSystemMessages",
+    "supportsMidConvoToolChanges",
     "supportsTemperature",
     "supportsStrictTools",
   ]),
   "openai-completions": new Set([
+    "supportsMidConvoSystemMessages",
+    "supportsMidConvoToolAdditions",
     "supportsDeveloperRole",
     "supportsReasoningEffort",
     "supportsUsageInStreaming",
@@ -320,6 +326,9 @@ const PI_AI_COMPATIBILITY_FIELDS = Object.freeze({
     "supportsStrictMode",
   ]),
   "openai-responses": new Set([
+    "supportsMidConvoSystemMessages",
+    "supportsAdditionalTools",
+    "supportsToolSearch",
     "supportsDeveloperRole",
     "supportsStrictMode",
   ]),
@@ -390,6 +399,8 @@ const validatePiAiCompatibility = (
       "supportsDeveloperRole", "supportsReasoningEffort", "supportsUsageInStreaming",
       "maxTokensField", "requiresToolResultName", "requiresAssistantAfterToolResult",
       "thinkingFormat", "supportsStrictMode", "supportsTemperature", "supportsStrictTools",
+      "supportsMidConvoSystemMessages", "supportsMidConvoToolChanges",
+      "supportsMidConvoToolAdditions", "supportsAdditionalTools", "supportsToolSearch",
     ],
     "Host pi-ai wire compatibility profile",
   );
@@ -520,6 +531,20 @@ export const translateHostPiAiProfile = (
 ): Readonly<{ providers: Readonly<Record<string, PiAiProviderProfile>> }> => {
   const profile = validateHostPiAiProfile(profileValue);
   const compat = validatePiAiCompatibility(profile);
+  // Transcript updates belong to the exact model; a shared route is only a
+  // connection/credential owner and must not enable capabilities on siblings.
+  const {
+    supportsMidConvoSystemMessages, supportsMidConvoToolChanges,
+    supportsMidConvoToolAdditions, supportsAdditionalTools, supportsToolSearch,
+    ...routeCompat
+  } = compat ?? {};
+  const modelCompat = {
+    ...(supportsMidConvoSystemMessages === undefined ? {} : { supportsMidConvoSystemMessages }),
+    ...(supportsMidConvoToolChanges === undefined ? {} : { supportsMidConvoToolChanges }),
+    ...(supportsMidConvoToolAdditions === undefined ? {} : { supportsMidConvoToolAdditions }),
+    ...(supportsAdditionalTools === undefined ? {} : { supportsAdditionalTools }),
+    ...(supportsToolSearch === undefined ? {} : { supportsToolSearch }),
+  };
   const reasoningEfforts = validateReasoningEfforts(profile);
   const inputModalities = profile.inputModalities ?? ["text"];
   const model: PiAiModelProfile = {
@@ -529,6 +554,7 @@ export const translateHostPiAiProfile = (
     maxTokens: profile.maxTokens,
     input: [...inputModalities],
     reasoningEfforts,
+    ...(Object.keys(modelCompat).length === 0 ? {} : { compat: modelCompat }),
   };
   const route: PiAiProviderProfile = {
     apiKeyEnv: profile.credentialRef,
@@ -539,7 +565,7 @@ export const translateHostPiAiProfile = (
     defaultContextWindow: profile.contextWindow,
     defaultMaxTokens: profile.maxTokens,
     defaultInput: [...inputModalities],
-    ...(compat === undefined ? {} : { compat: { ...compat } }),
+    ...(Object.keys(routeCompat).length === 0 ? {} : { compat: routeCompat }),
     ...(reasoningEfforts === false || profile.effort === undefined
       ? {}
       : { reasoning: profile.effort }),

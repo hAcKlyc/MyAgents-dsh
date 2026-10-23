@@ -4,13 +4,13 @@ Status: accepted; supersedes the unreleased SQLite Session backend on 2026-10-02
 
 ## Context
 
-DSH `0.2.0-rc.2` provides native JSONL Session handles and physical leases, but no product
+DSH `0.2.1-rc.2` provides native JSONL Session handles and physical leases, but no product
 rewind/fork/delete transaction or governed-file restoration API. These product operations must
 remain available without storing a second transcript or copying native persistence logic.
 
 ## Decision
 
-`ProductJsonlSessionPersistence` delegates log operations to official JSONL handles. Each product
+`ProductJsonlSessionPersistence` delegates log operations to official JSONL handles. Each native generation mounts the official plugin through its trusted event-validation factory; consumers unload before the private tracker is released. Each product
 generation selects a native root; DSH owns every file inside it. Product coordination stores
 active locators, revision/hash preconditions, stable boundaries, mutation journals and checkpoint
 preimages in `persistence/coordination.sqlite`, current schema 1. There is no event table.

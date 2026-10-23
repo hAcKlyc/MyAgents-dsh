@@ -1,49 +1,69 @@
 {
   "schemaVersion": 1,
-  "recordedAt": "2026-09-12",
+  "recordedAt": "2026-10-23",
   "authority": {
     "repository": "https://github.com/earendil-works/pi.git",
-    "commit": "f07218c4d4bbc12bef056a7058c3dd49dfe41abe",
-    "tree": "7053e72909a45c2e400f0506c4aa98e53b26f429",
-    "tag": "v0.87.1",
+    "commit": "abe508e1b89912adde45528136c3221eb69acdd7",
+    "tree": "77d78fae728879c16550b1f874785aed7851233c",
+    "tag": "v1.1.0",
     "packageName": "@earendil-works/pi-ai",
-    "packageVersion": "0.87.1",
-    "registryIntegrity": "sha512-X/3PfQBnnoeVdO9Cv8zHghUMglzlgNZYGNzoPnbRoGnHl3Rw3TlA2UKSUB7BRHUOxMryHXYa8dnjWZlbRheDZA==",
+    "packageVersion": "1.1.0",
+    "registryIntegrity": "sha512-1T7LAkc/5Bvc0v6w4vAGVdCrli0o/E0pEmYKTnixu95vSFArBjvbhS/G4ZwI0RUePgf0Imcu0VyqlM4EcXxqfw==",
     "files": [
       {
+        "path": "packages/ai/src/api/bedrock-converse-stream.ts",
+        "blob": "1bada0746e2728a3c533e9a4ff82bf028be6a5ff",
+        "sha256": "122b26fdcd1671cc885e37b5410a418b056cf43cc49856f6ae421017beff3097"
+      },
+      {
+        "path": "packages/ai/src/api/openai-completions.ts",
+        "blob": "96cb23ab3e9983d1e71bde0fe28c4a64433a695c",
+        "sha256": "1ca201e5ec88b54982bf1d64c476b2885a80dee9eb1206be9f5dea260202cc60"
+      },
+      {
+        "path": "packages/ai/src/api/openai-responses-shared.ts",
+        "blob": "59c9b5b428b9f8858ebc2a20ea243747b9f64c0b",
+        "sha256": "09100e0bfe8fa4ad212312956930f4a9e70cd29ca823d2e1f1c97f87b4541afe"
+      },
+      {
+        "path": "packages/ai/src/api/pi-messages.ts",
+        "blob": "2137b551f8f8e8c58d3bf0ebb5cf840e5b04183b",
+        "sha256": "8808e3f3d4e19fc0e3c292ce0f4bc45dbdf7d1daa6b023eb4f392c5c6040cfe0"
+      },
+      {
         "path": "package-lock.json",
-        "blob": "a4b5de1317b5ff0ae13d12c3aaceddf6ea2a74a2",
-        "sha256": "95dbf4d7aa54eebf235edccd6926efac42fbf4e1c6a92c625c9ac706a8b367f7"
+        "blob": "206abbcbbf8937e77188c2e3cf64b313d309e1cd",
+        "sha256": "4694eb371dcc1ee9812c7bdcdfb01d6ddcf2fb3ef18c2640d0d5a6100e8b9b00"
       },
       {
         "path": "packages/ai/package.json",
-        "blob": "d129d2e169229eade0256746ebe48e47e0a44137",
-        "sha256": "0422fc7227a158c3c843c1540edfff017d2103be33ee48b882e2ff9032a5f7d2"
+        "blob": "4ff79d8d504dc0183f1aacc1847cb8104e5b7f76",
+        "sha256": "a8f10d5157b335379ae00edf9c25ae7a15bfc0f3a76107d4376a3779bb5b2995"
       },
       {
         "path": "packages/ai/src/api/anthropic-messages.ts",
-        "blob": "f25b2b11d26fd1cbfd1d822aea91875cff03b00d",
-        "sha256": "d4c34523a3c278b23b831352ec7fc9c9d091f9ffc07c37081e43b8f3dd3d3203"
+        "blob": "452a3ccd03892e33b562997e0b1de69a61d4d94a",
+        "sha256": "9eced188fdef0ebbc39e3b3edb187a31940e269057168af05771edcb8ae4a632"
       },
       {
         "path": "packages/ai/src/api/mistral-conversations.ts",
-        "blob": "837d1ec115a3d5e1a4b22ccc637db8669892a669",
-        "sha256": "b54b0998ff3e0f0ff0804ca62dbcc2061922c770d9ff8267096580907f21faf5"
+        "blob": "de7552ad64206e3495d054ee7f998a99f7933179",
+        "sha256": "429de961a1bd84ed7feb163c0e0d91eb7096f8dcfefcd30d6f098d1c0cbbd4ab"
       },
       {
         "path": "packages/ai/src/providers/faux.ts",
-        "blob": "a38c18774e53155641a75bbda7233d5e93216680",
-        "sha256": "dcf37d154680cef0fa5188efd4881450073c5342a9b56cc9e25cee9b9f1ccfcc"
+        "blob": "c3771cc2c3e0662d19abab5c7e7af374011c4acb",
+        "sha256": "aeaa8df95399776587ad0cfccccd3b498891a20c5c5846f935e04d9d09dd84a1"
       },
       {
         "path": "packages/ai/src/types.ts",
-        "blob": "7646a9c05c68991f88b63eba46285f5493a4f053",
-        "sha256": "547080208799ae828adc64b1935138f04c0f5431638932ee282fd867f196e39b"
+        "blob": "4b5f2038a1f3d5f01c0d1f533007dee3bc460d5b",
+        "sha256": "568d1ba5d382d9ef4e8d98040c100545c21d1cacfbc98db6dd749014c3c3a15e"
       },
       {
         "path": "packages/ai/src/utils/estimate.ts",
-        "blob": "165b4d4d2f90a9e26d6db61eafcbb7957fde15c0",
-        "sha256": "8df2512ca8c3e71eea5574b3d56c3569963e1fdabaef4bd17baaba86186c1840"
+        "blob": "21c59db00df4b62c2ea9c266c8b259cf1ca82583",
+        "sha256": "b1fb184f293167b9f270567a09bf43e296ff7dd809e26fa4bc5c1f968946eaed"
       },
       {
         "path": "packages/ai/src/utils/text.ts",
@@ -52,18 +72,18 @@
       },
       {
         "path": "packages/ai/test/anthropic-sse-parsing.test.ts",
-        "blob": "36de46d267ff1de7c66eba4d58529199ec8f0113",
-        "sha256": "c099f9a906669bfa98dd7bc34b3429d082909da0b6d01ccb4e15a61193ee49e7"
+        "blob": "66f4b319226064b72c3bbcf0869e31ed9dee17ee",
+        "sha256": "87c706511e5414c89d67c4eb844b12bc254e6cbcd37dfc63bd8ce7de94304f9c"
       },
       {
         "path": "packages/ai/test/context-estimate.test.ts",
-        "blob": "faa56a2cc6c7f4ef3457b9997a0f449bbfdcbba8",
-        "sha256": "06813cdd42212146a8589c0c05691d2ff0778ad7eeb9cc5d8795943ff8577631"
+        "blob": "ffd532234b70b2af9c234795ace97ddfcdb831f7",
+        "sha256": "ea24bb2285fd3364a9712ab39a13937a93acac7efafa7533547d559ac43003ea"
       },
       {
         "path": "packages/ai/test/faux-provider.test.ts",
-        "blob": "557885f23ddcd749a7b7fcacd7d3a17a66899c92",
-        "sha256": "fea06efc607060cbad9885d7cc9bff5151f0a0510d3631e7bb8bbc7e547ab999"
+        "blob": "6f417811191319aa6d7d019fbaef7fb7efb42aa2",
+        "sha256": "01795d13318acabb737b4be8d2766d2db11fe814602fd1df27b20ac3afb915f0"
       },
       {
         "path": "packages/ai/test/text.test.ts",
@@ -72,15 +92,28 @@
       },
       {
         "path": "packages/telemetry/package.json",
-        "blob": "7532864621fe315b5a2399c585f3c0d35b43f414",
-        "sha256": "779ed2fb46846eb4826e82722af9817493c055a86d3c59061e3ed40ce46e14f5"
+        "blob": "de5b3f9697f4a1df7982665cfd1239ee4e6bb466",
+        "sha256": "60409cbe4a3d9c15c681ea5020709c31b95f2a854c35ee78f531f19bcd99d8e7"
       }
     ]
   },
-  "patch": {
-    "order": 1,
-    "path": "specs/pi-ai/patches/0001-anthropic-provider-content.patch",
-    "sha256": "4a1a649b5c52b9b0a2e26f1f6eb159809d165f582350a6a1bdb0d66cfe3a8c86"
+  "patches": [
+    {
+      "order": 1,
+      "path": "specs/pi-ai/patches/0001-anthropic-provider-content.patch",
+      "sha256": "d0888e8aefd89995f87e7bace6d7c0464e6df8c0ae3c081793211bf080ad6428"
+    },
+    {
+      "order": 2,
+      "path": "specs/pi-ai/patches/0002-dsh-deferred-tool-argument-parsing.patch",
+      "sha256": "4830496ee58e9c00c3e97b0398c0e03f2da2f35d5724a350360e29169903dda5"
+    }
+  ],
+  "upstreamStreamingAuthority": {
+    "repository": "https://github.com/deepseek-ai/deepseek-harness.git",
+    "commit": "687f282e8625c6b8d11ff58211a90524be2e4317",
+    "path": "patches/@earendil-works__pi-ai@1.1.0.patch",
+    "semantic": "defer streamed client-tool argument parsing to terminal edges"
   },
   "disposition": "required_upstream_patch_accepted",
   "removalCondition": "an installed pi-ai release preserves generic Anthropic Provider-owned content and exact matching-route replay"

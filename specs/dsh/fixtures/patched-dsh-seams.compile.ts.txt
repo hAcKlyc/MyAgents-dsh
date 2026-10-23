@@ -8,11 +8,7 @@ import type {
 import type { MessageId } from "@deepseek-ai/dsh-llm";
 import type { SessionPublicationGuard } from "@deepseek-ai/dsh-session";
 import type { SessionPersistence } from "@deepseek-ai/dsh-session-persistence";
-import type {
-  ContinuableSetupContribution,
-  ContinuableStartSpec,
-  SubagentRunEndInfo,
-} from "@deepseek-ai/dsh-subagent";
+import type { ContinuableSubagentDescriptorData } from "@deepseek-ai/dsh-subagent";
 import {
   SUMMARY_SAFETY_MARGIN_TOKENS,
   SummaryCapacityError,
@@ -40,15 +36,15 @@ export const compilePatchedDshSeams = (
   disposeAgentGuard();
   const woke: boolean | undefined = agent.wakePending?.(messageId);
   void woke;
-  const setup: ContinuableSetupContribution = () => () => undefined;
-  const disposeSetup = ctx.subagents.registerContinuableSetup(setup);
-  disposeSetup();
-  const settlementDelivery: ContinuableStartSpec["settlementDelivery"] = "external";
-  const infrastructureFailure: SubagentRunEndInfo["infrastructureFailure"] = true;
-  const drainContinuableChildren = ctx.subagents.drainContinuableChildren;
-  const resumeContinuable = ctx.subagents.resumeContinuable;
-  const deliverContinuable = ctx.subagents.deliverContinuable;
-  void deliverContinuable;
+  const waitForChildren = ctx.subagents.waitForChildren;
+  const drainDescendants = ctx.subagents.drainDescendants;
+  const startActivation = ctx.subagents.startActivation;
+  const settlementDelivery: ContinuableSubagentDescriptorData["settlementDelivery"] = "external";
+  const literalPersona: ContinuableSubagentDescriptorData["personaInterpolate"] = false;
+  void waitForChildren;
+  void drainDescendants;
+  void startActivation;
+  void literalPersona;
   const requestEstimate: TokenRequestEstimateInput = { messages: [], route: { provider: "synthetic", model: "summary" } };
   const estimatedTokens: number = ctx.tokenMeter.estimateRequest(requestEstimate);
   const safetyMargin: 1024 = SUMMARY_SAFETY_MARGIN_TOKENS;
@@ -60,9 +56,6 @@ export const compilePatchedDshSeams = (
   });
   disposeTelemetry();
   void settlementDelivery;
-  void infrastructureFailure;
-  void drainContinuableChildren;
-  void resumeContinuable;
   void estimatedTokens;
   void safetyMargin;
   void capacityError;
@@ -76,11 +69,9 @@ export const compilePatchedDshSeams = (
   return persistence;
 };
 
-import { default as JsonlSessionPersistence } from "@deepseek-ai/dsh-session-persistence-jsonl";
-import type { SessionHeader, SessionEvent } from "@deepseek-ai/dsh-session";
-import type { SessionLocation } from "@deepseek-ai/dsh-session-persistence";
-export class TrustedJsonl extends JsonlSessionPersistence {
-  protected override validateStoredEvents(meta: SessionHeader, events: SessionEvent[], location?: SessionLocation): SessionEvent[] {
-    return super.validateStoredEvents(meta, events, location);
-  }
-}
+import { withStoredEventValidation } from "@deepseek-ai/dsh-session-persistence-jsonl";
+// This factory composes the official plugin; no private tracker or service class escapes.
+export const trustedJsonlPlugin = withStoredEventValidation((event) => {
+  void event.data;
+  return false;
+});

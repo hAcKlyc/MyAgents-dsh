@@ -1,5 +1,5 @@
 diff --git a/packages/core/agent-loop/src/agent.ts b/packages/core/agent-loop/src/agent.ts
-index 2f68565cef052f82ef6f2a740141962507654e02..3f1b0409c18553e6c9d3f6d89959eec2b0f1b98d 100644
+index adf2e33ddcc9b37e8e20e89203a276bcdf18ee5d..83bd0ff9aa2ff9901cb0d60d90241bbfc01c1e3e 100644
 --- a/packages/core/agent-loop/src/agent.ts
 +++ b/packages/core/agent-loop/src/agent.ts
 @@ -16,7 +16,7 @@ import type {
@@ -78,7 +78,7 @@ index add362835b44d0edc7663d94566654c47866b7a8..0ef61ff66a8f50dea630e924d9e93f8f
      const adapter = new MockAdapter([textResponse('reply')])
      const ctx = await harness(adapter)
 diff --git a/packages/core/agent/src/runtime-types.ts b/packages/core/agent/src/runtime-types.ts
-index 2118507b8cc617a920e7ceae9f98d06daa2d4780..717fe3416ef539780a7c359cdf92db06d18ccbe8 100644
+index 0fa89afc054a819493206cef65dd7907092cdd7f..1da251f007d363532efb8841316739fd278f76e9 100644
 --- a/packages/core/agent/src/runtime-types.ts
 +++ b/packages/core/agent/src/runtime-types.ts
 @@ -190,6 +190,17 @@ declare module './types.ts' {

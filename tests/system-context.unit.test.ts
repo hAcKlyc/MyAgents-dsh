@@ -1,6 +1,6 @@
 import { Context, type Plugin } from "@deepseek-ai/cordis";
 import { createScope } from "@deepseek-ai/dsh-scope";
-import { SystemPrompt } from "@deepseek-ai/dsh-system-prompt";
+import { SystemPrompt, renderContextSections } from "@deepseek-ai/dsh-system-prompt";
 import {
   GlobalSystemContextRegistrar,
   MAX_HOST_CONTEXT_BYTES,
@@ -156,4 +156,18 @@ describe("Host system context registration", () => {
     expect((await root.systemPrompt.assemble()).sections.find(({ name }) => name === "host:stable"))
       .toMatchObject({ text: "old" });
   });
+});
+
+it("preserves literal Host context through native context refresh for root and child scopes", async () => {
+  const root = await mounted();
+  root.systemPrompt.variable("model", () => "resolved-model");
+  const registrar = new GlobalSystemContextRegistrar(root);
+  registrar.prepare(normalizeSystemContext({ systemPrompt: "", systemContext: {
+    sections: [], contexts: [{ id: "literal", order: 10, scope: "global", text: "{{model}} {{unknown}} {{malformed" }],
+  } })).commit();
+  for (const scope of [Object.freeze({ root: true }), Object.freeze({ child: true })]) {
+    const accepted = await root.systemPrompt.assemble({ scope });
+    const refreshed = root.systemPrompt.refreshContext(accepted, { scope });
+    expect(renderContextSections(refreshed)).toContainEqual({ name: "host:literal", text: "{{model}} {{unknown}} {{malformed" });
+  }
 });

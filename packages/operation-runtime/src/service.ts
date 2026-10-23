@@ -74,6 +74,8 @@ type IncompleteRecoveryWake = Readonly<{
 export interface SdkOperationServiceConfig {
   readonly birthAuthority: OperationBirthAuthority;
   readonly drainOwnedWork: (agent: Agent) => Promise<void>;
+  /** Native lifecycle join; never awaited while holding operation admission serialization. */
+  readonly waitOwnedWork?: ((agent: Agent) => Promise<boolean>) | undefined;
   readonly ownsRootContextMessage: (
     agent: Agent,
     source: MessageSource | undefined,
@@ -229,7 +231,7 @@ const validateServiceConfig = (value: unknown): Required<SdkOperationServiceConf
       "retirePrimary",
       "settlementDeadlineAuthority",
     ],
-    ["clock", "inputAuthority", "modelProfileBirthGuard", "registerLifecycleController"],
+    ["clock", "inputAuthority", "modelProfileBirthGuard", "registerLifecycleController", "waitOwnedWork"],
     "SdkOperationService config",
   );
   const authority = exactOwnDataObject(
@@ -249,6 +251,7 @@ const validateServiceConfig = (value: unknown): Required<SdkOperationServiceConf
     : undefined;
   if (typeof authority.capture !== "function" || typeof config.requireAgent !== "function"
     || typeof config.drainOwnedWork !== "function" || typeof config.ownsRootContextMessage !== "function"
+    || (Object.hasOwn(config, "waitOwnedWork") && (typeof config.waitOwnedWork !== "function" || utilTypes.isProxy(config.waitOwnedWork)))
     || typeof config.registerRetirementGuard !== "function"
     || typeof config.retirePrimary !== "function"
     || typeof deadlineAuthority.wait !== "function"
@@ -268,6 +271,7 @@ const validateServiceConfig = (value: unknown): Required<SdkOperationServiceConf
   const registerRetirementGuard = config.registerRetirementGuard as
     (guard: (agent: Agent) => Promise<void>) => void;
   const drainOwnedWork = config.drainOwnedWork as (agent: Agent) => Promise<void>;
+  const waitOwnedWork = config.waitOwnedWork as SdkOperationServiceConfig["waitOwnedWork"];
   const ownsRootContextMessage = config.ownsRootContextMessage as SdkOperationServiceConfig["ownsRootContextMessage"];
   const retirePrimary = config.retirePrimary as (cause?: unknown) => Promise<void>;
   const settlementWait = deadlineAuthority.wait as SettlementDeadlineAuthority["wait"];
@@ -280,6 +284,7 @@ const validateServiceConfig = (value: unknown): Required<SdkOperationServiceConf
         Reflect.apply(captureOperationBirth, operationBirthReceiver, [params]),
     }),
     drainOwnedWork: (agent: Agent) => Reflect.apply(drainOwnedWork, config, [agent]),
+    waitOwnedWork: waitOwnedWork === undefined ? undefined : (agent: Agent) => Reflect.apply(waitOwnedWork, config, [agent]),
     ownsRootContextMessage: (agent: Agent, source: MessageSource | undefined, messageId: string) =>
       Reflect.apply(ownsRootContextMessage, config, [agent, source, messageId]),
     registerRetirementGuard: (guard: (agent: Agent) => Promise<void>) =>
@@ -404,6 +409,8 @@ export class SdkOperationService extends Service {
   private quiescentMutationValue = false;
   private serialValue: Promise<void> = Promise.resolve();
   private retirementEscalationValue: Promise<void> | undefined;
+  private childAdmissionRevision = 0;
+  private childSettlementValue: { agent: Agent; seq: number; admissionRevision: number; promise: Promise<void>; settled: boolean; stable: boolean } | undefined;
   private terminalReservationAuthorityValue: OperationTerminalReservationAuthority | undefined;
 
   constructor(ctx: Context, config: SdkOperationServiceConfig) {
@@ -906,6 +913,25 @@ export class SdkOperationService extends Service {
     return result;
   }
 
+  /** Serialize Host child Inbox admission with mutations, never the child's execution. */
+  admitNativeChildPrompt<T>(signal: AbortSignal, commit: () => void, admit: () => Promise<T>): Promise<T> {
+    if (!(signal instanceof AbortSignal) || utilTypes.isProxy(signal)
+      || typeof commit !== "function" || utilTypes.isProxy(commit)
+      || typeof admit !== "function" || utilTypes.isProxy(admit)) {
+      return Promise.reject(new TypeError("native child admission requires a native signal and callbacks"));
+    }
+    return this.serialize(async () => {
+      this.assertOpen();
+      this.assertHealthy();
+      signal.throwIfAborted();
+      // A parked child can wake without changing the root Session prefix.
+      // This is an admission watermark, not a second native work registry.
+      this.childAdmissionRevision += 1;
+      commit();
+      return await admit();
+    });
+  }
+
   private runAtQuiescentBoundary(
     signal: AbortSignal,
     commit: () => void,
@@ -916,30 +942,7 @@ export class SdkOperationService extends Service {
         "operation lifecycle boundary requires a native AbortSignal and non-proxy commit",
       ));
     }
-    return this.serialize(async () => {
-      this.assertOpen();
-      this.assertHealthy();
-      signal.throwIfAborted();
-      let agent: Agent;
-      try {
-        agent = this.primaryAgent();
-      } catch (error) {
-        if (error instanceof ProtocolError && error.code === "primary_session_not_ready") {
-          commit();
-          return true;
-        }
-        throw error;
-      }
-      await this.reconcileAgent(agent);
-      signal.throwIfAborted();
-      const fold = this.foldValue(agent);
-      if (!agentIsIdle(agent)
-        || fold.operations.some(({ state }) => state !== "terminal")) {
-        return false;
-      }
-      commit();
-      return true;
-    });
+    return this.runAtNativeQuiescentBoundary(signal, commit, () => Promise.resolve(true), () => false);
   }
 
   private runAtNextQuiescentBoundary<T>(
@@ -954,44 +957,81 @@ export class SdkOperationService extends Service {
         "next operation lifecycle boundary requires a native AbortSignal and non-proxy callbacks",
       ));
     }
-    return this.serialize(async () => {
-      this.assertOpen();
-      this.assertHealthy();
-      signal.throwIfAborted();
-      const agent = this.primaryAgent();
-      await this.reconcileAgent(agent);
-      if (!agentIsIdle(agent) || this.foldValue(agent).operations.some(({ state }) => state !== "terminal")) {
+    return this.runAtNativeQuiescentBoundary(signal, commit, action);
+  }
+
+  private runAtNativeQuiescentBoundary<T>(
+    signal: AbortSignal,
+    commit: () => void,
+    action: () => Promise<T>,
+    whenRootBusy?: () => T,
+  ): Promise<T> {
+    return (async () => {
+      let waitedWithoutProgress: { agent: Agent; seq: number } | undefined;
+      let freshNativeObservation = true;
+      for (;;) {
+        const outcome = await this.serialize(async () => {
+          this.assertOpen();
+          this.assertHealthy();
+          signal.throwIfAborted();
+          let agent: Agent;
+          try {
+            agent = this.primaryAgent();
+          } catch (error) {
+            if (whenRootBusy !== undefined && error instanceof ProtocolError && error.code === "primary_session_not_ready") {
+              commit();
+              return { ready: true as const, value: await action() };
+            }
+            throw error;
+          }
+          if (freshNativeObservation) {
+            // Independent mutations may not reuse a previous idle observation:
+            // native child control can change only a descendant's log.
+            if (this.childSettlementValue?.settled) this.childSettlementValue = undefined;
+            freshNativeObservation = false;
+          }
+          await this.reconcileAgent(agent);
+          const rootBusy = !agentIsIdle(agent) || this.foldValue(agent).operations.some(({ state }) => state !== "terminal");
+          if (rootBusy && whenRootBusy !== undefined) return { ready: true as const, value: whenRootBusy() };
+          if (rootBusy || !this.childrenSettled(agent)) {
+            const childWait = this.childSettlementValue?.agent === agent && !this.childSettlementValue.settled
+              ? this.childSettlementValue.promise : undefined;
+            if (childWait === undefined && agentIsIdle(agent)
+              && waitedWithoutProgress?.agent === agent && waitedWithoutProgress.seq === agent.session.seq) {
+              throw new ProtocolError("runtime_busy", "Runtime did not reach a quiescent operation boundary", true);
+            }
+            return { ready: false as const, agent, seq: Number(agent.session.seq),
+              wait: childWait ?? agent.whenIdle(), native: childWait !== undefined };
+          }
+          if (this.quiescentMutationValue) {
+            throw this.fence(new Error("operation lifecycle mutation boundary was entered recursively"));
+          }
+          signal.throwIfAborted();
+          commit();
+          this.quiescentMutationValue = true;
+          try {
+            return { ready: true as const, value: await action() };
+          } finally {
+            this.quiescentMutationValue = false;
+          }
+        });
+        if (outcome.ready) return outcome.value;
+        // Release admission serialization so native child notices and root turns
+        // can make the awaited boundary true. Only the final recheck commits it.
         let rejectAbort!: (reason: unknown) => void;
         const aborted = new Promise<never>((_resolve, reject) => { rejectAbort = reject; });
         const onAbort = () => rejectAbort(signal.reason);
         signal.addEventListener("abort", onAbort, { once: true });
         try {
-          await Promise.race([agent.whenIdle(), aborted]);
+          signal.throwIfAborted();
+          await Promise.race([outcome.wait, aborted]);
         } finally {
           signal.removeEventListener("abort", onAbort);
         }
         signal.throwIfAborted();
-        await this.reconcileAgent(agent);
+        waitedWithoutProgress = outcome.native ? undefined : { agent: outcome.agent, seq: outcome.seq };
       }
-      if (!agentIsIdle(agent)
-        || this.foldValue(agent).operations.some(({ state }) => state !== "terminal")) {
-        throw new ProtocolError(
-          "runtime_busy",
-          "Runtime did not reach a quiescent operation boundary",
-          true,
-        );
-      }
-      if (this.quiescentMutationValue) {
-        throw this.fence(new Error("operation lifecycle mutation boundary was entered recursively"));
-      }
-      commit();
-      this.quiescentMutationValue = true;
-      try {
-        return await action();
-      } finally {
-        this.quiescentMutationValue = false;
-      }
-    });
+    })();
   }
 
   private async startValue(
@@ -1515,6 +1555,40 @@ export class SdkOperationService extends Service {
     });
   }
 
+  /**
+   * Native children can wake the parent while they settle. Waiting inside serialValue
+   * would deadlock that parent's pre-step admission and turn-stopping callback.
+   * Keep only an exact-generation/sequence proof; DSH owns the actual lifecycle wait.
+   */
+  private childrenSettled(agent: Agent): boolean {
+    const wait = this.configValue.waitOwnedWork;
+    if (wait === undefined) return true;
+    const prior = this.childSettlementValue;
+    if (prior?.agent === agent) {
+      if (!prior.settled) return false;
+      if (prior.stable && prior.admissionRevision === this.childAdmissionRevision
+        && prior.seq === agent.session.seq && agentIsIdle(agent)) return true;
+    }
+    const proof = { agent, seq: Number(agent.session.seq), admissionRevision: this.childAdmissionRevision,
+      promise: Promise.resolve(), settled: false, stable: false };
+    this.childSettlementValue = proof;
+    proof.promise = Promise.resolve().then(() => wait(agent)).then((observed) => {
+      proof.settled = true;
+      proof.stable = !observed && agentIsIdle(agent) && proof.seq === agent.session.seq
+        && proof.admissionRevision === this.childAdmissionRevision;
+      if (this.childSettlementValue === proof && this.acceptingValue && this.isPrimaryAgent(agent)) {
+        this.queueTerminalEvaluation(agent);
+      }
+    }, (error: unknown) => {
+      proof.settled = true;
+      // A failed lifecycle join cannot publish an operation terminal. Use the
+      // existing retirement failure signal so the Host also releases its waiter
+      // when no further RPC would otherwise observe this asynchronous fence.
+      if (this.childSettlementValue === proof) this.escalatePrimaryRetirement(error);
+    });
+    return false;
+  }
+
   private async reconcileAgent(agent: Agent, lifecycleOwnsAgent = false): Promise<void> {
     try {
       await this.settleEligibleOperations(agent, lifecycleOwnsAgent);
@@ -1542,6 +1616,7 @@ export class SdkOperationService extends Service {
     if (!lifecycleOwnsAgent && agent !== this.configValue.requireAgent()) {
       throw new Error("primary Session changed before product-operation terminal settlement");
     }
+    if (!lifecycleOwnsAgent && !this.childrenSettled(agent)) return;
     fold = this.foldValue(agent);
     if (this.pendingRequestContextSeqs.size > 0) return;
     for (const operation of fold.operations) {
@@ -1591,6 +1666,12 @@ export class SdkOperationService extends Service {
       "primary retirement product work drain",
     );
     this.assertHealthy();
+    const childSettlement = this.childSettlementValue;
+    if (childSettlement?.agent === agent) {
+      await this.configValue.settlementDeadlineAuthority.wait(childSettlement.promise, "primary retirement native child join");
+      this.childSettlementValue = undefined;
+      this.assertHealthy();
+    }
     await this.configValue.settlementDeadlineAuthority.wait(
       agent.whenIdle(),
       "primary retirement Agent settlement",
@@ -1987,7 +2068,8 @@ export class SdkOperationService extends Service {
     if (previous === undefined) return;
     if (previous === agent || this.ctx.agents.get(previous.id) === previous
       || this.acceptingValue || this.cancellationReasonsValue.size !== 0
-      || this.pendingRequestContextSeqs.size !== 0) {
+      || this.pendingRequestContextSeqs.size !== 0
+      || (this.childSettlementValue !== undefined && !this.childSettlementValue.settled)) {
       throw this.fence(new Error("product-operation generation replacement is not quiescent"));
     }
     this.primaryAgentValue = undefined;
@@ -1997,6 +2079,8 @@ export class SdkOperationService extends Service {
     this.correlationDrainValue = Promise.resolve();
     this.serialValue = Promise.resolve();
     this.retirementEscalationValue = undefined;
+    this.childAdmissionRevision = 0;
+    this.childSettlementValue = undefined;
     this.nextModelRequestValue = 1;
   }
 

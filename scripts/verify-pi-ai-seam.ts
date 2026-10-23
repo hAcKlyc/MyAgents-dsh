@@ -20,7 +20,7 @@ if (sourceIndex >= 0) {
 }
 
 console.log(sourceIndex < 0
-  ? "pi-ai seam evidence OK: one pinned patch"
+  ? "pi-ai seam evidence OK: two pinned patches"
   : process.argv.includes("--compile-test")
     ? "pi-ai seam source OK: patch applies, package builds, regressions pass"
     : "pi-ai seam source OK: exact authority and patch applicability verified");

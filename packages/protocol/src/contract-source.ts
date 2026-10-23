@@ -13,7 +13,7 @@ export { RUNTIME_VERSION } from "./runtime-version.generated.js";
 export type { CanonicalToolName } from "../generated/canonical-tools.generated.js";
 
 export const PROTOCOL_VERSION = "6.2.0" as const;
-export const DSH_ENGINE_VERSION = "0.2.0-rc.2.myagents.639ed0153972.56bce4eb7e07" as const;
+export const DSH_ENGINE_VERSION = "0.2.1-rc.2.myagents.687f282e8625.fd9ed793f1e9" as const;
 export const SESSION_FORMAT = "dsh-session-events-v2" as const;
 export const DEEPSEEK_WEB_SEARCH_ADAPTER_ID = "deepseek-official-native-web-search" as const;
 export const DEEPSEEK_WEB_SEARCH_POLICY_REF = "deepseek-official-web-search-v1" as const;
@@ -255,6 +255,11 @@ export const ExtensionCatalogSchema = strictObject({
 });
 
 const providerWireCompatibilityV1 = strictObject({
+  supportsMidConvoSystemMessages: Type.Optional(Type.Boolean()),
+  supportsMidConvoToolChanges: Type.Optional(Type.Boolean()),
+  supportsMidConvoToolAdditions: Type.Optional(Type.Boolean()),
+  supportsAdditionalTools: Type.Optional(Type.Boolean()),
+  supportsToolSearch: Type.Optional(Type.Boolean()),
   supportsDeveloperRole: Type.Optional(Type.Boolean()),
   supportsReasoningEffort: Type.Optional(Type.Boolean()),
   supportsUsageInStreaming: Type.Optional(Type.Boolean()),

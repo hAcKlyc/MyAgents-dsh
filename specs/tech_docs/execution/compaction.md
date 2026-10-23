@@ -2,7 +2,7 @@
 type: technical-architecture
 status: implemented
 module: compaction
-updated: 2026-10-02
+updated: 2026-10-23
 upstream_seam: DSH-SEAM-008
 ---
 
@@ -208,6 +208,8 @@ uses a fixed bounded correction instruction and the original source prefix; it d
 invalid summary back into the model. Provider errors, cancellation/abort, image output,
 output-limit failures, and a second invalid result bypass repair.
 
+The summary transaction validates direct-call counts before publishing the summary; the removed upstream invariant framework is not installed. Product accounting treats malformed restored counts as unknown billing, while an omitted legacy count on a marked direct call still means one.
+
 Usage is aggregated across one or two calls. Durable provenance records the direct stream-call count while remaining backward-compatible with older events where absence means one call.
 
 ## 9. Durable transaction and recovery
@@ -269,7 +271,7 @@ credential-backed evidence.
 
 ## 12. Verification
 
-The [current DSH source baseline](../../dsh/dsh-baseline-v1.json) and [seam registry](../../dsh/seam-decisions-v1.json) own the 0.2.0-rc.2 source and patch 0007 identity. Exact accepted Runtime, native campaign, dynamic campaign and Host handoff identities belong to their generated manifests and trusted delivery record. Old-byte evidence cannot be copied into a new release.
+The [current DSH source baseline](../../dsh/dsh-baseline-v1.json) and [seam registry](../../dsh/seam-decisions-v1.json) own the 0.2.1-rc.2 source and patch 0007 identity. Exact accepted Runtime, native campaign, dynamic campaign and Host handoff identities belong to their generated manifests and trusted delivery record. Old-byte evidence cannot be copied into a new release.
 
 Current executable coverage includes:
 

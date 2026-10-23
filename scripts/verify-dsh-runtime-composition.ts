@@ -146,6 +146,7 @@ const runtimeCompositionSourcePaths = [
   "packages/rpc-server/src/index.ts",
   "packages/rpc-server/src/event-projector.ts",
   "packages/rpc-server/src/native-rpc-service.ts",
+  "packages/rpc-server/src/native-child-control-error.ts",
   "packages/runtime-product/src/composition.ts",
   "packages/runtime-product/src/mcp-response.ts",
   "packages/runtime-product/src/extension-snapshot.ts",
@@ -1633,9 +1634,11 @@ const main = (): void => {
       "Host credential model evidence",
     );
     if (hostCredentialModelEvidence.adapterAuthorityHidden !== true
+      || hostCredentialModelEvidence.delegationTool !== "subagent"
       || JSON.stringify(hostCredentialModelEvidence.credentialPurposes)
         !== JSON.stringify([
           "availability",
+          "model_request",
           "model_request",
           "model_request",
           "model_request",
@@ -1645,6 +1648,8 @@ const main = (): void => {
           "model_request",
         ])
       || hostCredentialModelEvidence.childModelRequestBound !== true
+      || hostCredentialModelEvidence.nativeAsyncChildJoined !== true
+      || hostCredentialModelEvidence.requestCredentialIsolationVerified !== true
       || hostCredentialModelEvidence.publicControllerHidden !== true
       || hostCredentialModelEvidence.providerRouteId !== "deepseek-official"
       || hostCredentialModelEvidence.profileRevision !== "artifact-host-model-v1"
@@ -2057,6 +2062,26 @@ const main = (): void => {
       || usageEvent.runtimeContextWindow !== 1_000_000) {
       throw new Error("Runtime usage/context projection differs from the durable DSH accounting facts");
     }
+    // Exercise the sibling provider through the same complete packed fixture.
+    // Both delegate through the native manager's working-directory dependency.
+    progress("native fork composition fixture started");
+    const forkOutput = run(process.execPath, [runner, "--delegation-tool", "fork_agent"], consumerRoot, {
+      ...environment,
+      MYAGENTS_DSH_COMPOSITION_DIAGNOSTICS: "1",
+    }, 15 * 60_000);
+    const nativeForkEvidence = exactObject(JSON.parse(forkOutput) as unknown, "native fork composition evidence");
+    const forkModelEvidence = exactObject(nativeForkEvidence.hostCredentialModelEvidence, "native fork model evidence");
+    if (nativeForkEvidence.artifactManifestSha256 !== ACCEPTED_PATCHED_DSH_ARTIFACT.manifestSha256
+      || nativeForkEvidence.artifactVersion !== ACCEPTED_PATCHED_DSH_ARTIFACT.artifactVersion
+      || forkModelEvidence.delegationTool !== "fork_agent"
+      || forkModelEvidence.childModelRequestBound !== true
+      || forkModelEvidence.nativeAsyncChildJoined !== true
+      || forkModelEvidence.requestCredentialIsolationVerified !== true
+      || forkModelEvidence.requestAuthorityBound !== true
+      || forkModelEvidence.secretNonProjectionVerified !== true) {
+      throw new Error("native fork composition differs from the accepted child authority contract");
+    }
+    progress("native fork composition fixture verified");
     rmSync(runner);
     const runtimeArtifactOutput = values["runtime-artifact-out"];
     let candidateRoot = resolve(temporaryRoot, "runtime-artifact");
@@ -2141,6 +2166,7 @@ const main = (): void => {
     }
     writeSync(1,
       `patched DSH runtime composition verified: sha256=${digestBytes(Buffer.from(output))}\n`
+      + `patched DSH native fork composition verified: sha256=${digestBytes(Buffer.from(forkOutput))}\n`
       + `patched DSH runtime process verified: sha256=${digestBytes(Buffer.from(processOutput))}\n`
       + `installed Runtime artifact verified: manifest=${installedRuntime.manifestSha256}, `
       + `files=${String(installedRuntime.fileCount)}\n`,

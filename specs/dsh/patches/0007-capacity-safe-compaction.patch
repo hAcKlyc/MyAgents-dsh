@@ -1,8 +1,8 @@
 diff --git a/docs/persistence-catalog.md b/docs/persistence-catalog.md
-index 1575e2104d3c8c1ae1c3b8ced0535415b32789f5..f356698eb055be500a50a23e03aa6e169c57afc4 100644
+index 5cd37161404b5245b52105d20ed17216428ae9f9..69e9aef13ae5ccfc79d501b5dceb729113f48aa1 100644
 --- a/docs/persistence-catalog.md
 +++ b/docs/persistence-catalog.md
-@@ -371,7 +371,7 @@ Source: [`packages/interaction/commands/src/types.ts:105`](../packages/interacti
+@@ -379,7 +379,7 @@ Source: [`packages/interaction/commands/src/types.ts:105`](../packages/interacti
  'compaction/end': { compactionId: CompactionId; sourceCommandId?: CommandId; turn: number | null; error?: string }
  ```
  
@@ -11,7 +11,7 @@ index 1575e2104d3c8c1ae1c3b8ced0535415b32789f5..f356698eb055be500a50a23e03aa6e16
  
  <a id="compactionprune--log-only"></a>
  
-@@ -397,7 +397,7 @@ Source: [`packages/compaction/compaction/src/types.ts:72`](../packages/compactio
+@@ -405,7 +405,7 @@ Source: [`packages/compaction/compaction/src/types.ts:72`](../packages/compactio
  }
  ```
  
@@ -20,7 +20,7 @@ index 1575e2104d3c8c1ae1c3b8ced0535415b32789f5..f356698eb055be500a50a23e03aa6e16
  
  <a id="compactionstart--log-only"></a>
  
-@@ -452,8 +452,10 @@ Source: [`packages/compaction/compaction/src/types.ts:24`](../packages/compactio
+@@ -460,8 +460,10 @@ Source: [`packages/compaction/compaction/src/types.ts:24`](../packages/compactio
    | {
      /** Complete provider output before the backend's safe summary projection. */
      rawOutput: ContentBlock[]
@@ -33,10 +33,10 @@ index 1575e2104d3c8c1ae1c3b8ced0535415b32789f5..f356698eb055be500a50a23e03aa6e16
    | {
      /** Optional complete output from an unmarked template, remote, or other summarizer. */
 diff --git a/docs/persistence-catalog.zh.md b/docs/persistence-catalog.zh.md
-index 6bdbb929825c6300a9a2b33605d96b81510a5f1a..8b6cf7e7b1574fea3754729cac778cfd91a320db 100644
+index c12ce2c6ad2aa729f29b84467052dee0743789d9..1def6ace9a2fe799c789ef529cf4006798ce861f 100644
 --- a/docs/persistence-catalog.zh.md
 +++ b/docs/persistence-catalog.zh.md
-@@ -373,7 +373,7 @@ export type SessionEvent<T extends SessionEventType = SessionEventType> = {
+@@ -381,7 +381,7 @@ export type SessionEvent<T extends SessionEventType = SessionEventType> = {
  'compaction/end': { compactionId: CompactionId; sourceCommandId?: CommandId; turn: number | null; error?: string }
  ```
  
@@ -45,7 +45,7 @@ index 6bdbb929825c6300a9a2b33605d96b81510a5f1a..8b6cf7e7b1574fea3754729cac778cfd
  
  <a id="compactionprune--log-only"></a>
  
-@@ -399,7 +399,7 @@ export type SessionEvent<T extends SessionEventType = SessionEventType> = {
+@@ -407,7 +407,7 @@ export type SessionEvent<T extends SessionEventType = SessionEventType> = {
  }
  ```
  
@@ -54,7 +54,7 @@ index 6bdbb929825c6300a9a2b33605d96b81510a5f1a..8b6cf7e7b1574fea3754729cac778cfd
  
  <a id="compactionstart--log-only"></a>
  
-@@ -454,8 +454,10 @@ export type SessionEvent<T extends SessionEventType = SessionEventType> = {
+@@ -462,8 +462,10 @@ export type SessionEvent<T extends SessionEventType = SessionEventType> = {
    | {
      /** Complete provider output before the backend's safe summary projection. */
      rawOutput: ContentBlock[]
@@ -67,7 +67,7 @@ index 6bdbb929825c6300a9a2b33605d96b81510a5f1a..8b6cf7e7b1574fea3754729cac778cfd
    | {
      /** Optional complete output from an unmarked template, remote, or other summarizer. */
 diff --git a/docs/subsystems/compaction.md b/docs/subsystems/compaction.md
-index 6e135025ab6095e2365e172847bc493d41c50774..e90e2e8db5cb5c769e6b5ccec0e065f25855e2ca 100644
+index f2e8848bcf19c7b4de41ba6a00695af4a026e1c7..dc9487a0aff18daf2c17d5546b4a294addadf00d 100644
 --- a/docs/subsystems/compaction.md
 +++ b/docs/subsystems/compaction.md
 @@ -132,6 +132,39 @@ interface PruneResult {
@@ -133,7 +133,7 @@ index 6e135025ab6095e2365e172847bc493d41c50774..e90e2e8db5cb5c769e6b5ccec0e065f2
 +Source: [`packages/compaction/compaction-basic/src/types.ts`](../../packages/compaction/compaction-basic/src/types.ts)
  <!-- END GENERATED cordis-surface -->
 diff --git a/docs/subsystems/compaction.zh.md b/docs/subsystems/compaction.zh.md
-index 9b82fb7a7b9e55f2aefa6d561922948fd328c8e9..56989fa2dd2546a8f456e2ed9588ee154380926f 100644
+index 38aca417946e1dfa7ca049c5efa73783a1f18a3d..9850122715abffab5fba3deab3ff2abf7c2df5a5 100644
 --- a/docs/subsystems/compaction.zh.md
 +++ b/docs/subsystems/compaction.zh.md
 @@ -132,6 +132,39 @@ interface PruneResult {
@@ -273,27 +273,29 @@ index 6c149ec3f225a7012ca8d8d2312835663917b5d2..ac398e70a47ab8a0dd7cb58787a1af6a
  
  Types: [EpochHeader](session.zh.md) · [Message](llm-streaming.zh.md) · [Session](session.zh.md)
 diff --git a/packages/compaction/compaction-basic/README.md b/packages/compaction/compaction-basic/README.md
-index fa4ae2fb481296ff91f4c1df9975225bc2c51eef..38afd3aa9cb8a6688adb5ddae0b4da9dedc4aa92 100644
+index 1207cd81febc5750f4781c0e5ad9291faa7a62ee..e25a1d4f2862bb187e31c2504c0d9d1d3d29c55c 100644
 --- a/packages/compaction/compaction-basic/README.md
 +++ b/packages/compaction/compaction-basic/README.md
-@@ -139,6 +139,8 @@ The transaction validates the surface span and the durable lock, appends `compac
+@@ -138,6 +138,9 @@ The transaction validates the surface span and the durable lock, appends `compac
+ | [`src/config.ts`](src/config.ts) | Load-time validation and routed-model policy resolution |
  | [`src/types.ts`](src/types.ts) | `BasicCompactionConfig` and resolved policy vocabulary |
- | — | No runtime invariant companion is published; this package exposes no independent event sequence or mutable data relation beyond contracts enforced at its owning seam. The durable bracket remains observable in the session log. |
  
 +Summary fitting uses the independently resolved summary model and the complete request estimate, including its output reserve. It selects the largest fitting balanced older range and rejects known overflow before dispatch. Checkpoints require the structured continuity sections and allow one bounded repair. Telemetry carries counts, timing and stable error codes without conversation content. The native V3 system head is included once in summary history.
++
 +
  </details>
  
  -----
 diff --git a/packages/compaction/compaction-basic/README.zh.md b/packages/compaction/compaction-basic/README.zh.md
-index 1cb48123cd0daf9c3b08343e57173df8b9b6bf11..c3520794d44da710b80cb31f393aac6ef8da306b 100644
+index 86cec3c9e99055c0e42b881284b1c07f5d1c1b06..7f320381f7f712bad8b07ccd795a520f2937a06b 100644
 --- a/packages/compaction/compaction-basic/README.zh.md
 +++ b/packages/compaction/compaction-basic/README.zh.md
-@@ -139,6 +139,8 @@ kind: "package-reference"
+@@ -138,6 +138,9 @@ kind: "package-reference"
+ | [`src/config.ts`](src/config.ts) | 加载时验证与路由模型策略解析 |
  | [`src/types.ts`](src/types.ts) | `BasicCompactionConfig` 与已解析策略词汇 |
- | — | 不发布运行时不变式配套条目；除所属 seam 强制执行的约定外，本包不公开独立事件序列或可变数据关系。持久标记对仍可在会话日志中观察。 |
  
 +摘要范围拟合使用独立解析的摘要模型及完整请求估算，并预留输出容量。它选择能容纳的最大平衡旧历史范围，在发送之前拒绝已知溢出。检查点要求结构化连续性章节，最多允许一次有界修复。遥测只携带计数、耗时和稳定错误码，不含对话内容。原生 V3 系统头在摘要历史中只出现一次。
++
 +
  </details>
  
@@ -566,7 +568,7 @@ index 163cec3810e9d3a335efe6c1264eac5a00c107c2..0f334d959e354c3302ca1561e03aa9e7
  
  export default BasicCompactionEngine
 diff --git a/packages/compaction/compaction-basic/src/region.ts b/packages/compaction/compaction-basic/src/region.ts
-index 7b3d77d299881fa47b8dfdab7fae0a92cd7d462c..023cec129d729ff149e8b61434d883cb6ab2fd70 100644
+index 7b3d77d299881fa47b8dfdab7fae0a92cd7d462c..a82c8c067bf9b65130bfd172588a37b83087b47b 100644
 --- a/packages/compaction/compaction-basic/src/region.ts
 +++ b/packages/compaction/compaction-basic/src/region.ts
 @@ -154,6 +154,44 @@ export function selectCompactableRange(
@@ -614,7 +616,21 @@ index 7b3d77d299881fa47b8dfdab7fae0a92cd7d462c..023cec129d729ff149e8b61434d883cb
  /**
   * Run the single compaction transaction over one selected positional span.
   * Selection and validation are read-only. Idle/log validation and
-@@ -485,8 +523,14 @@ function commitCompactionBody(
+@@ -407,6 +445,13 @@ async function summarizeCompaction(
+         validateSurfaceRegion(agent.session, prepared.start, prepared.end))
+     }
+   }
++  if (summaryResult.llmStreamCall === true
++    && summaryResult.llmStreamCallCount !== undefined
++    && (!Number.isSafeInteger(summaryResult.llmStreamCallCount)
++      || summaryResult.llmStreamCallCount < 1
++      || summaryResult.llmStreamCallCount > 2)) {
++    throw new Error('compaction/summary llmStreamCallCount must be one or two')
++  }
+   const checkpointMessage = createUserMessage({
+     content: frameSummary(summaryResult.summary),
+     source: compactCheckpointSource(compactionId, sourceCommandId),
+@@ -485,8 +530,14 @@ function commitCompactionBody(
      usage,
      checkpointMessage,
    } = summarized
@@ -631,7 +647,7 @@ index 7b3d77d299881fa47b8dfdab7fae0a92cd7d462c..023cec129d729ff149e8b61434d883cb
      : summarized.rawOutput === undefined ? {} : { rawOutput: summarized.rawOutput }
    const summaryEvent = session.append('compaction/summary', {
      compactionId: startEvent.data.compactionId,
-@@ -494,7 +538,7 @@ function commitCompactionBody(
+@@ -494,7 +545,7 @@ function commitCompactionBody(
        ? {}
        : { sourceCommandId: startEvent.data.sourceCommandId },
      summary,
@@ -640,7 +656,7 @@ index 7b3d77d299881fa47b8dfdab7fae0a92cd7d462c..023cec129d729ff149e8b61434d883cb
      shadowedRange: { start, end },
      shadowedSeqs: [...shadowedSeqs],
      shadowedTokenCount,
-@@ -541,7 +585,7 @@ function completeCompaction(
+@@ -541,7 +592,7 @@ function completeCompaction(
   * @param shadowedSeqs - the surface-node seqs, in order, being compacted.
   * @returns the replayed conversation prefix to condense.
   */
@@ -1316,15 +1332,15 @@ index e8160dba2c078e199a9536a9ed3eced592062077..176e15263cd3fce602008eab625f618f
    /** Window fraction for pressure; capped at context window minus reserved output and `headroomTokens`. Defaults to `0.8`. */
 diff --git a/packages/compaction/compaction-basic/tests/capacity-safe.spec.ts b/packages/compaction/compaction-basic/tests/capacity-safe.spec.ts
 new file mode 100644
-index 0000000000000000000000000000000000000000..acf3974c78272e879f458216a9ecb7651a271931
+index 0000000000000000000000000000000000000000..dd521b458af1b0fde125058f159f7b953098bf16
 --- /dev/null
 +++ b/packages/compaction/compaction-basic/tests/capacity-safe.spec.ts
-@@ -0,0 +1,346 @@
+@@ -0,0 +1,364 @@
 +import { describe, expect, it } from 'vitest'
 +import { Context } from '@deepseek-ai/cordis'
 +import { BasicCompactionEngine } from '@deepseek-ai/dsh-compaction-basic'
 +import type { CompactionTelemetry } from '@deepseek-ai/dsh-compaction-basic'
-+import type { SummarizationInput } from '../src/summarizer.ts'
++import type { SummarizationInput, SummaryResult } from '../src/summarizer.ts'
 +import {
 +  ToolCallId,
 +  createMessage,
@@ -1666,6 +1682,24 @@ index 0000000000000000000000000000000000000000..acf3974c78272e879f458216a9ecb765
 +    expect(telemetry.map(event => event.kind)).toEqual(['range', 'summary'])
 +  })
 +})
++
++
++it.each([0, 3, 1.5, Number.NaN])('refuses invalid direct-call provenance %s before publishing a summary', async (calls) => {
++  class InvalidProvenanceEngine extends BasicCompactionEngine {
++    protected override summarize(): Promise<SummaryResult> {
++      return Promise.resolve({ provider: 'route', model: 'route', summary: [{ type: 'text', text: checkpoint() }],
++        rawOutput: [{ type: 'text', text: checkpoint() }], llmStreamCall: true, llmStreamCallCount: calls })
++    }
++  }
++  const { ctx } = context(new CapacityAdapter(32_768, 512))
++  const engine = new InvalidProvenanceEngine(ctx, { auto: false })
++  const session = openSession('invalid-call-count', ['history '.repeat(500)])
++  const [start] = session.surface.nodes
++  await expect(engine.compactRegion(start!, start!, owner(session), SIGNAL)).rejects.toThrow(/llmStreamCallCount/)
++  expect(session.snapshotEvents().some(event => event.type === 'compaction/summary')).toBe(false)
++  expect(session.snapshotEvents().filter(event => event.type === 'compaction/end')).toHaveLength(1)
++  await ctx.fiber.dispose()
++})
 diff --git a/packages/compaction/compaction-basic/tests/compaction-basic.spec.ts b/packages/compaction/compaction-basic/tests/compaction-basic.spec.ts
 index 3736aa5c5e64f763606370a3cc855c5e444a7941..972188106647d540753516bfd976cfadcc97182e 100644
 --- a/packages/compaction/compaction-basic/tests/compaction-basic.spec.ts
@@ -1842,10 +1876,10 @@ index 3736aa5c5e64f763606370a3cc855c5e444a7941..972188106647d540753516bfd976cfad
  
    it('rejects image summary output instead of silently dropping it', async () => {
 diff --git a/packages/compaction/compaction-basic/tests/compaction-loop-repro.spec.ts b/packages/compaction/compaction-basic/tests/compaction-loop-repro.spec.ts
-index b6c8ff7f86a3a5127930aa41659917fb429e848e..fa23e3ff45a03f7ecc7937c6056fca39610db445 100644
+index 8d762591ebcc73b8a01608e38637520e5c456a43..06877662c55263eda3f8d6ff638a9074a071e95e 100644
 --- a/packages/compaction/compaction-basic/tests/compaction-loop-repro.spec.ts
 +++ b/packages/compaction/compaction-basic/tests/compaction-loop-repro.spec.ts
-@@ -17,6 +17,30 @@ import TokenMeter from '@deepseek-ai/dsh-token-meter'
+@@ -13,6 +13,30 @@ import TokenMeter from '@deepseek-ai/dsh-token-meter'
  import * as LlmRetry from '@deepseek-ai/dsh-llm-retry'
  import { Session, SessionId, type SessionEvent, type SurfaceEvent } from '@deepseek-ai/dsh-session'
  
@@ -1876,7 +1910,7 @@ index b6c8ff7f86a3a5127930aa41659917fb429e848e..fa23e3ff45a03f7ecc7937c6056fca39
  /**
   * CBR-001 regression through the real loop. A replacement checkpoint has a high
   * log seq at the surface head and carries no tool pair, so both adjacent cuts
-@@ -91,7 +115,8 @@ class OverflowRecoveryAdapter extends LlmAdapter {
+@@ -87,7 +111,8 @@ class OverflowRecoveryAdapter extends LlmAdapter {
        provider,
        id: model,
        name: model,
@@ -1886,7 +1920,7 @@ index b6c8ff7f86a3a5127930aa41659917fb429e848e..fa23e3ff45a03f7ecc7937c6056fca39
      })
    }
  
-@@ -105,10 +130,10 @@ class OverflowRecoveryAdapter extends LlmAdapter {
+@@ -101,10 +126,10 @@ class OverflowRecoveryAdapter extends LlmAdapter {
      const trailing = options.messages.at(-1)?.content
        .map(block => (block.type === 'text' ? block.text : ''))
        .join('') ?? ''
@@ -1899,7 +1933,7 @@ index b6c8ff7f86a3a5127930aa41659917fb429e848e..fa23e3ff45a03f7ecc7937c6056fca39
        yield { type: 'finish', reason: { kind: 'stop' } }
        return
      }
-@@ -400,7 +425,7 @@ describe('context-overflow recovery across the real loop and compaction-basic',
+@@ -387,7 +412,7 @@ describe('context-overflow recovery across the real loop and compaction-basic',
          headroomTokens: 0,
          thresholdRatio: 1,
          retainTokens: 100,
@@ -1908,7 +1942,7 @@ index b6c8ff7f86a3a5127930aa41659917fb429e848e..fa23e3ff45a03f7ecc7937c6056fca39
          compactionRetries: 0,
          maxOverflowRetries: 1,
        })
-@@ -423,8 +448,8 @@ describe('context-overflow recovery across the real loop and compaction-basic',
+@@ -410,8 +435,8 @@ describe('context-overflow recovery across the real loop and compaction-basic',
          const instruction = adapter.summaryRequests[0]!.messages.at(-1)?.content
            .map(block => (block.type === 'text' ? block.text : ''))
            .join('') ?? ''
@@ -1919,7 +1953,7 @@ index b6c8ff7f86a3a5127930aa41659917fb429e848e..fa23e3ff45a03f7ecc7937c6056fca39
          expect(JSON.stringify(adapter.conversationRequests[0]!.messages)).toContain('OLD HISTORY SENTINEL')
          const retry = JSON.stringify(adapter.conversationRequests[1]!.messages)
          expect(retry).toContain('RECOVERY CHECKPOINT')
-@@ -477,7 +502,7 @@ describe('context-overflow recovery across the real loop and compaction-basic',
+@@ -463,7 +488,7 @@ describe('context-overflow recovery across the real loop and compaction-basic',
        headroomTokens: 0,
        thresholdRatio: 1,
        retainTokens: 100,
@@ -1928,11 +1962,79 @@ index b6c8ff7f86a3a5127930aa41659917fb429e848e..fa23e3ff45a03f7ecc7937c6056fca39
        compactionRetries: 0,
        maxOverflowRetries: 1,
      })
+diff --git a/packages/compaction/compaction-basic/tests/runtime-context-admission.spec.ts b/packages/compaction/compaction-basic/tests/runtime-context-admission.spec.ts
+index 54d5603bfc1c1e16bc80aa1b5dc48d6a7c238339..d9482d88ae722f5e45e97f7e7e04877d1dd24478 100644
+--- a/packages/compaction/compaction-basic/tests/runtime-context-admission.spec.ts
++++ b/packages/compaction/compaction-basic/tests/runtime-context-admission.spec.ts
+@@ -12,17 +12,43 @@ import { defineContentToolFixture } from '@deepseek-ai/dsh-tools'
+ import BasicCompaction from '@deepseek-ai/dsh-compaction-basic'
+ import { expect, it } from 'vitest'
+ 
++function checkpoint(detail = 'continue'): string {
++  return [
++    '## User Intent and Non-Negotiable Constraints',
++    '- preserve the latest goal',
++    '## Progress',
++    '### Verified Done',
++    '- (none)',
++    '### In Progress',
++    `- ${detail}`,
++    '### Blocked',
++    '- (none)',
++    '## Decisions and Rationale',
++    '- (none)',
++    '## Working Set',
++    '- fixture.ts',
++    '## Failures and Corrections',
++    '- (none)',
++    '## Active Operations',
++    '- (none)',
++    '## Next Action',
++    '- continue',
++    '## Critical Continuity Facts',
++    '- (none)',
++  ].join('\n')
++}
++
+ class CompactionAdapter extends LlmAdapter {
+   readonly conversation: GenerateOptions[] = []
+   readonly summaries: GenerateOptions[] = []
+ 
+   override resolveModel(provider: string, model: string): Promise<LlmResolvedModelInfo> {
+-    return Promise.resolve({ provider, id: model, name: model, context: { contextWindow: 2048 } })
++    return Promise.resolve({ provider, id: model, name: model, context: { contextWindow: 8192 } })
+   }
+ 
+   override async *stream(options: GenerateOptions): AsyncIterable<StreamChunk> {
+     const last = options.messages.at(-1)
+-    const summarizing = last?.content.some(block => block.type === 'text' && block.text.includes('acting as a compaction engine')) === true
++    const summarizing = last?.content.some(block => block.type === 'text' && block.text.includes('compaction engine for the AI assistant')) === true
+     if (summarizing) this.summaries.push(options)
+     else this.conversation.push(options)
+     if (!summarizing && this.conversation.length === 1) {
+@@ -30,7 +56,7 @@ class CompactionAdapter extends LlmAdapter {
+       yield { type: 'block-end', index: 0, block: { type: 'tool-call', id: ToolCallId('work-call'), name: 'work', arguments: '{}' } }
+       yield { type: 'finish', reason: { kind: 'tool-calls' } }
+     } else {
+-      const text = summarizing ? 'Earlier work completed.' : 'TASK COMPLETE'
++      const text = summarizing ? checkpoint('Earlier work completed.') : 'TASK COMPLETE'
+       yield { type: 'block-start', index: 0, blockType: 'text' }
+       yield { type: 'block-end', index: 0, block: { type: 'text', text } }
+       yield { type: 'finish', reason: { kind: 'stop' } }
+@@ -52,7 +78,7 @@ it('retains required cwd in the first request after proactive compaction with op
+       name: 'work', description: 'Do work.', parameters: {}, async execute() { return [{ type: 'text', text: 'work done' }] },
+     }))
+     await ctx.plugin(BasicCompaction, {
+-      auto: true, thresholdRatio: 0.5, headroomTokens: 0, retainTokens: 20, maxTokens: 32, compactionRetries: 0,
++      auto: true, thresholdRatio: 0.25, headroomTokens: 0, retainTokens: 20, maxTokens: 512, compactionRetries: 0,
+     })
+     const harness = await mountAgentLoopTestHarness(ctx)
+     const agent = await harness.create(SessionId('compaction-admission'), { provider: 'mock', model: 'mock' }, { cwd: root })
 diff --git a/packages/compaction/compaction/README.md b/packages/compaction/compaction/README.md
-index fecb3b6731108c493825f6fa0874ab865781fc2a..781491b932e75f1f789db3b43bb1dd15ca62d968 100644
+index b8de223d36db65742f6a0e81476aa3b6f172113b..e2a603569573d22b575464a8187dc68dfc9aa08c 100644
 --- a/packages/compaction/compaction/README.md
 +++ b/packages/compaction/compaction/README.md
-@@ -115,6 +115,8 @@ One log-recorded lock is shared by all entry points. Tail inspection finds the l
+@@ -114,6 +114,8 @@ One log-recorded lock is shared by all entry points. Tail inspection finds the l
  
  The `compaction/*` events extend `SessionEventMap` (merge-extensible) via declaration merging — session events, not Cordis `Events`, and all log-only. The generated [persistence log event catalog](../../../docs/persistence-catalog.md) owns the per-event payloads; `compaction/prune` documents the shadow-price protocol shared with the tool-result pruner.
  
@@ -1942,10 +2044,10 @@ index fecb3b6731108c493825f6fa0874ab865781fc2a..781491b932e75f1f789db3b43bb1dd15
  
  -----
 diff --git a/packages/compaction/compaction/README.zh.md b/packages/compaction/compaction/README.zh.md
-index 86e6a2935c408af7e247235378a022ad855c00a0..756a838369d60a96ec17094b34e076de9b4f7f74 100644
+index 092688ccf27367be7356b620df6bab744cc8ec79..4c6a1bba9453e431177a3bdf6b8331c4d993c4aa 100644
 --- a/packages/compaction/compaction/README.zh.md
 +++ b/packages/compaction/compaction/README.zh.md
-@@ -115,6 +115,8 @@ kind: "package-reference"
+@@ -114,6 +114,8 @@ kind: "package-reference"
  
  `compaction/*` 事件通过 declaration merging 扩展 `SessionEventMap`（可合并扩展）——它们是会话事件，不是 Cordis `Events`，且都仅写入日志。生成的[持久化日志事件目录](../../../docs/persistence-catalog.zh.md)拥有每个事件的 payload；`compaction/prune` 记录了与工具结果修剪器共享的影子价格协议。
  
@@ -1954,26 +2056,8 @@ index 86e6a2935c408af7e247235378a022ad855c00a0..756a838369d60a96ec17094b34e076de
  </details>
  
  -----
-diff --git a/packages/compaction/compaction/src/invariant.ts b/packages/compaction/compaction/src/invariant.ts
-index 0b347a71eb4453f690891064923a5a2efa9f26f5..bb55e8b203df954f24a27175bc23dbb8dd781699 100644
---- a/packages/compaction/compaction/src/invariant.ts
-+++ b/packages/compaction/compaction/src/invariant.ts
-@@ -230,6 +230,13 @@ function validateCompactionEvent(
-     if (!Number.isSafeInteger(event.data.shadowedTokenCount) || event.data.shadowedTokenCount < 0) {
-       fail('compaction/summary shadowedTokenCount must be a non-negative safe integer')
-     }
-+    if (event.data.llmStreamCall === true
-+      && event.data.llmStreamCallCount !== undefined
-+      && (!Number.isSafeInteger(event.data.llmStreamCallCount)
-+        || event.data.llmStreamCallCount < 1
-+        || event.data.llmStreamCallCount > 2)) {
-+      fail('compaction/summary llmStreamCallCount must be one or two')
-+    }
-     return {
-       kind: 'summary',
-       compactionId: open.compactionId,
 diff --git a/packages/compaction/compaction/src/types.ts b/packages/compaction/compaction/src/types.ts
-index 5a7d12c1b21a9ed55287a1935a3f8104d30722b9..cd0a9b4f231541e9f7b4f6ca0a46739a561e8a99 100644
+index 0c69c53debbbe51135c745006d7d90f9db183081..8fd07e42de0697d40f0077d10cc298387a095a12 100644
 --- a/packages/compaction/compaction/src/types.ts
 +++ b/packages/compaction/compaction/src/types.ts
 @@ -55,8 +55,10 @@ declare module '@deepseek-ai/dsh-session/types' {
@@ -1989,7 +2073,7 @@ index 5a7d12c1b21a9ed55287a1935a3f8104d30722b9..cd0a9b4f231541e9f7b4f6ca0a46739a
        | {
          /** Optional complete output from an unmarked template, remote, or other summarizer. */
 diff --git a/packages/llm/token-meter/README.md b/packages/llm/token-meter/README.md
-index e6d957bd14560d967fb221b147d87d7db42197ea..ede51f1440b9bf12853ffaddd140466d0bdb373d 100644
+index 51eee2f2aef4280818852db42635941963f103be..d75305387c3572e4d04952b5428043dcd2056c26 100644
 --- a/packages/llm/token-meter/README.md
 +++ b/packages/llm/token-meter/README.md
 @@ -104,6 +104,8 @@ Each `measure()` call synchronizes the fold to the current durable tail, then re
@@ -2002,7 +2086,7 @@ index e6d957bd14560d967fb221b147d87d7db42197ea..ede51f1440b9bf12853ffaddd140466d
  
  -----
 diff --git a/packages/llm/token-meter/README.zh.md b/packages/llm/token-meter/README.zh.md
-index 526be7b2e399bcf6f4638ece9a7315044fa48c55..685e32c4e6f20300a55655adbc358606f8a3b3a1 100644
+index 0dc929f4921b6f48273269e5ee1329ea57d24561..a68347d97bf0e4e45ad1b7038ae692557346c330 100644
 --- a/packages/llm/token-meter/README.zh.md
 +++ b/packages/llm/token-meter/README.zh.md
 @@ -104,6 +104,8 @@ const price = ctx.tokenMeter.estimateMessage(message)
@@ -2104,7 +2188,7 @@ index f721d26219e827b9e8ffc4ace839ccbf9a72351d..48cb64067659d5bb741d88a35572bc12
    private _sync(session: Session): ReplayState {
      let state = this.states.get(session)
 diff --git a/packages/llm/token-meter/src/surface-fold.ts b/packages/llm/token-meter/src/surface-fold.ts
-index 29df77f87a60e0dc237d771c9f613d807fabe389..2428f6016c6a2b9a45e0e1147aea5f0006056ff0 100644
+index 22235ba03217f4271a76dd03dd94c5258e34dee1..22bfa6bf8b4936013d6d11fb2bc495a1361953d4 100644
 --- a/packages/llm/token-meter/src/surface-fold.ts
 +++ b/packages/llm/token-meter/src/surface-fold.ts
 @@ -16,7 +16,7 @@
