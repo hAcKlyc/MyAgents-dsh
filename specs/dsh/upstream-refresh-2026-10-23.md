@@ -1,10 +1,10 @@
 # DSH 0.2.1 candidate source refresh
 
-Date: 2026-10-23. Status: candidate implementation and validation in progress; distribution
-`0.1.19` is not published. The thirteen-patch, sixteen-seam candidate is undergoing final acceptance. A mechanical patch
-filename correction changes its artifact identity; replacement builds and installed/native/Host
-acceptance are recorded below as they complete. This refresh moves DSH from `0.2.0-rc.2` to `0.2.1-rc.2`, Cordis from
-`4.0.4` to `4.0.5`, and the separately source-built pi-ai from `0.87.1` to `1.1.0`.
+Date: 2026-10-23. The thirteen-patch, sixteen-seam source upgrade and macOS Host
+candidate acceptance are complete. Distribution publication and each platform's native
+verification are owned by the versioned GitHub Release workflow and its immutable artifacts.
+This refresh moves DSH from `0.2.0-rc.2` to `0.2.1-rc.2`, Cordis from `4.0.4` to `4.0.5`,
+and the separately source-built pi-ai from `0.87.1` to `1.1.0`.
 
 The [generated source baseline](./dsh-baseline-v1.json) and
 [seam registry](./seam-decisions-v1.json) own the exact candidate DSH commit, tree, touched blobs
@@ -162,8 +162,7 @@ evidence. The native handoff must bind the final source commit; source
 or patched-artifact results alone do not claim application acceptance.
 
 Evidence on unavailable native targets remains `implementation-complete_pending-native-validation`.
-macOS execution never establishes Windows or Linux acceptance. This candidate does not authorize
-a public release, tag or merge. Native source success, a clean patch application, and old Runtime
+macOS execution never establishes Windows or Linux acceptance. Publication requires an explicit release request and the four-target release workflow. Native source success, a clean patch application, and old Runtime
 handoffs cannot establish acceptance for changed executable bytes.
 
 ## Upstream follow-up
