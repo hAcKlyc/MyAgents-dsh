@@ -134,7 +134,7 @@ original source/lock/artifact scope; they do not accept the final thirteen-patch
   4 cases. Updated shell composition and canonical minimum-output fixtures passed 40 process/tool
   contract tests and the official shell-definition check. Shell results now require native `cwd`.
 
-The final accepted patched artifact is version
+The implementation-acceptance patched artifact is version
 `0.2.1-rc.2.myagents.687f282e8625.fd9ed793f1e9`. Independent builds `artifact-m` and
 `artifact-n` both pass, and all 108 inventoried files are byte-for-byte identical, including
 104 DSH packages. Both clean consumers pass strict public compilation and dependency-closure
@@ -143,6 +143,16 @@ verification. The manifest SHA-256 is
 `5dd86954c4cc36aaa571cda374ecc77d0e03660671a4283cc742ec3498a9c083`. The local paired-build receipt
 is `MyAgents-dsh-release-work/upgrade-021-rc2/double-build-policy-final-evidence.json`.
 Earlier builds are superseded; neither failed builds nor old-byte receipts accept this identity.
+
+Release preparation aligned the offline seam compiler with the artifact builder's frozen-lock
+policy. Because the manifest also binds that compiler script, the current release artifact was
+rebuilt: manifest `2bb501146e320a9f6cfba8d78b2a1d9c227b4417e4c27df560267ec7b164571d`.
+macOS, Linux and Windows produced identical manifests. All 104 package archives and the two
+consumer files remain byte-for-byte identical to the implementation-acceptance artifact; only
+the manifest's builder fingerprint and its checksum inventory changed. Generated protocol/profile
+projections use the refreshed accepted ledger. Final Runtime and Release native claims still
+require the release-source commit and each target's own campaign.
+
 
 The final ordered source matrix passes 40 suites / 1,504 tests, with 3 platform skips.
 Fresh requirements and adversarial reviews found no implementation blocker; a focused follow-up

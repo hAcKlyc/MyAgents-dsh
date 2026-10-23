@@ -98,7 +98,7 @@ jobs:
           npm ci --engine-strict=false --prefix pi --ignore-scripts --no-audit --no-fund --workspace @earendil-works/pi-ai --include-workspace-root
           npm cache add @earendil-works/pi-ai@1.1.0
           corepack enable
-          corepack prepare pnpm@11.7.0 --activate
+          corepack prepare pnpm@11.28.5 --activate
       - name: Prime historical patched-source dependency store
         working-directory: myagents-dsh
         run: npm exec -- node --import tsx scripts/prime-historical-dsh-store.ts --source ../deepseek-harness
