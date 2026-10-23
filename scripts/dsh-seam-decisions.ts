@@ -675,8 +675,10 @@ export function verifyDshSeamSource(
       run("git", ["-c", "core.autocrlf=false", "apply", "-"], worktree, patch.bytes);
     }
     run("git", ["diff", "--check"], worktree);
+    // Match the artifact builder: the exact source/lock is verified above.
+    // Fresh offline runners cannot re-query registry supply-chain metadata.
     run("corepack", [
-      "pnpm", "install", "--offline", "--frozen-lockfile", "--ignore-scripts",
+      "pnpm", "install", "--offline", "--frozen-lockfile", "--trust-lockfile", "--ignore-scripts",
       "--reporter=append-only", "--store-dir", pnpmStore, ...DSH_SEAM_INSTALL_FILTERS,
     ], worktree);
     run("corepack", [
