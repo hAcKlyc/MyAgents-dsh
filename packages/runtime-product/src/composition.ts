@@ -21,7 +21,7 @@ import { SqliteSessionQueryEngine } from "@deepseek-ai/dsh-session-query-sqlite"
 import * as SessionCheckpointPolicy from "@deepseek-ai/dsh-session-checkpoint-policy";
 import * as SessionStats from "@deepseek-ai/dsh-session-stats";
 import * as SessionTurnOutline from "@deepseek-ai/dsh-session-turn-outline";
-import { SessionId, SessionStore, type Session } from "@deepseek-ai/dsh-session";
+import { SessionId, SessionStore, type Session, type SessionEvent } from "@deepseek-ai/dsh-session";
 import { WorkingDirectoryService } from "@deepseek-ai/dsh-working-directory";
 import * as RepeatToolReminder from "@deepseek-ai/dsh-repeat-tool-reminder";
 import * as TimeContext from "@deepseek-ai/dsh-time-context";
@@ -32,6 +32,7 @@ import * as SubagentSpawnInProcess from "@deepseek-ai/dsh-subagent-spawn-in-proc
 import * as ToolSubagent from "@deepseek-ai/dsh-tool-subagent";
 import * as ToolSubagentControl from "@deepseek-ai/dsh-tool-subagent-control";
 import * as ToolSubagentList from "@deepseek-ai/dsh-tool-subagent-control/list-agents";
+import { coldPermissionHistory, installColdPermissionHistory } from "./cold-permission-history.js";
 import { installNativeRootContext, nativeChildAuthority, installNativeChildAuthorityProjection } from "./native-child-authority.js";
 import { isNativeContinuableChild, notifyNativeSharedTask } from "./native-task-notification.js";
 
@@ -129,6 +130,7 @@ import {
   ProductPermissionService,
   ProductToolRuntime,
   ProductToolError,
+  ProductPermissionError,
   productRootAgent,
   validateProductPermissionPlaneConfig,
   type ProductPermissionController,
@@ -607,6 +609,26 @@ const sandboxModeFor = (mode: DshPermissionMode): "workspace-write" | "danger-fu
   mode === "full-autonomous" ? "danger-full-access" : "workspace-write";
 const approvalPolicyFor = (mode: DshPermissionMode): "ask" | "never" =>
   mode === "approval-required" ? "ask" : "never";
+
+const assertRecoverableNativePermissionPolicy = (
+  policyTail: readonly SessionEvent[],
+  sandbox: ReturnType<SandboxPolicyService["overrideOf"]>,
+  approval: ReturnType<ApprovalService["overrideOf"]>,
+): void => {
+  if ((sandbox === "workspace-write" && (approval === "ask" || approval === "never"))
+    || (sandbox === "danger-full-access" && approval === "never")) return;
+
+  // The only intermediate pair outside the three Product modes is produced
+  // by approval -> full: config flush, sandbox write, then approval write.
+  // Later config-only prefixes may follow another interrupted cold admission.
+  const sandboxIndex = policyTail.findLastIndex(({ type }) => type === "sandbox/mode");
+  const approvalIndex = policyTail.findLastIndex(({ type }) => type === "approval/policy");
+  const configIndex = policyTail.findLastIndex(({ type }, index) =>
+    type === "myagents/permission/config" && index < sandboxIndex);
+  if (sandbox === "danger-full-access" && approval === "ask"
+    && configIndex > approvalIndex) return;
+  throw new Error("persisted native permission policy has no valid Product mode or interrupted configuration prefix");
+};
 
 const assertInitialSessionConfiguration = (
   state: CompositionAuthorityState,
@@ -2252,6 +2274,7 @@ export const composeDshRootServices = async (
     });
     await root.plugin(await loadSessionProjectionRegistry());
     installProductContextProjection(root);
+    installColdPermissionHistory(root);
     await root.plugin(AgentRegistry);
     await root.plugin(SessionStats);
     await root.plugin(SessionTurnOutline);
@@ -2558,27 +2581,52 @@ export const composeDshRootServices = async (
         });
         const autoAllowTools = request.params.toolPolicy?.autoAllowTools
           ?? authority.canonicalAutoAllowTools;
-        permission.restoreConfiguration(agent, Object.freeze({
-          mode: request.params.permissionMode,
-          autoAllowTools: autoAllowTools as Parameters<
-            ProductPermissionController["restoreConfiguration"]
-          >[1]["autoAllowTools"],
-          interaction: nextInteraction,
-        }));
-        if (root.sandboxPolicy.overrideOf(agent.session) !== sandboxModeFor(request.params.permissionMode)
-          || root.approval.overrideOf(agent.session) !== approvalPolicyFor(request.params.permissionMode)) {
-          throw new ProtocolError("primary_session_configuration_stale", "resumed sandbox policy differs from the requested permission mode");
+        foldProductCompactions(agent.session.snapshotEvents());
+        root.sdkOperations.prepareGenerationReplacement(agent);
+        const operations = root.sdkOperations.validatePersisted(agent).operations;
+        root.productPlan.validatePersisted(agent);
+        root.productTaskGraph.validatePersisted(agent);
+        root.productCheckpoint.validatePersisted(agent);
+        const quiescent = operations.every(({ state }) => state === "terminal")
+          && agent.inbox.nextStep.length === 0 && agent.inbox.nextTurn.length === 0;
+        const nativeSandbox = root.sandboxPolicy.overrideOf(agent.session);
+        const nativeApproval = root.approval.overrideOf(agent.session);
+        const nativePolicyMatches = nativeSandbox === sandboxModeFor(request.params.permissionMode)
+          && nativeApproval === approvalPolicyFor(request.params.permissionMode);
+        if (!quiescent && !nativePolicyMatches) {
+          throw new ProtocolError("primary_session_configuration_stale", "pending operations require their persisted permission configuration", true);
+        }
+        const history = coldPermissionHistory(root, agent.session);
+        assertRecoverableNativePermissionPolicy(history.nativePolicyTail, nativeSandbox, nativeApproval);
+        try {
+          await permission.resumeConfiguration(agent, Object.freeze({
+            mode: request.params.permissionMode,
+            autoAllowTools: autoAllowTools as Parameters<
+              ProductPermissionController["resumeConfiguration"]
+            >[1]["autoAllowTools"],
+            interaction: nextInteraction,
+          }), {
+            permissionRevision: operations.at(-1)?.birth.permissionRevision,
+            events: history.permissionEvents,
+            quiescent,
+          });
+        } catch (error) {
+          if (error instanceof ProductPermissionError && error.code === "permission_configuration_busy") {
+            throw new ProtocolError("primary_session_configuration_stale", error.message, true);
+          }
+          throw error;
+        }
+        if (!nativePolicyMatches) {
+          // The durable permission transition can precede the native setters
+          // across a crash. Reconcile only at a settled operation boundary,
+          // whose complete setup suffix the DSH factory persists before publication.
+          setSandboxMode(agent.session, sandboxModeFor(request.params.permissionMode));
+          setApprovalPolicy(agent.session, approvalPolicyFor(request.params.permissionMode));
         }
         authority.canonicalPermissionMode = request.params.permissionMode;
         authority.canonicalAutoAllowTools = Object.freeze([...autoAllowTools]);
         authority.hostInteractionRevision = request.params.interactionScenario;
-        foldProductCompactions(agent.session.snapshotEvents());
-        root.sdkOperations.prepareGenerationReplacement(agent);
-        root.sdkOperations.validatePersisted(agent);
         root.productPermission.fold(agent.session);
-        root.productPlan.validatePersisted(agent);
-        root.productTaskGraph.validatePersisted(agent);
-        root.productCheckpoint.validatePersisted(agent);
         await root.productCheckpoint.reconcile(agent);
       },
     });

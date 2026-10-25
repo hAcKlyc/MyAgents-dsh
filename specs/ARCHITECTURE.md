@@ -259,7 +259,7 @@ The tag workflow runs deterministic packed self-check and installed-process conf
 | Exact canonical tool compatibility | MyAgents tool plugins | Registered into `ctx.tools` |
 | Desired/effective extensions | `ProductComponentService` | Prepared contribution generations, atomic promotion, disposal |
 | MCP connection and discovered definitions | `@myagents-dsh/components-mcp` within one component generation | MCP SDK transport supplied by trusted composition; DSH tool registrations switch atomically and the retired connection drains in reverse-order cleanup |
-| Permission policy | MyAgents permission plugin | DSH guards/approval plus durable policy events |
+| Permission policy | MyAgents permission plugin | DSH guards/approval plus durable policy events; cold admission separates persisted effective policy from next desired policy at a settled operation boundary ([permissions](./tech_docs/execution/permissions-interactions-and-plan.md#4-durable-exact-rules)) |
 | User questions and approval UI | Host provider behind DSH seams | Pending requests cancelled on turn/session teardown |
 | Plan and TaskGraph | MyAgents plan/task plugins | Durable DSH session events |
 | Child/background execution | DSH agents/subagents/jobs | Native child catalog and Session lineage |

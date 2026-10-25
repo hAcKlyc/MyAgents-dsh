@@ -1,6 +1,6 @@
 import { Context } from "@deepseek-ai/cordis";
 import { AgentRegistry, type Agent } from "@deepseek-ai/dsh-agent";
-import { SessionId, SessionStore, type Session } from "@deepseek-ai/dsh-session";
+import { SessionId, SessionStore, type Session, type SessionEvent } from "@deepseek-ai/dsh-session";
 import { SystemPrompt } from "@deepseek-ai/dsh-system-prompt";
 import { ApprovalService, setApprovalPolicy } from "@deepseek-ai/dsh-user-approval";
 import { ToolCallId } from "@deepseek-ai/dsh-llm";
@@ -128,6 +128,8 @@ const mounted = async (
     registerController: (controller) => { permissionController = controller; },
   });
   if (permissionController === undefined) throw new Error("permission controller was not registered");
+  const events: SessionEvent[] = [];
+  context.on("session/event", (_session, event) => { events.push(event); });
   const session = context.sessions.create(SessionId("permission-session"));
   session.append("turn/start", { turn: 1 });
   const agent = Object.freeze({
@@ -170,6 +172,7 @@ const mounted = async (
     agent,
     context,
     permissionController,
+    events,
     flushes,
     product,
     session,
@@ -519,6 +522,126 @@ describe("product permission policy and local interaction provider", () => {
       .toBe(source.context.productPermission.currentRevision(source.agent));
     expect(resumed.session.snapshotEvents()).toHaveLength(beforeEventCount);
     expect(resumed.flushes).toEqual([]);
+  });
+
+  it.each([
+    ["full-autonomous", "approval-required"],
+    ["approval-required", "full-autonomous"],
+    ["workspace-autonomous", "approval-required"],
+  ] as const)("admits a settled cold %s Session under %s without rewriting its old birth", async (mode, desiredMode) => {
+    const local = provider("cold-policy", (pending, settlement) => response(pending, "deny", settlement));
+    const source = await mounted(local.provider, { mode });
+    const birth = source.context.productPermission.currentRevision(source.agent);
+    const resumed = await mounted(local.provider);
+    await resumed.permissionController.resumeConfiguration(resumed.agent, {
+      mode: desiredMode, autoAllowTools: [], interaction: local.provider,
+    }, { events: resumed.events, permissionRevision: birth, quiescent: true });
+    const snapshot = resumed.permissionController.snapshot(resumed.agent);
+    expect(snapshot.mode).toBe(desiredMode);
+    expect(snapshot.revision).not.toBe(birth);
+    expect(resumed.events.slice().at(-1)).toMatchObject({
+      type: "myagents/permission/config",
+      data: { previousBaseRevision: birth, fromRevision: birth },
+    });
+    expect(resumed.flushes).toHaveLength(0);
+  });
+
+  it.each([false, true])("restores and changes an old permission chain (config event: %s)", async (configured) => {
+    const initial = provider("cold-initial", (pending, settlement) => response(pending, "always_allow", settlement));
+    const desired = provider("cold-desired", (pending, settlement) => response(pending, "deny", settlement));
+    const source = await mounted(initial.provider);
+    if (configured) {
+      await source.permissionController.applyConfiguration(source.agent, {
+        mode: "workspace-autonomous", autoAllowTools: ["bash"], interaction: initial.provider,
+      });
+    }
+    const beforeGrant = source.permissionController.snapshot(source.agent);
+    await source.permissionController.grantRule(source.agent, {
+      expectedRevision: beforeGrant.revision, tool: "bash", permissionClass: "process.execute", target: "old-target",
+    });
+    const oldSnapshot = source.permissionController.snapshot(source.agent);
+    const resumed = await mounted(desired.provider);
+    for (const event of source.events.slice()) {
+      if (event.type === "myagents/permission/config" || event.type === "myagents/permission/rule") {
+        resumed.session.append(event.type, structuredClone(event.data));
+      }
+    }
+    await resumed.permissionController.resumeConfiguration(resumed.agent, {
+      mode: "approval-required", autoAllowTools: [], interaction: desired.provider,
+    }, { events: resumed.events, quiescent: true });
+    expect(resumed.permissionController.snapshot(resumed.agent)).toMatchObject({ mode: "approval-required", rules: [] });
+    expect(resumed.events.slice().at(-1)).toMatchObject({
+      type: "myagents/permission/config", data: { fromRevision: oldSnapshot.revision },
+    });
+    expect(resumed.flushes).toHaveLength(0);
+  });
+
+  it("keeps identical cold configuration and exact grants read-only, including pending recovery", async () => {
+    const local = provider("cold-same", (pending, settlement) => response(pending, "always_allow", settlement));
+    const source = await mounted(local.provider);
+    await source.context.productPermission.authorize(source.product(), request());
+    const resumed = await mounted(local.provider);
+    for (const event of source.events.slice()) {
+      if (event.type === "myagents/permission/rule") resumed.session.append(event.type, structuredClone(event.data));
+    }
+    const before = resumed.events.slice();
+    await resumed.permissionController.resumeConfiguration(resumed.agent, {
+      mode: "approval-required", autoAllowTools: [], interaction: local.provider,
+    }, { events: resumed.events, quiescent: false });
+    expect(resumed.permissionController.snapshot(resumed.agent)).toEqual(source.permissionController.snapshot(source.agent));
+    expect(resumed.events.slice()).toEqual(before);
+    expect(resumed.flushes).toEqual([]);
+  });
+
+  it("refuses a changed configuration while an old operation still owns recovery", async () => {
+    const local = provider("cold-busy", (pending, settlement) => response(pending, "deny", settlement));
+    const source = await mounted(local.provider, { mode: "full-autonomous" });
+    const resumed = await mounted(local.provider);
+    const before = resumed.events.slice();
+    await expect(resumed.permissionController.resumeConfiguration(resumed.agent, {
+      mode: "approval-required", autoAllowTools: [], interaction: local.provider,
+    }, { events: resumed.events, permissionRevision: source.context.productPermission.currentRevision(source.agent), quiescent: false }))
+      .rejects.toMatchObject({ code: "permission_configuration_busy" });
+    expect(resumed.events.slice()).toEqual(before);
+    expect(resumed.flushes).toEqual([]);
+  });
+
+  it("validates the whole cold chain before accepting a different desired configuration", async () => {
+    const local = provider("cold-corrupt", (pending, settlement) => response(pending, "deny", settlement));
+    const source = await mounted(local.provider);
+    await source.permissionController.applyConfiguration(source.agent, {
+      mode: "full-autonomous", autoAllowTools: [], interaction: local.provider,
+    });
+    const event = required(source.events.slice().find(({ type }) => type === "myagents/permission/config"));
+    const resumed = await mounted(local.provider);
+    resumed.session.append("myagents/permission/config", { ...event.data, revision: "tampered" } as never);
+    const before = resumed.events.slice();
+    await expect(resumed.permissionController.resumeConfiguration(resumed.agent, {
+      mode: "approval-required", autoAllowTools: [], interaction: local.provider,
+    }, { events: resumed.events, quiescent: true })).rejects.toMatchObject({ code: "permission_recovery_required" });
+    expect(resumed.events.slice()).toEqual(before);
+    expect(resumed.flushes).toEqual([]);
+  });
+
+  it.each([false, new Error("unavailable durability")])("fences a failed live transition and lets cold admission validate its prefix: %s", async (failure) => {
+    const local = provider("cold-durability", (pending, settlement) => response(pending, "deny", settlement));
+    const resumed = await mounted(local.provider, { mode: "full-autonomous" });
+    resumed.setFlushResult(failure);
+    await expect(resumed.permissionController.applyConfiguration(resumed.agent, {
+      mode: "approval-required", autoAllowTools: [], interaction: local.provider,
+    })).rejects.toThrow();
+    expect(() => resumed.permissionController.snapshot(resumed.agent)).toThrow();
+    // A subsequent process may observe the committed prefix despite the lost
+    // flush acknowledgement. It validates and adopts that exact transition.
+    const retry = await mounted(local.provider);
+    for (const event of resumed.events.slice()) {
+      if (event.type === "myagents/permission/config") retry.session.append(event.type, structuredClone(event.data));
+    }
+    await retry.permissionController.resumeConfiguration(retry.agent, {
+      mode: "approval-required", autoAllowTools: [], interaction: local.provider,
+    }, { events: retry.events, quiescent: true });
+    expect(retry.flushes).toEqual([]);
+    expect(retry.permissionController.snapshot(retry.agent).mode).toBe("approval-required");
   });
 
   it("runs the generation Hook after birth validation and scopes approval to one call", async () => {

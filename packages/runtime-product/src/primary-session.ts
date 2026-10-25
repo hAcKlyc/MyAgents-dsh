@@ -1715,7 +1715,8 @@ class DshPrimarySessionBackend implements PrimarySessionBackend {
         failures.push(rollbackError);
       }
       if (failures.length === 1 && rawHandle === undefined && !request.signal.aborted
-        && inspection?.state === "resume_candidate") {
+        && inspection?.state === "resume_candidate"
+        && !(error instanceof ProtocolError && error.code === "primary_session_configuration_stale")) {
         return Object.freeze({
           state: "recovery_required" as const,
           recovery: Object.freeze({

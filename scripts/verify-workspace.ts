@@ -219,6 +219,7 @@ const expectedWorkspaceFiles = new Map([
   ["packages/runtime-product", [
     "src/extension-snapshot.ts",
     "src/collaboration-policy.ts",
+    "src/cold-permission-history.ts",
     "src/composition.ts",
     "src/mcp-response.ts",
     "src/host-interaction.ts",
