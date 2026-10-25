@@ -48,12 +48,11 @@ import {
   type McpConnection,
   type McpConnectionFactory,
 } from "@myagents-dsh/components-mcp";
-import { createSdkMcpConnectionFactory } from "@myagents-dsh/components-mcp/sdk";
+import { createSdkMcpConnectionFactory, type SdkMcpTransportFactory } from "@myagents-dsh/components-mcp/sdk";
 import {
   LATEST_PROTOCOL_VERSION,
   type JSONRPCMessage,
 } from "@modelcontextprotocol/sdk/types.js";
-import type { Transport } from "@modelcontextprotocol/sdk/shared/transport.js";
 import {
   LlmAdapter,
   type GenerateOptions,
@@ -1749,7 +1748,7 @@ const hostModelMcpWireMethods: string[] = [];
 const hostModelMcpFactory: McpConnectionFactory = createSdkMcpConnectionFactory(Object.freeze({
   createTransport: (input: Parameters<McpConnectionFactory["connect"]>[0]) => {
     hostModelComponentEffects.push(`mcp-connect:${input.serverId}`);
-    const transport: Transport = {
+    const transport: Awaited<ReturnType<SdkMcpTransportFactory["createTransport"]>> = {
       close: () => {
         hostModelMcpCloseHits += 1;
         hostModelComponentEffects.push(`mcp-close:${input.serverId}`);
