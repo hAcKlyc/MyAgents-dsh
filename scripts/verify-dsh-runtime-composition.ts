@@ -151,6 +151,7 @@ const runtimeCompositionSourcePaths = [
   "packages/runtime-product/src/mcp-response.ts",
   "packages/runtime-product/src/extension-snapshot.ts",
   "packages/runtime-product/src/collaboration-policy.ts",
+  "packages/runtime-product/src/cold-permission-history.ts",
   "packages/runtime-product/src/host-interaction.ts",
   "packages/runtime-product/src/host-model.ts",
   "packages/runtime-product/src/network-transport.ts",

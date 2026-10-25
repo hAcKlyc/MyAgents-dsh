@@ -190,6 +190,11 @@ export interface ProductPermissionController {
     agent: Agent,
     config: Readonly<Pick<ProductPermissionPlaneConfig, "mode" | "autoAllowTools" | "interaction">>,
   ) => void;
+  readonly resumeConfiguration: (
+    agent: Agent,
+    config: Readonly<Pick<ProductPermissionPlaneConfig, "mode" | "autoAllowTools" | "interaction">>,
+    recovery: Readonly<{ permissionRevision?: string | undefined; quiescent: boolean; events: readonly SessionEvent[] }>,
+  ) => Promise<void>;
   readonly snapshot: (agent: Agent) => ProductPermissionPolicySnapshot;
   readonly grantRule: (
     agent: Agent,
@@ -1129,6 +1134,11 @@ export class ProductPermissionService extends Service {
         agent: Agent,
         next: Readonly<Pick<ProductPermissionPlaneConfig, "mode" | "autoAllowTools" | "interaction">>,
       ) => this.restoreConfiguration(agent, next),
+      resumeConfiguration: (
+        agent: Agent,
+        next: Readonly<Pick<ProductPermissionPlaneConfig, "mode" | "autoAllowTools" | "interaction">>,
+        recovery: Readonly<{ permissionRevision?: string | undefined; quiescent: boolean; events: readonly SessionEvent[] }>,
+      ) => this.resumeConfiguration(agent, next, recovery),
       snapshot: (agent: Agent) => this.policySnapshot(agent),
       grantRule: (agent: Agent, request: ProductPermissionRuleGrantRequest) => {
         this.assertRuleMutationBoundary();
@@ -1293,6 +1303,15 @@ export class ProductPermissionService extends Service {
       maxRules: this.configValue.maxRules,
     });
     const previous = this.foldInternal(agent.session);
+    await this.commitConfiguration(agent, candidate, previous, "live-session");
+  }
+
+  private async commitConfiguration(
+    agent: Agent,
+    candidate: ProductPermissionPlaneConfig,
+    previous: ProductPermissionFold,
+    durability: "live-session" | "unpublished-session",
+  ): Promise<void> {
     const nextBase = permissionBaseRevision(candidate, String(agent.session.id));
     if (nextBase !== previous.baseRevision) {
       const transition = {
@@ -1305,11 +1324,17 @@ export class ProductPermissionService extends Service {
         ...transition,
         revision: computeConfigRevision(transition),
       });
-      const pending = Promise.resolve<boolean>(this.configValue.durability.flush(agent.session));
-      if (!(await pending)) {
+      if (durability === "live-session") try {
+        const pending = Promise.resolve<boolean>(this.configValue.durability.flush(agent.session));
+        if (!(await pending)) {
+          throw new Error("permission configuration did not reach the Session durability Provider");
+        }
+      } catch (error) {
+        this.failureValue ??= error;
         throw new ProductPermissionError(
           "permission_durability_unavailable",
-          "permission configuration did not reach the Session durability Provider",
+          "permission configuration durability became uncertain",
+          { cause: error },
         );
       }
     }
@@ -1320,6 +1345,48 @@ export class ProductPermissionService extends Service {
       interaction: candidate.interaction,
     });
     this.foldInternal(agent.session);
+  }
+
+  private async resumeConfiguration(
+    agent: Agent,
+    next: Readonly<Pick<ProductPermissionPlaneConfig, "mode" | "autoAllowTools" | "interaction">>,
+    recovery: Readonly<{ permissionRevision?: string | undefined; quiescent: boolean; events: readonly SessionEvent[] }>,
+  ): Promise<void> {
+    this.assertHealthy();
+    this.assertRuleMutationBoundary();
+    const candidate = validateProductPermissionPlaneConfig({
+      ...next,
+      interactionRegistrationDeadlineMs: this.configValue.interactionRegistrationDeadlineMs,
+      maxRules: this.configValue.maxRules,
+    });
+    const events = recovery.events;
+    const desiredBase = permissionBaseRevision(candidate, String(agent.session.id));
+    let previous: ProductPermissionFold;
+    try {
+      // Configuration events own their effective base. Without one, the first
+      // exact grant or a validated operation birth anchors the original base.
+      // A truly empty policy history has no old authorization to preserve.
+      const lastConfig = events.filter(({ type }) => type === "myagents/permission/config").at(-1);
+      const firstRule = events.find(({ type }) => type === "myagents/permission/rule");
+      const persistedBase = lastConfig !== undefined
+        ? validateConfigEvent(lastConfig.data).nextBaseRevision
+        : firstRule !== undefined
+          ? validateRuleEvent(firstRule.data).fromRevision
+          : recovery.permissionRevision ?? desiredBase;
+      previous = foldProductPermissions(events, String(agent.session.id), persistedBase, candidate.maxRules);
+    } catch (error) {
+      this.failureValue ??= error;
+      throw new ProductPermissionError("permission_recovery_required", "product permission history cannot be trusted", { cause: error });
+    }
+    if (previous.baseRevision !== desiredBase && !recovery.quiescent) {
+      throw new ProductPermissionError(
+        "permission_configuration_busy",
+        "resumed operations require their persisted permission configuration before recovery",
+      );
+    }
+    // DSH Agent setup owns this unpublished suffix and durably appends it
+    // before registry publication. A live SessionStore flush is invalid here.
+    await this.commitConfiguration(agent, candidate, previous, "unpublished-session");
   }
 
   private restoreConfiguration(

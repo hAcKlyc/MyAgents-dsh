@@ -1,6 +1,7 @@
 import type { ExtensionSnapshot } from "@myagents-dsh/protocol";
 import { modelToolNames } from "@myagents-dsh/protocol";
 import type {} from "@deepseek-ai/dsh-subagent";
+import type {} from "@deepseek-ai/dsh-sandbox-policy";
 // Retain a historical stock log fixture without activating the stock Todo tool.
 declare module "@deepseek-ai/dsh-session/types" {
   interface SessionEventMap {
@@ -8,6 +9,7 @@ declare module "@deepseek-ai/dsh-session/types" {
   }
 }
 import assert from "node:assert/strict";
+import { z } from "zod";
 import { createHash } from "node:crypto";
 import { writeSync } from "node:fs";
 import { chmod, copyFile, glob, mkdir, mkdtemp, readFile, readdir, realpath, rm, unlink, writeFile } from "node:fs/promises";
@@ -46,12 +48,11 @@ import {
   type McpConnection,
   type McpConnectionFactory,
 } from "@myagents-dsh/components-mcp";
-import { createSdkMcpConnectionFactory } from "@myagents-dsh/components-mcp/sdk";
+import { createSdkMcpConnectionFactory, type SdkMcpTransportFactory } from "@myagents-dsh/components-mcp/sdk";
 import {
   LATEST_PROTOCOL_VERSION,
   type JSONRPCMessage,
 } from "@modelcontextprotocol/sdk/types.js";
-import type { Transport } from "@modelcontextprotocol/sdk/shared/transport.js";
 import {
   LlmAdapter,
   type GenerateOptions,
@@ -60,7 +61,8 @@ import {
   type LlmResolvedModelInfo,
   type StreamChunk,
 } from "@deepseek-ai/dsh-llm";
-import { Session, SessionId, SessionStore, type SessionEvent } from "@deepseek-ai/dsh-session";
+import { Session, SessionId, SessionSeq, SessionStore, type SessionEvent } from "@deepseek-ai/dsh-session";
+import { materializeAppendBatch } from "@deepseek-ai/dsh-session-persistence";
 import { resolveRgPath } from "@deepseek-ai/dsh-tool-fs-search";
 import {
   HostPortService,
@@ -1746,7 +1748,7 @@ const hostModelMcpWireMethods: string[] = [];
 const hostModelMcpFactory: McpConnectionFactory = createSdkMcpConnectionFactory(Object.freeze({
   createTransport: (input: Parameters<McpConnectionFactory["connect"]>[0]) => {
     hostModelComponentEffects.push(`mcp-connect:${input.serverId}`);
-    const transport: Transport = {
+    const transport: Awaited<ReturnType<SdkMcpTransportFactory["createTransport"]>> = {
       close: () => {
         hostModelMcpCloseHits += 1;
         hostModelComponentEffects.push(`mcp-close:${input.serverId}`);
@@ -4806,6 +4808,217 @@ packedReversePair.close();
 hostPeer.close();
 runtimeInput.destroy();
 runtimeOutput.destroy();
+
+// A Task may use a different per-operation permission than its Host Session
+// baseline. Recreate the entire Runtime between turns, using only native RPC
+// and the existing durable Session, so a warm config/apply cannot hide a fault.
+declare module "@deepseek-ai/dsh-session-projection/types" {
+  interface SessionProjectionStateMap { coldPermissionFixture: { events: SessionEvent[] } }
+}
+const coldPermissionModes = [
+  "full-autonomous", "approval-required", "approval-required", "approval-required",
+  "full-autonomous", "approval-required", "full-autonomous",
+  "approval-required", "full-autonomous",
+] as const;
+let coldPermissionPrefix: readonly SessionEvent[] = [];
+let coldPermissionRules: MethodResult<"permission/rules/list">["rules"] = [];
+for (const [index, mode] of coldPermissionModes.entries()) {
+  const coldAdapter = new ScriptedFakeLlmAdapter({ provider: "fixture", model: "fixture-model", contextWindow: artifactContextWindow });
+  coldAdapter.enqueue({ kind: "complete", text: "Cold permission continuation completed." });
+  const cold: DshRootComposition = await composeDshRootServices({
+    adapter: coldAdapter, providers: ["fixture"],
+    operationBirthAuthority: { capture: (value) => ({
+      configRevision: value.configRevision, modelProfileRevision: "artifact-provider-v1",
+      componentRevision: artifactDeclarativeExtensionSnapshot.revision,
+      componentDigest: artifactDeclarativeExtensionSnapshot.digest,
+      toolCatalogRevision: validatedArtifactToolCatalog.revision, toolCatalogDigest: validatedArtifactToolCatalog.digest,
+      executionEnvironmentRevision: value.executionEnvironmentRevision, executionEnvironmentDigest: value.executionEnvironmentDigest,
+      permissionRevision: cold.context.productPermission.currentRevision(cold.context.productSession.requireAgent()),
+      interactionScenarioRevision: primarySessionParams.interactionScenario,
+      planRevision: cold.context.productPlan.currentRevision(cold.context.productSession.requireAgent()),
+      originRevision: "artifact-origin-v1", limits: value.limits,
+    }) },
+  });
+  cold.context.sessionProjections.register({
+    key: "coldPermissionFixture", stateVersion: 1,
+    stateSchema: z.object({ events: z.array(z.custom<SessionEvent>()) }),
+    init: () => ({ events: [] }),
+    apply: (state, event) => ({ events: [...state.events, event] }),
+  });
+  const coldEvents = (session: Session): readonly SessionEvent[] => {
+    const state = cold.context.sessionProjections.stateOf(session, "coldPermissionFixture");
+    assert.ok(state);
+    return state.events;
+  };
+  await installCanonicalToolPlane(cold, bindCanonicalToolPlaneConfig(cold));
+  await installProductComponentPlane(cold, Object.freeze({
+    catalog: validatedArtifactToolCatalog,
+    compilers: Object.freeze([
+      createProductSkillComponentCompiler(cold), createProductCommandComponentCompiler(cold),
+      createProductHookComponentCompiler(cold), createProductHostToolComponentCompiler(cold),
+    ]),
+    initialSnapshot: artifactDeclarativeExtensionSnapshot,
+  }));
+  const input = new PassThrough();
+  const output = new PassThrough();
+  const peer = new JsonRpcPeer({ input: output, output: input, role: "host", limits: REFERENCE_PROTOCOL_LIMITS });
+  const lifecycle = await startNativeRpcLifecycle(cold, {
+    input, output, runtimeGeneration: `cold-permission-${index}`, platformTarget: fixturePlatformTarget,
+  }, { processBoundary: { subscribe: () => () => undefined, scheduleForceExit: () => () => undefined } });
+  const stopped = lifecycle.whenStopped().then(
+    (value) => ({ value, error: undefined }), (error: unknown) => ({ value: undefined, error }),
+  );
+  const client = new GeneratedHostClient(peer);
+  await client.initialize({ ...initializeRequest, productSessionId: "cold-permission-product" });
+  await waitUntil(() => lifecycle.nativeRpc.phase === "await_initialized", "cold permission initialize");
+  await client.initialized();
+  await waitUntil(() => lifecycle.nativeRpc.phase === "ready", "cold permission ready");
+  const params = {
+    ...primarySessionParams,
+    runtimeSessionId: index >= 7 ? "cold-pending-session" : "cold-permission-session",
+    persistenceRef: index >= 7 ? "cold-pending-store" : "cold-permission-store",
+    clientOperationId: `cold-permission-bind-${index}`, configRevision: `cold-permission-config-${index}`, permissionMode: mode,
+  };
+  const closeColdFixture = async (): Promise<void> => {
+    await client.runtimeShutdown({ reason: "cold-permission-proof-complete" });
+    const result = await stopped;
+    if (result.error !== undefined) throw result.error instanceof Error ? result.error : new Error("cold fixture shutdown failed", { cause: result.error });
+    assert.equal(result.value?.disposed, true);
+    peer.close();
+    input.destroy();
+    output.destroy();
+  };
+  if (index === 8) {
+    await assert.rejects(client.sessionResume(params), /pending operations require their persisted permission configuration/u);
+    assert.throws(() => cold.context.productSession.requireAgent(), /not ready/u);
+    await closeColdFixture();
+    continue;
+  }
+  if (index === 1) {
+    const persistence = cold.context.sessionPersistence;
+    const open = persistence.open.bind(persistence);
+    let rejectedAppends = 0;
+    persistence.open = async (...args) => {
+      const handle = await open(...args);
+      return { ...handle, append: async (events, options) => {
+        const batch = materializeAppendBatch(events);
+        if (batch.some(({ type }) => type === "myagents/permission/config")) {
+          rejectedAppends += 1;
+          throw new Error("injected unpublished policy persistence failure");
+        }
+        await handle.append(batch, options);
+      } };
+    };
+    try {
+      assert.equal((await client.sessionResume(params)).state, "recovery_required");
+      assert.equal(rejectedAppends, 1, "the factory must persist setup before publication");
+      assert.throws(() => cold.context.productSession.requireAgent(), /not ready/u);
+    } finally {
+      persistence.open = open;
+    }
+    await closeColdFixture();
+    continue;
+  }
+  const binding = index === 0 || index === 7 ? await client.sessionCreate(params) : await client.sessionResume(params);
+  if (index === 6) {
+    assert.equal(binding.state, "recovery_required", "unaccounted native policy corruption must refuse");
+    assert.throws(() => cold.context.productSession.requireAgent(), /not ready/u);
+    await closeColdFixture();
+    continue;
+  }
+  assert.equal(binding.state, "ready", `cold resume must accept ${mode} at a settled boundary`);
+  const agent = cold.context.productSession.requireAgent();
+  if (index !== 7) assert.deepEqual(coldEvents(agent.session).slice(0, coldPermissionPrefix.length), coldPermissionPrefix);
+  assert.equal(cold.context.sandboxPolicy.overrideOf(agent.session), mode === "full-autonomous" ? "danger-full-access" : "workspace-write");
+  assert.equal(cold.context.approval.overrideOf(agent.session), mode === "approval-required" ? "ask" : "never");
+  const policy = await client.permissionRulesList({});
+  assert.equal(policy.permissionMode, mode);
+  if (index === 3) {
+    assert.deepEqual(policy.rules, coldPermissionRules, "identical cold policy must retain exact grants");
+    assert.equal(coldEvents(agent.session).filter(({ type }) => type === "myagents/permission/config").length,
+      coldPermissionPrefix.filter(({ type }) => type === "myagents/permission/config").length);
+  } else {
+    assert.deepEqual(policy.rules, [], "changed policy must not retain earlier exact grants");
+  }
+  await cold.context.sdkOperations.start({
+    ...turnStartParams, clientOperationId: `cold-operation-${index}`, clientUserMessageId: `cold-message-${index}`,
+    configRevision: params.configRevision, limits: { maxTurns: 2 },
+  });
+  await agent.whenIdle();
+  await waitUntil(() => cold.context.sdkOperations.lookup(`cold-operation-${index}`)?.state === "terminal", "cold continuation terminal");
+  assert.equal(cold.context.sdkOperations.lookup(`cold-operation-${index}`)?.terminal?.kind, "succeeded");
+  if (index === 2) {
+    await client.permissionRulesAdd({ expectedRevision: policy.revision, tool: "bash", permissionClass: "process.execute", target: "cold-fixture-target" });
+    coldPermissionRules = (await client.permissionRulesList({})).rules;
+    assert.equal(coldPermissionRules.length, 1);
+  }
+  if (index === 3) {
+    // Inject the actual existing commit boundary: the permission transition has
+    // flushed and sandbox has changed, but approval has not yet been appended.
+    const setPolicy = cold.context.approval.setPolicy.bind(cold.context.approval);
+    let interruptedNativeWrites = 0;
+    cold.context.approval.setPolicy = () => { interruptedNativeWrites += 1; throw new Error("injected native-policy commit interruption"); };
+    try {
+      await assert.rejects(client.configApply({
+        revision: "cold-interrupted-config", provider: params.provider, permissionMode: "full-autonomous",
+        interactionScenario: params.interactionScenario, systemPrompt: params.systemPrompt,
+        executionEnvironmentRevision: "environment-v1", executionEnvironmentDigest: rpcDigest,
+      }), { code: "rpc_-32603" });
+      assert.equal(interruptedNativeWrites, 1);
+    } finally {
+      cold.context.approval.setPolicy = setPolicy;
+    }
+    // Model a crashed generation after the injected write boundary. Its retired
+    // Agent has drained the writer; close transport and dispose the composition,
+    // without asking the deliberately failed RPC generation to shut down cleanly.
+    peer.close();
+    input.destroy();
+    output.destroy();
+    await cold.dispose();
+    continue;
+  }
+  if (index === 5) {
+    // Each payload is native-valid, but no configuration transition accounts
+    // for this impossible Product policy after a settled operation.
+    agent.session.append("sandbox/mode", { mode: "danger-full-access" });
+  }
+  if (index === 7) {
+    // Seed a crash prefix through the native persistence owner after normal
+    // teardown; graceful shutdown would otherwise settle the accepted work.
+    const accepted = coldEvents(agent.session).find(({ type }) => type === "myagents/operation/accepted");
+    assert.ok(accepted?.type === "myagents/operation/accepted");
+    await closeColdFixture();
+    const seedContext = new Context();
+    await seedContext.plugin(SessionStore);
+    await seedContext.plugin(ProductJsonlSessionPersistence, {
+      durability: persistencePlatform.sqliteDurabilityPlan(persistencePath),
+      platform: persistencePlatform, runtimeHome: fixtureRuntimeHome,
+    });
+    const writer = await seedContext.sessionPersistence.open(SessionId(params.runtimeSessionId), "write");
+    try {
+      const history = (await writer.read()).events;
+      const pending: SessionEvent = {
+        ...accepted, seq: SessionSeq(history.length), time: Date.now(),
+        data: {
+          ...accepted.data,
+          clientOperationId: "cold-unfinished-operation", clientUserMessageId: "cold-unfinished-user-message",
+          productTurnId: "cold-unfinished-turn", rootMessageId: "cold-unfinished-root-message",
+        },
+      };
+      await writer.append([pending]);
+      await writer.flush();
+      assert.equal(foldProductOperations([...history, pending], writer.header.id).operations.at(-1)?.state,
+        "accepted_undelivered");
+    } finally {
+      await writer.close();
+      await seedContext.fiber.dispose();
+    }
+    continue;
+  }
+  await cold.context.sessions.flush(agent.session);
+  coldPermissionPrefix = structuredClone(coldEvents(agent.session));
+  await closeColdFixture();
+}
 await rm(fixtureRoot, { force: true, recursive: true });
 
 writeSync(1, `${JSON.stringify({
@@ -5033,6 +5246,7 @@ writeSync(1, `${JSON.stringify({
   runtimeEventProjectionVerified: true,
   sessionCloseVerified: true,
   sessionRestartResumeVerified: true,
+  coldPermissionResumeVerified: true,
   nativeRpcFrames: observedRuntimeFrames,
   resumeNativeRpcFrames: observedResumeFrames,
   workstreamRuntimeEvents: projectedRuntimeEvents,

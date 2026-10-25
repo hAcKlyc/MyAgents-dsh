@@ -24,12 +24,11 @@ import {
   type McpConnectionFactoryInput,
   type McpListedTool,
 } from "@myagents-dsh/components-mcp";
-import { createSdkMcpConnectionFactory } from "@myagents-dsh/components-mcp/sdk";
+import { createSdkMcpConnectionFactory, type SdkMcpTransportFactory } from "@myagents-dsh/components-mcp/sdk";
 import {
   LATEST_PROTOCOL_VERSION,
   type JSONRPCMessage,
 } from "@modelcontextprotocol/sdk/types.js";
-import type { Transport } from "@modelcontextprotocol/sdk/shared/transport.js";
 import type { HostCredentialProviderController } from "@myagents-dsh/host-ports";
 import {
   CANONICAL_TOOL_CONTRACT_SHA256,
@@ -378,7 +377,7 @@ describe("generation-owned MCP component compiler", () => {
   it("uses the public MCP SDK client over one composition-selected transport", async () => {
     let closeHits = 0;
     const methods: string[] = [];
-    const transport: Transport = {
+    const transport: Awaited<ReturnType<SdkMcpTransportFactory["createTransport"]>> = {
       close: () => { closeHits += 1; transport.onclose?.(); return Promise.resolve(); },
       send: (message: JSONRPCMessage) => {
         if (!("method" in message)) return Promise.resolve();

@@ -88,7 +88,36 @@ Inline grants add versioned `inlineGrant` provenance containing the operation ID
 
 New Session grants use v3 rule hashes with `expiresAt: null`. Recovery validates released v1/v2 grant hashes and their original 24-hour fields before projecting surviving grants as Session-lifetime rules; it never rewrites history or restores revoked/config-cleared grants. The v1 configuration hash keeps its historical numeric slot solely for byte-compatible Session restoration. That reserved identity value is not configurable and never participates in matching, listing or granting. Runtime/protocol artifact identity versions the changed lifetime semantics.
 
-The effective configuration base is also durable history. On process resume the Host sends the Session's desired permission mode, auto-allow set and interaction revision in `session/resume`. Before any persisted permission fold, the Runtime validates the history against that requested base and installs it in the replacement generation without appending another `myagents/permission/config` event or flushing storage. Ordinary live `config/apply` remains the only path that appends a configuration transition. This ordering is required: validating a previously configured Session against the composition's bootstrap `approval-required` would falsely classify healthy history as `persisted_product_state_invalid`.
+The effective configuration base is durable history, distinct from the Host's next desired mode,
+auto-allow set and interaction revision. Cold resume first validates the persisted permission chain:
+the last configuration transition owns its effective base; without one, the first exact grant or a
+validated operation birth anchors the initial base. Identical configuration restores without a new
+event or flush and preserves exact grants. At a settled operation boundary with no pending Inbox
+work, a different desired configuration uses the same durable transition as live `config/apply`,
+clearing old exact grants before admitting new work. A pending operation still requires its original
+configuration; it cannot adopt a new policy over its frozen birth. A truly empty history has no old
+permission lineage to preserve.
+
+The existing DSH projection registry supplies the owned permission events and the native policy
+suffix for cold admission, excluding fork-inherited events and resetting the suffix at operation
+boundaries. This disposable derived view introduces no new persistence authority: the permission
+owner still validates the complete chain before applying the requested configuration.
+
+Primary Session admission validates the other durable owners before policy reconciliation. It then
+prepares the permission transition and native sandbox/approval settings in the unpublished Session.
+The existing DSH Agent factory appends that complete setup suffix through its acquired persistence
+handle before publication; the official JSONL append fsyncs or fails. A live `SessionStore.flush`
+is invalid during this setup phase. Live `config/apply` retains its existing flush boundary. This also completes
+the recoverable prefix in which the permission transition was persisted but its native setters had
+not yet completed. A failed suffix append prevents publication. Neither the composition's bootstrap policy
+nor the Host's next request is treated as proof of the previous effective base; doing so would reject
+a healthy Session after a per-operation permission override and ordinary process release.
+
+Native settings must represent one of the three Product modes. The intermediate
+`danger-full-access` / `ask` pair is admitted only when the owned suffix after the last operation
+proves a configuration transition followed by its sandbox write without a later approval write.
+Additional config-only records from repeated interrupted admissions preserve that proof. Missing,
+unsupported or unaccounted native settings remain recovery-required rather than being overwritten.
 
 The policy base digest identifies the effective settings; each configuration event separately derives a transition revision from the preceding revision and the next base digest. Returning to a previous mode therefore produces a new operation birth revision. Approval validates that revision against the exact durable chain, so a new turn can ask normally while an older operation cannot reuse its prior authorization.
 

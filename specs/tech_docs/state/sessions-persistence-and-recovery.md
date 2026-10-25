@@ -2,7 +2,7 @@
 type: technical-architecture
 status: implemented
 module: sessions-persistence-and-recovery
-updated: 2026-10-23
+updated: 2026-10-25
 decisions:
   - ../../adr/0003-product-session-event-predicate.md
   - ../../adr/0004-shared-backend-lock-and-immutable-rewind-generation.md
@@ -117,6 +117,13 @@ Host-owned desired configuration is not reconstructed wholesale from the Session
 `session/resume`, the Host replays Provider/config revision, extension digest, system context and
 permission configuration; Runtime admission compares those facts with the durable state it does
 own. Secrets are resolved only through request/connection-scoped reverse ports.
+
+Permission admission separates the persisted last-effective policy from the next requested policy.
+At a settled operation boundary it can commit the requested policy through the existing permission
+transition and prepare native sandbox/approval settings; the DSH factory persists the complete setup
+suffix before publication. Identical policy remains
+read-only; pending operations require their recorded policy rather than silently changing their
+birth authority. See [Permissions](../execution/permissions-interactions-and-plan.md#4-durable-exact-rules).
 
 Two states share the public `recovery_required` label and must not be conflated:
 
