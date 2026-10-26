@@ -26,7 +26,7 @@ Canonical tools always register through DSH `ctx.tools`; only their backend vari
 
 | Active model route | Web backend |
 | --- | --- |
-| `deepseek-official` `WebSearch` with Host canonical-web capability | Host sends the fixed server-search schema to `https://api.deepseek.com/anthropic/v1/messages` using the admitted Provider's credentials and proxy policy |
+| `deepseek-official` `WebSearch` with Host canonical-web capability | Host sends the dedicated Search API schema to `https://api.deepseek.com/v1/tools/search` using the admitted Provider's credentials and proxy policy |
 | `deepseek-official` `WebSearch` without Host canonical-web capability | Runtime's explicit direct profile sends the same fixed endpoint/schema, resolving the Provider credential only for that request |
 | native `web_fetch`, on every admitted model route | Runtime `ProductFetchProvider` safe-fetches under the installed Host network policy and invokes `convertHostWebContent`; DSH formats the returned content without a utility-model summary |
 | other ordinary API route, `web_search` | optional versioned Host canonical-web adapter through `host/tool/execute`; Anthropic Messages selects Claude Code-compatible nested server search, while any native Search product requires an explicit backend |
@@ -60,6 +60,8 @@ Moving PDF extraction to MyAgents' existing document Worker would require an exp
 and a standalone fallback design; resource pruning alone does not remove this runtime dependency.
 
 ## 5. WebSearch flow
+
+Official DeepSeek search uses one dedicated Search API request per lookup, without an auxiliary Messages turn or server-tool max_uses budget. Host-backed and standalone backends preserve their existing credential and transport owners. Requests send query, count=8 and need_content=false; domain restrictions become site:/-site: syntax and are checked again on returned URLs. The complete query must fit 128 Unicode characters, otherwise the tool explicitly asks for a shorter query rather than truncating it. Structured results prefer model-facing summary text over UI snippet, deduplicate canonical URLs and retain bounded citations. Missing or malformed results fail; an empty results array is a valid lookup. Search request count is one and model token usage is omitted because this endpoint does not perform auxiliary model generation. Other Anthropic-compatible Providers retain the server-search behavior below. The pinned upstream's auxiliary search package remains installed independently; this product backend change does not upgrade DSH or change native model-visible tool definitions.
 
 WebSearch validates query/domain policy, Provider availability and operation-frozen policy reference, enforces bounded use/queueing, and validates the exact canonical result. Result URLs must support the emitted citations and satisfy allowed/blocked domain policy. A wire-valid but semantically invalid Provider result normally becomes `provider_search_failed`; a non-object Host capability result becomes `host_web_failed`, and a contract-valid Host failure may retain its bounded Host code. A wire-schema-invalid reverse response is a peer protocol fatal and terminates the Runtime generation rather than only one tool call.
 
