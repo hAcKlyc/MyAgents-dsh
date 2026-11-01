@@ -127,9 +127,6 @@ export const createHostDeepSeekWebSearchConfig = (
   policyRef: string,
 ): CanonicalWebSearchToolsConfig => {
   const client = new ProductSafeHttpClient(Object.freeze({
-    allowedHosts: Object.freeze(["api.deepseek.com"]),
-    allowedPorts: Object.freeze([443]),
-    deniedHosts: Object.freeze(["metadata.google.internal"]),
     maxCompressedBytes: HOST_DEEPSEEK_WEB_SEARCH_RESPONSE_BYTES,
     maxCompressionRatio: 1,
     maxConcurrent: 4,

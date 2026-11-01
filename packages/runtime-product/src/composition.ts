@@ -1891,9 +1891,6 @@ const createManagedMcpNetworkFetch = (composition: DshRootComposition): typeof g
     if (client === undefined) {
       policyRef = environment.network.policyRef;
       const policy = Object.freeze({
-        allowedHosts: Object.freeze([]),
-        allowedPorts: Object.freeze([80, 443]),
-        deniedHosts: Object.freeze(["metadata.google.internal"]),
         maxCompressedBytes: 1_048_576,
         maxCompressionRatio: 1,
         maxConcurrent: 8,
@@ -1905,7 +1902,6 @@ const createManagedMcpNetworkFetch = (composition: DshRootComposition): typeof g
       }) satisfies ProductNetworkPolicy;
       const network = compositionAuthorities.get(root)?.networkTransport;
       client = new ProductSafeHttpClient(policy, {
-        destinationPolicy: "host-configured",
         ...(network === undefined ? {} : { proxyTransportFor: network.proxyTransportFor }),
       });
     } else if (policyRef !== environment.network.policyRef) {

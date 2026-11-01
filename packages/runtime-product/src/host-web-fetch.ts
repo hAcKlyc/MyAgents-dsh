@@ -137,9 +137,6 @@ export const createHostDeepSeekWebFetchConfig = (
   network: Pick<ProductNetworkTransport, "proxyTransportFor">,
 ): CanonicalWebFetchToolsConfig => {
   const policy = Object.freeze({
-    allowedHosts: Object.freeze([]),
-    allowedPorts: Object.freeze([80, 443]),
-    deniedHosts: Object.freeze(["metadata.google.internal"]),
     maxCompressedBytes: HOST_WEB_FETCH_MAX_RESPONSE_BYTES,
     maxCompressionRatio: 20,
     maxConcurrent: 4,

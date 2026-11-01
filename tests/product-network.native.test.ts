@@ -8,6 +8,7 @@ import { test } from "node:test";
 import { mcpOpenResponse } from "../packages/runtime-product/src/mcp-response.js";
 import type { HostProviderNetworkScope } from "@myagents-dsh/host-ports";
 import { ProductSafeHttpClient } from "@myagents-dsh/tools-web";
+import type { ProductToolContext } from "@myagents-dsh/tool-runtime-product";
 import type { ProviderNetworkPolicy } from "@myagents-dsh/protocol";
 import { installProductNetworkTransport } from "../packages/runtime-product/src/network-transport.js";
 
@@ -116,8 +117,7 @@ await test("Runtime request-scoped proxy routing uses real loopback HTTP request
       ]), ["/general", "/provider-direct", "/provider-a", "/provider-b", "/provider-bypass"]);
       assert.deepEqual(receipts.sort(), (generalOn ? ["general", "provider-a", "provider-b"] : ["provider-a", "provider-b"]).sort());
       if (generalOn) {
-        const client = new ProductSafeHttpClient({ allowedHosts: ["destination.test"], allowedPorts: [targetPort], deniedHosts: [],
-          maxCompressedBytes: 1_024, maxDecompressedBytes: 1_024, maxCompressionRatio: 1,
+        const client = new ProductSafeHttpClient({ maxCompressedBytes: 1_024, maxDecompressedBytes: 1_024, maxCompressionRatio: 1,
           maxConcurrent: 1, maxQueued: 0, maxRedirects: 0, policyRef: "mcp-fixture", timeoutMs: 1_000,
         }, { proxyTransportFor: network.proxyTransportFor });
         const opened = await client.open(`${destination}/mcp`, { policyRef: "mcp-fixture", headers: {}, method: "GET", signal: AbortSignal.timeout(1_000) });
@@ -130,10 +130,9 @@ await test("Runtime request-scoped proxy routing uses real loopback HTTP request
       }
       // Configured local MCP uses the existing transport owner and bypasses
       // every general proxy, including when the Host did not set NO_PROXY.
-      const configured = new ProductSafeHttpClient({ allowedHosts: [], allowedPorts: [80, 443], deniedHosts: [],
-        maxCompressedBytes: 1_024, maxDecompressedBytes: 1_024, maxCompressionRatio: 1,
+      const configured = new ProductSafeHttpClient({ maxCompressedBytes: 1_024, maxDecompressedBytes: 1_024, maxCompressionRatio: 1,
         maxConcurrent: 1, maxQueued: 0, maxRedirects: 0, policyRef: "configured-mcp", timeoutMs: 1_000,
-      }, { destinationPolicy: "host-configured", proxyTransportFor: network.proxyTransportFor });
+      }, { proxyTransportFor: network.proxyTransportFor });
       for (const hostname of ["127.0.0.1", "localhost"]) {
         const receiptCount = receipts.length;
         const opened = await configured.open(`http://${hostname}:${targetPort}/local-mcp`, {
@@ -192,12 +191,11 @@ await test("Runtime request-scoped proxy routing uses real loopback HTTP request
 });
 
 const configuredMcpClient = (): ProductSafeHttpClient => new ProductSafeHttpClient({
-  allowedHosts: [], allowedPorts: [80, 443], deniedHosts: [],
   maxCompressedBytes: 1_024, maxDecompressedBytes: 1_024, maxCompressionRatio: 1,
   maxConcurrent: 1, maxQueued: 0, maxRedirects: 0, policyRef: "configured-mcp", timeoutMs: 5_000,
-}, { destinationPolicy: "host-configured" });
+});
 
-await test("configured localhost connects to either single address family without replaying HTTP", { timeout: 10_000 }, async () => {
+await test("WebFetch and streaming requests reach local development servers over either address family", { timeout: 10_000 }, async () => {
   for (const host of ["127.0.0.1", "::1"]) {
     let requests = 0;
     const server = createServer((_request, response) => { requests += 1; response.end("once"); });
@@ -218,6 +216,20 @@ await test("configured localhost connects to either single address family withou
         assert.equal(Buffer.concat(chunks).toString(), "once");
         assert.equal(requests, 1);
       } finally { await response.dispose(); }
+      for (const hostname of ["localhost", host === "::1" ? "[::1]" : host]) {
+        // This transport test supplies only the context fields read by fetch;
+        // operation admission and tool permissions have separate integration tests.
+        const context = { environment: { network: { mode: "host-policy", policyRef: "configured-mcp" } },
+          signal: AbortSignal.timeout(2_000) } as unknown as ProductToolContext;
+        const hops: string[] = [];
+        const fetched = await client.fetch(`http://${hostname}:${address.port}/development`, context, url => {
+          hops.push(url.origin);
+          return Promise.resolve();
+        });
+        assert.equal(Buffer.from(fetched.bytes).toString(), "once");
+        assert.equal(hops.length, 1);
+      }
+      assert.equal(requests, 3);
     } finally { if (server.listening) await close(server); }
   }
 });

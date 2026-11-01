@@ -18,14 +18,10 @@ import {
   type ProductWebContentRequest,
   type ProductWebSearchRequest,
 } from "@myagents-dsh/tools-web";
-import { settleDnsFamilyLookups } from "../packages/tools-web/src/safe-http.js";
 import { describe, expect, it, vi } from "vitest";
 import { gzipSync } from "node:zlib";
 
 const policy = Object.freeze({
-  allowedHosts: Object.freeze(["example.com", "redirect.example.com"]),
-  allowedPorts: Object.freeze([80, 443]),
-  deniedHosts: Object.freeze(["denied.example.com", "metadata.google.internal"]),
   maxCompressedBytes: 1_024 * 1_024,
   maxCompressionRatio: 20,
   maxConcurrent: 2,
@@ -110,6 +106,35 @@ const defaultContent: NonNullable<CanonicalWebToolsConfig["fetch"]>["content"] =
   })),
 });
 
+describe("Web destination access", () => {
+  it.each([
+    ["http://localhost:3000/page", "127.0.0.1", 4],
+    ["http://[::1]:8080/page", "::1", 6],
+    ["http://service.local:9000/page", "192.168.1.2", 4],
+    ["http://service.lan:1234/page", "10.0.0.2", 4],
+    ["https://service.internal:8443/page", "198.18.2.98", 4],
+    ["http://metadata.google.internal/page", "169.254.169.254", 4],
+    ["http://service.home/page", "::ffff:127.0.0.1", 6],
+  ] as const)("admits %s through fetch and streaming requests", async (url, address, family) => {
+    const lookup = vi.fn(() => Promise.resolve([{ address, family }]));
+    const dispatch = vi.fn<ProductHttpTransport["dispatch"]>(() => Promise.resolve(response(200, {}, ["local content"])));
+    const client = new ProductSafeHttpClient(policy, { lookup, transport: { dispatch } });
+    const authorize = vi.fn(() => Promise.resolve());
+
+    const fetched = await client.fetch(url, productContext(), authorize);
+    expect(Buffer.from(fetched.bytes).toString()).toBe("local content");
+    expect(authorize).toHaveBeenCalledOnce();
+    const opened = await client.open(url, {
+      method: "POST", body: Buffer.from("local request"), policyRef: policy.policyRef,
+      signal: new AbortController().signal,
+    });
+    await opened.dispose();
+    expect(dispatch).toHaveBeenCalledTimes(2);
+    for (const call of dispatch.mock.calls) expect(call[1]).toEqual([{ address, family }]);
+    expect(lookup).toHaveBeenCalledTimes(2);
+  });
+});
+
 const createWebHarness = async (options: Readonly<{
   authorize?: () => Promise<void>;
   content?: NonNullable<CanonicalWebToolsConfig["fetch"]>["content"];
@@ -187,22 +212,7 @@ describe("safe Web Providers and canonical Web tools", () => {
     await harness.context.fiber.dispose();
   });
 
-  it("waits for both DNS families before propagating a lookup failure", async () => {
-    const delayed = Promise.withResolvers<readonly ProductDnsAnswer[]>();
-    const failure = new Error("synthetic IPv4 lookup failure");
-    const pending = settleDnsFamilyLookups(Promise.reject(failure), delayed.promise);
-    let settled = false;
-    void pending.then(
-      () => { settled = true; },
-      () => { settled = true; },
-    );
-    await Promise.resolve();
-    expect(settled).toBe(false);
-    delayed.resolve(Object.freeze([{ address: "2001:4860:4860::8888", family: 6 as const }]));
-    await expect(pending).rejects.toBe(failure);
-  });
-
-  it("pins governed streaming requests and rejects mixed-answer DNS rebinding", async () => {
+  it("pins all valid DNS answers for each governed streaming request", async () => {
     let resolution = 0;
     const dispatch = vi.fn<ProductHttpTransport["dispatch"]>(
       () => Promise.resolve(
@@ -245,35 +255,36 @@ describe("safe Web Providers and canonical Web tools", () => {
     expect(Buffer.from(dispatch.mock.calls[0]?.[3]?.body ?? []).toString("utf8"))
       .toBe("{\"jsonrpc\":\"2.0\"}");
 
-    await expect(client.open("https://example.com/mcp", {
-      method: "GET",
-      policyRef: policy.policyRef,
-      signal: new AbortController().signal,
-    })).rejects.toMatchObject({ code: "unsafe_destination" });
-    expect(dispatch).toHaveBeenCalledOnce();
+    const next = await client.open("https://example.com/mcp", {
+      method: "GET", policyRef: policy.policyRef, signal: new AbortController().signal,
+    });
+    await next.dispose();
+    expect(dispatch).toHaveBeenCalledTimes(2);
+    expect(dispatch.mock.calls[1]?.[1]).toEqual([
+      { address: "93.184.216.34", family: 4 }, { address: "127.0.0.1", family: 4 },
+    ]);
   });
 
   it.each([
     ["http://localhost:34567/mcp", "127.0.0.1", 4],
     ["http://[::1]:34567/mcp", "::1", 6],
     ["http://mcp.internal:8080/mcp", "192.168.1.2", 4],
-  ] as const)("admits Host-configured %s without a public DNS64 lookup", async (endpoint, address, family) => {
+  ] as const)("admits %s without a DNS64 discovery request", async (endpoint, address, family) => {
     const dispatch = vi.fn<ProductHttpTransport["dispatch"]>(() => Promise.resolve(response(200, {}, ["ok"])));
     const lookup = vi.fn(() => Promise.resolve([{ address, family }]));
-    const client = new ProductSafeHttpClient(policy, { destinationPolicy: "host-configured", lookup, transport: { dispatch } });
+    const client = new ProductSafeHttpClient(policy, { lookup, transport: { dispatch } });
     const opened = await client.open(endpoint, { method: "GET", policyRef: policy.policyRef, signal: new AbortController().signal });
     await opened.dispose();
     expect(dispatch.mock.calls[0]?.[1]).toEqual([{ address, family }]);
     expect(lookup).toHaveBeenCalledTimes(1);
     expect(lookup).not.toHaveBeenCalledWith("ipv4only.arpa", expect.anything());
-    await expect(new ProductSafeHttpClient(policy, { lookup, transport: { dispatch } }).open(endpoint,
-      { method: "GET", policyRef: policy.policyRef, signal: new AbortController().signal })).rejects.toMatchObject({ code: "unsafe_destination" });
+
   });
 
   it("retains redirect and malformed-DNS rejection for Host-configured MCP", async () => {
     const dispatch = vi.fn<ProductHttpTransport["dispatch"]>(() => Promise.resolve(response(302, { location: "http://elsewhere.local/" }, [])));
     const lookup = vi.fn<() => Promise<readonly ProductDnsAnswer[]>>(() => Promise.resolve([{ address: "127.0.0.1", family: 4 }]));
-    const client = new ProductSafeHttpClient(policy, { destinationPolicy: "host-configured", lookup, transport: { dispatch } });
+    const client = new ProductSafeHttpClient(policy, { lookup, transport: { dispatch } });
     const request = { method: "GET" as const, policyRef: policy.policyRef, signal: new AbortController().signal };
     await expect(client.open("http://localhost:3000/mcp", request)).rejects.toMatchObject({ code: "unsafe_destination" });
     lookup.mockResolvedValue([{ address: "not-an-address", family: 4 }]);
@@ -281,18 +292,17 @@ describe("safe Web Providers and canonical Web tools", () => {
     expect(dispatch).toHaveBeenCalledOnce();
   });
 
-  it("rejects every mixed public/private DNS answer before transport dispatch", async () => {
-    const dispatch = vi.fn<ProductHttpTransport["dispatch"]>(() => Promise.resolve(response(200, {}, ["forbidden"])));
-    const client = new ProductSafeHttpClient(policy, {
-      lookup: () => Promise.resolve([
-        { address: "93.184.216.34", family: 4 },
-        { address: "127.0.0.1", family: 4 },
-      ]),
-      transport: { dispatch },
-    });
+  it("dispatches mixed public, private and Fake-IP DNS answers without classification", async () => {
+    const addresses = [
+      { address: "93.184.216.34", family: 4 as const },
+      { address: "127.0.0.1", family: 4 as const },
+      { address: "198.18.2.98", family: 4 as const },
+    ];
+    const dispatch = vi.fn<ProductHttpTransport["dispatch"]>(() => Promise.resolve(response(200, {}, ["content"])));
+    const client = new ProductSafeHttpClient(policy, { lookup: () => Promise.resolve(addresses), transport: { dispatch } });
     await expect(client.fetch("https://example.com", productContext(), () => Promise.resolve()))
-      .rejects.toMatchObject({ code: "unsafe_destination" });
-    expect(dispatch).not.toHaveBeenCalled();
+      .resolves.toMatchObject({ statusCode: 200 });
+    expect(dispatch.mock.calls[0]?.[1]).toEqual(addresses);
   });
 
   it("revalidates proxied redirects without using local DNS or a direct fallback", async () => {
@@ -345,22 +355,23 @@ describe("safe Web Providers and canonical Web tools", () => {
     });
   });
 
-  it("denies private literals and forbidden proxied redirects before selecting transport", async () => {
-    const dispatch = vi.fn<ProductHttpProxyTransport["dispatch"]>(() => Promise.resolve(
-      response(302, { location: "http://169.254.169.254/metadata" }, []),
-    ));
-    const selector = vi.fn(() => ({ dispatch }));
-    const client = new ProductSafeHttpClient({ ...policy, allowedHosts: [] }, { proxyTransportFor: selector });
-    for (const url of ["http://127.0.0.1", "http://10.0.0.1", "http://[::1]", "http://[::ffff:127.0.0.1]",
-      "http://169.254.169.254", "http://metadata.google.internal", "http://user:secret@example.com", "http://example.com:1234"]) {
-      await expect(client.fetch(url, productContext(), () => Promise.resolve()))
-        .rejects.toMatchObject({ code: "unsafe_destination" });
-    }
-    expect(selector).not.toHaveBeenCalled();
-    await expect(client.fetch("https://example.com", productContext(), () => Promise.resolve()))
-      .rejects.toMatchObject({ code: "unsafe_destination" });
-    expect(dispatch).toHaveBeenCalledOnce();
-  });
+  it.each(["http://127.0.0.1", "http://10.0.0.1", "http://[::1]", "http://[::ffff:127.0.0.1]",
+    "http://169.254.169.254", "http://metadata.google.internal", "http://example.com:1234"])(
+    "allows proxied %s and redirects to local services", async (url) => {
+      const dispatch = vi.fn<ProductHttpProxyTransport["dispatch"]>((destination) => Promise.resolve(
+        destination.pathname === "/local" ? response(200, {}, ["local"])
+          : response(302, { location: "http://service.lan:3000/local" }, []),
+      ));
+      const lookup = vi.fn(() => Promise.reject(new Error("proxy owns DNS")));
+      const client = new ProductSafeHttpClient(policy, { lookup, proxyTransportFor: () => ({ dispatch }) });
+      const authorize = vi.fn(() => Promise.resolve());
+      await expect(client.fetch(url, productContext(), authorize))
+        .resolves.toMatchObject({ statusCode: 200, finalUrl: "http://service.lan:3000/local" });
+      expect(dispatch).toHaveBeenCalledTimes(2);
+      expect(authorize).toHaveBeenCalledTimes(2);
+      expect(lookup).not.toHaveBeenCalled();
+    },
+  );
 
   it("does not evaluate proxy transport getters or Proxy traps", async () => {
     let effects = 0;
@@ -406,7 +417,7 @@ describe("safe Web Providers and canonical Web tools", () => {
     expect(result.finalUrl).toBe("https://redirect.example.com/final");
   });
 
-  it("fails closed on credentials, denied ports, oversized declarations, and compression bombs", async () => {
+  it("fails closed on credentials, oversized declarations, and compression bombs", async () => {
     let dispatches = 0;
     const compressed = gzipSync("x".repeat(100_000));
     const client = new ProductSafeHttpClient(policy, {
@@ -426,8 +437,6 @@ describe("safe Web Providers and canonical Web tools", () => {
     });
     const credentialUrl = ["https://user", ":password", "@example.com/"].join("");
     await expect(client.fetch(credentialUrl, productContext(), () => Promise.resolve()))
-      .rejects.toMatchObject({ code: "unsafe_destination" });
-    await expect(client.fetch("https://example.com:8443/", productContext(), () => Promise.resolve()))
       .rejects.toMatchObject({ code: "unsafe_destination" });
     expect(dispatches).toBe(0);
     await expect(client.fetch("https://example.com/declared", productContext(), () => Promise.resolve()))
@@ -463,13 +472,13 @@ describe("safe Web Providers and canonical Web tools", () => {
 
   it("rejects Proxy DNS values without executing traps", async () => {
     let policyTraps = 0;
-    const proxiedPorts = new Proxy([443], {
+    const proxiedPolicy = new Proxy(policy, {
       get() { policyTraps += 1; return undefined; },
       getOwnPropertyDescriptor() { policyTraps += 1; return undefined; },
       ownKeys() { policyTraps += 1; return []; },
     });
-    expect(() => new ProductSafeHttpClient({ ...policy, allowedPorts: proxiedPorts }))
-      .toThrow("allowed network ports must be a bounded array");
+    expect(() => new ProductSafeHttpClient(proxiedPolicy))
+      .toThrow("product network policy must be a plain object");
     expect(policyTraps).toBe(0);
     let dnsTraps = 0;
     const proxyAnswer = new Proxy({ address: "93.184.216.34", family: 4 as const }, {
@@ -520,19 +529,16 @@ describe("safe Web Providers and canonical Web tools", () => {
       .resolves.toMatchObject({ statusCode: 200 });
   });
 
-  it("rejects local-use IPv6 translation prefixes and embedded private IPv4", async () => {
+  it("allows IPv6 translation prefixes without a secondary DNS lookup", async () => {
     const dispatch = vi.fn<ProductHttpTransport["dispatch"]>(() => Promise.resolve(response(200, {}, [])));
     for (const address of ["64:ff9b:1::c0a8:1", "64:ff9b:1:a00:0:100::", "2002:7f00:1::"]) {
-      const client = new ProductSafeHttpClient(policy, {
-        lookup: (hostname) => Promise.resolve(hostname === "ipv4only.arpa"
-          ? []
-          : [{ address, family: 6 as const }]),
-        transport: { dispatch },
-      });
+      const lookup = vi.fn(() => Promise.resolve([{ address, family: 6 as const }]));
+      const client = new ProductSafeHttpClient(policy, { lookup, transport: { dispatch } });
       await expect(client.fetch("https://example.com", productContext(), () => Promise.resolve()))
-        .rejects.toMatchObject({ code: "unsafe_destination" });
+        .resolves.toMatchObject({ statusCode: 200 });
+      expect(lookup).toHaveBeenCalledOnce();
     }
-    expect(dispatch).not.toHaveBeenCalled();
+    expect(dispatch).toHaveBeenCalledTimes(3);
   });
 
   it("rejects async-iterator accessors without invoking them", async () => {

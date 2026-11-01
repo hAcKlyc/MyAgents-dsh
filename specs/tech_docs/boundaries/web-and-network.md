@@ -2,7 +2,7 @@
 type: technical-architecture
 status: implemented
 module: web-and-network
-updated: 2026-10-01
+updated: 2026-11-01
 ---
 
 # Web and network
@@ -15,7 +15,7 @@ Canonical WebFetch/WebSearch usage is optional. Missing or unusable Provider met
 
 ## 2. Relationships
 
-- **Owns:** operation-frozen Runtime network-policy enforcement, Runtime safe-HTTP DNS/address/redirect/size/deadline controls, canonical result/citation validation and web queue bounds.
+- **Owns:** operation-frozen Runtime network-policy enforcement, Runtime HTTP resolution/redirect/size/deadline controls, canonical result/citation validation and web queue bounds.
 - **Depends on:** Provider route, optional Host canonical-web capability, utility model, tool policy/permission and composition-owned DNS/transport adapters.
 - **Consumed by:** root Web tools, eligible child Web routes, non-DeepSeek model routes and managed remote HTTP/SSE MCP connections.
 - **Does not own:** general browser access, Host upstream credentials, model Provider search internals, arbitrary plugin networking or release availability claims.
@@ -31,7 +31,7 @@ Canonical tools always register through DSH `ctx.tools`; only their backend vari
 | native `web_fetch`, on every admitted model route | Runtime `ProductFetchProvider` safe-fetches under the installed Host network policy and invokes `convertHostWebContent`; DSH formats the returned content without a utility-model summary |
 | other ordinary API route, `web_search` | optional versioned Host canonical-web adapter through `host/tool/execute`; Anthropic Messages selects Claude Code-compatible nested server search, while any native Search product requires an explicit backend |
 
-Web capability does not gate Provider/model admission. Backend identity is frozen into the operation; changing Provider/config affects a later operation, not an in-flight call. `policyRef` is an operation/session policy identity and revision, not Host-supplied dynamic allow/deny rules; trusted composition owns actual public-host, port, redirect, concurrency and byte policy, and components cannot widen it.
+Web capability does not gate Provider/model admission. Backend identity is frozen into the operation; changing Provider/config affects a later operation, not an in-flight call. `policyRef` is an operation/session policy identity and revision, not Host-supplied dynamic allow/deny rules; trusted composition owns redirect, concurrency and byte limits. Web destinations have no hostname, port or public/private-address allow/deny policy in any Session permission mode; tool approval remains a separate authority.
 
 `runWebSearchRequest` and the Host search bridge bind Provider/credential/reverse
 authority to `productRootAgent(context).id`, retaining the executing tool's call and operation identity.
@@ -42,11 +42,11 @@ not call the legacy Host WebFetch/utility-model route. No arbitrary HTTP reverse
 
 ## 4. WebFetch flow
 
-For Runtime-owned HTTP fetch, `ProductSafeHttpClient` validates HTTP(S) URL syntax, forbids credentials, applies allow/deny host and port policy, resolves DNS, rejects non-public and embedded/translated private addresses, dispatches to the selected address, and repeats validation at every redirect. It bounds redirects, compressed/decompressed bytes, concurrency, queue depth and deadline and always disposes the response body. An explicit composition-owned proxy retains URL, hostname, literal-address, redirect, permission, size and deadline checks; the trusted proxy owns remote DNS for names. Local DNS pinning/private-answer defense is a direct-route guarantee, not a claim about the proxy's resolver. Proxy failure never retries directly.
+For Runtime-owned HTTP fetch, `ProductSafeHttpClient` validates HTTP(S) URL syntax and rejects URL userinfo, resolves names through the OS resolver (including hosts files and local names), validates DNS answer syntax/family, and passes all valid addresses to the owned Node transport. It permits localhost, IPv4/IPv6 private and translated addresses, Fake-IP ranges, local hostname suffixes and custom ports. There is no public-address classification, DNS64 discovery or separate configured-destination policy. Each redirect repeats URL validation and existing tool authorization. Redirect count, compressed/decompressed bytes, concurrency, queue depth, deadline, cancellation and response disposal stay bounded. An explicitly selected proxy owns remote DNS; proxy failure never retries directly. Permission modes govern approval and supported local sandbox execution, not a second hidden Web destination ban. OS DNS lookup is not cancellable: cancellation/deadline prevents subsequent HTTP dispatch, but the call and concurrency slot wait for the in-flight lookup to settle before cleanup. The existing cancellation/timeout reason is then returned; no detached resolver work or second resolver is introduced.
 
 The official composition passes its installed general network transport into the native `web_fetch` client's proxy selector. Native `web_fetch` consumes that transport directly; a Host WebFetch setting alone does not configure the native client. The same generation-owned transport already serves managed remote MCP; Provider model request scopes remain separate.
 
-The trusted transport passes Undici's response headers directly to `ProductSafeHttpClient`. Undici may attach symbol-keyed TLS metadata to proxied HTTPS headers; WebFetch reads the HTTP header names it needs and does not impose an exact object-shape validator on the trusted response. URL, address, redirect, deadline and body-size policy remain enforced by the client.
+The trusted transport passes Undici's response headers directly to `ProductSafeHttpClient`. Undici may attach symbol-keyed TLS metadata to proxied HTTPS headers; WebFetch reads the HTTP header names it needs and does not impose an exact object-shape validator on the trusted response. URL, redirect, deadline and body-size validation remain enforced by the client.
 `ProductSafeHttpClient` also supplies the same bounded default Accept, compression, and User-Agent headers to both direct and proxied WebFetch requests; a proxy route must not silently omit them and change a target's response.
 
 The official composition registers DSH's `applyWebFetchTool` with its `ProductFetchProvider`.
@@ -79,14 +79,7 @@ requires an artifact-bound campaign on the selected route.
 
 ## 6. MCP networking
 
-Managed HTTP/SSE MCP descriptors are trusted Host connection authorization, including localhost,
-IPv4/IPv6, local names, private networks and custom ports. They do not inherit the public-only
-rules for model-selected Web URLs. Trusted composition selects `destinationPolicy: "host-configured"`
-on the existing `ProductSafeHttpClient`; the default `public-web` policy is unchanged. Configured
-names use the OS resolver (including hosts/local names) without Web-only DNS64 discovery; the Node transport selects a reachable validated address before sending one HTTP request, so localhost works with IPv4-only or IPv6-only listeners;
-DNS answer validity, address pinning, redirect denial, byte/concurrency/deadline limits and cleanup
-remain owned by that client. MCP accepts only HTTP(S) without userinfo or fragments and confines
-all HTTP and SSE GET/POST requests and credential headers to the descriptor's exact origin.
+Managed HTTP/SSE MCP descriptors are trusted Host connection authorization. MCP and Web use the same OS-resolved HTTP client, including localhost, IPv4/IPv6, local names, private networks, Fake-IP and custom ports. The Node transport selects a reachable valid address before sending one HTTP request, so localhost works with IPv4-only or IPv6-only listeners. DNS answer validity, address pinning, byte/concurrency/deadline limits and cleanup remain with that client. MCP additionally accepts only HTTP(S) without userinfo or fragments, denies redirects, and confines all HTTP/SSE GET/POST requests and credential headers to the descriptor's exact origin.
 
 There is no ambient `globalThis.fetch` fallback. Credentials resolve only through the component's
 Host credential scope. The existing public DSH HTTP-proxy service selects the captured general
@@ -96,11 +89,7 @@ authority, outside this HTTP client.
 
 ## 7. Failure and security boundary
 
-Runtime-owned WebFetch and standalone DeepSeek WebSearch use the default public-Web policy of
-`ProductSafeHttpClient`, which owns direct DNS/private-address, literal-address, redirect and byte/decompression defense; an explicitly selected trusted proxy owns remote name resolution.
-Host-backed canonical web only verifies HTTP(S)/no-userinfo at Runtime admission, applies Product
-permission and validates the returned canonical shape; the trusted Host owns its own DNS/private
-address, redirect, byte and decompression controls.
+Runtime-owned WebFetch and standalone DeepSeek WebSearch share `ProductSafeHttpClient` for URL validation, OS resolution, pinned dispatch, redirect handling and byte/decompression limits; an explicitly selected trusted proxy owns remote name resolution. Host-backed canonical web applies Product permission and validates returned canonical data, while the trusted Host owns transport and resource limits. Neither side imposes destination restrictions based on hostnames, ports or address classes. This is the local user's network authority and does not claim SSRF/private-network isolation.
 
 Network denial, quota/authentication failure, wire-valid invalid result, timeout or cancellation
 normally fails the individual tool/connection. A reversible MCP prepare failure degrades that
@@ -126,7 +115,7 @@ Add a backend behind the canonical web Provider/Host capability, not as a second
 | Concern | Source or evidence |
 | --- | --- |
 | Canonical tools and result policy | `packages/tools-web/src/runtime.ts` |
-| DNS/address/redirect/byte controls | `packages/tools-web/src/safe-http.ts` |
+| Resolution/redirect/byte controls | `packages/tools-web/src/safe-http.ts` |
 | Provider/backend selection | `packages/runtime-product/src/host-model.ts`, `composition.ts` |
 | DeepSeek/Host adapters | `packages/runtime-product/src/host-web-search.ts`, `host-web-fetch.ts`, `host-web-bridge.ts` |
 | MCP transport | `packages/components-mcp/src/managed-transport.ts` |
@@ -163,7 +152,7 @@ transport, not an independent public HTTP route; network-capable Host tools reta
 `test:network-native` uses only local target/proxy servers and synthetic names. It exercises actual
 HTTP routing for concurrent general/direct/two-Provider policies, inherited ALL_PROXY, casing
 precedence, NO_PROXY, changed subsequent policy, configured-MCP localhost/custom-port direct routing despite a general proxy, cancellation and stalled
-shutdown. Unit tests separately reject private literals, unsafe redirects and capability getters,
+shutdown. Unit tests separately admit private/Fake-IP/translated addresses and custom ports, reject malformed URLs and capability getters,
 and prove no direct fallback. This is macOS source evidence, not HTTPS, arbitrary-client, packed,
 other-platform or real-Provider acceptance.
 
