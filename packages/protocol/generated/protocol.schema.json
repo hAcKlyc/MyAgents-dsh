@@ -8041,7 +8041,7 @@
                 "type": "string"
               },
               "distributionVersion": {
-                "const": "0.1.22",
+                "const": "0.1.23",
                 "type": "string"
               },
               "name": {
@@ -8068,7 +8068,7 @@
             "type": "string"
           },
           "runtimeVersion": {
-            "const": "0.1.22",
+            "const": "0.1.23",
             "type": "string"
           },
           "schemaSha256": {
