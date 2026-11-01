@@ -1076,9 +1076,6 @@ const executableSha256 = Object.freeze({
 });
 const webToolEvidence: string[] = [];
 const artifactNetworkPolicy = Object.freeze({
-  allowedHosts: Object.freeze(["example.com", "redirect.example.com"]),
-  allowedPorts: Object.freeze([80, 443]),
-  deniedHosts: Object.freeze(["metadata.google.internal"]),
   maxCompressedBytes: 1_024 * 1_024,
   maxCompressionRatio: 20,
   maxConcurrent: 2,

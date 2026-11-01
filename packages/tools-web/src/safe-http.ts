@@ -1,17 +1,14 @@
 import { throwIfProductToolAborted } from "@myagents-dsh/tool-runtime-product";
-import { lookup as lookupOsHostname, Resolver } from "node:dns/promises";
+import { lookup as lookupOsHostname } from "node:dns/promises";
 import { request as httpRequest, type ClientRequest, type IncomingMessage } from "node:http";
 import { request as httpsRequest } from "node:https";
-import { BlockList, isIP, type LookupFunction } from "node:net";
+import { isIP, type LookupFunction } from "node:net";
 import { brotliDecompressSync, gunzipSync, inflateSync } from "node:zlib";
 import { isProxy } from "node:util/types";
 
 import { ProductToolError, type ProductToolContext } from "@myagents-dsh/tool-runtime-product";
 
 export interface ProductNetworkPolicy {
-  readonly allowedHosts: readonly string[];
-  readonly allowedPorts: readonly number[];
-  readonly deniedHosts: readonly string[];
   readonly maxCompressedBytes: number;
   readonly maxConcurrent: number;
   readonly maxDecompressedBytes: number;
@@ -94,14 +91,12 @@ export interface ProductHttpTransport {
   ): Promise<ProductHttpResponse>;
 }
 
-/** Trusted composition-selected proxy; URL/literal-address policy remains with this client. */
+/** Trusted composition-selected proxy; request validation remains with this client. */
 export interface ProductHttpProxyTransport {
   dispatch(url: URL, signal: AbortSignal, request?: ProductHttpRequest): Promise<ProductHttpResponse>;
 }
 
 export interface ProductSafeHttpClientConfig {
-  /** Host-declared MCP destinations carry their own URL authority; model Web URLs do not. */
-  readonly destinationPolicy?: "public-web" | "host-configured";
   readonly proxyTransportFor?: (url: URL) => ProductHttpProxyTransport | undefined;
   /** Test/builder seam; reject only after abort has made resolution work quiescent. */
   readonly lookup?: (hostname: string, signal: AbortSignal) => Promise<readonly ProductDnsAnswer[]>;
@@ -128,25 +123,6 @@ export interface ProductSafeHttpOpenResponse extends ProductHttpResponse {
   readonly finalUrl: string;
 }
 
-type Pref64 = Readonly<{ length: 32 | 40 | 48 | 56 | 64 | 96; prefix: Uint8Array }>;
-
-const blockedAddresses = new BlockList();
-const nonGlobalIpv4 = [
-  ["0.0.0.0", 8], ["10.0.0.0", 8], ["100.64.0.0", 10], ["127.0.0.0", 8],
-  ["169.254.0.0", 16], ["172.16.0.0", 12], ["192.0.0.0", 24], ["192.0.2.0", 24],
-  ["192.88.99.0", 24], ["192.168.0.0", 16], ["198.18.0.0", 15], ["198.51.100.0", 24],
-  ["203.0.113.0", 24], ["224.0.0.0", 4], ["240.0.0.0", 4],
-] as const;
-for (const [network, prefix] of nonGlobalIpv4) {
-  blockedAddresses.addSubnet(network, prefix, "ipv4");
-  blockedAddresses.addSubnet(`::ffff:${network}`, 96 + prefix, "ipv6");
-}
-for (const [network, prefix] of [
-  ["::", 128], ["::1", 128], ["64:ff9b:1::", 48], ["100::", 64], ["2001:2::", 48], ["2001:10::", 28],
-  ["2001:20::", 28], ["2001:db8::", 32], ["3fff::", 20], ["5f00::", 16], ["fc00::", 7],
-  ["fe80::", 10], ["fec0::", 10], ["ff00::", 8],
-] as const) blockedAddresses.addSubnet(network, prefix, "ipv6");
-
 const controlFreeIdentifier = (value: unknown, description: string): string => {
   let containsControl = false;
   if (typeof value === "string") {
@@ -159,45 +135,6 @@ const controlFreeIdentifier = (value: unknown, description: string): string => {
     throw new TypeError(`${description} must be a bounded identifier`);
   }
   return value;
-};
-
-const exactHostname = (value: unknown, description: string): string => {
-  if (typeof value !== "string" || value.length === 0 || value.length > 253
-    || value.includes("/") || value.includes(":") || value.includes("*") || value.includes("@")) {
-    throw new TypeError(`${description} must be a plain hostname`);
-  }
-  let hostname: string;
-  try {
-    const url = new URL(`https://${value}`);
-    hostname = url.hostname.toLowerCase().replace(/\.$/u, "");
-    if (url.username !== "" || url.password !== "" || url.port !== "" || url.pathname !== "/") throw new Error();
-  } catch {
-    throw new TypeError(`${description} must be a plain hostname`);
-  }
-  if (hostname !== value.toLowerCase().replace(/\.$/u, "") || hostname.length === 0
-    || hostname === "localhost" || hostname.endsWith(".localhost")) {
-    throw new TypeError(`${description} must be a canonical public hostname`);
-  }
-  return hostname;
-};
-
-const exactHostnameArray = (value: unknown, description: string): readonly string[] => {
-  if (isProxy(value) || !Array.isArray(value) || value.length > 256) {
-    throw new TypeError(`${description} must be a bounded array`);
-  }
-  const descriptors = Object.getOwnPropertyDescriptors(value);
-  const result: string[] = [];
-  for (let index = 0; index < value.length; index += 1) {
-    const descriptor = descriptors[String(index)];
-    if (descriptor === undefined || !descriptor.enumerable || !("value" in descriptor)) {
-      throw new TypeError(`${description} must be a dense own-data array`);
-    }
-    result.push(exactHostname(descriptor.value, `${description} item`));
-  }
-  if (Reflect.ownKeys(value).length !== value.length + 1 || new Set(result).size !== result.length) {
-    throw new TypeError(`${description} must be dense and unique`);
-  }
-  return Object.freeze(result);
 };
 
 const boundedInteger = (value: unknown, minimum: number, maximum: number, description: string): number => {
@@ -214,33 +151,14 @@ export const validateProductNetworkPolicy = (value: unknown): ProductNetworkPoli
   }
   const record = value as Record<string, unknown>;
   const keys = [
-    "allowedHosts", "allowedPorts", "deniedHosts", "maxCompressedBytes", "maxCompressionRatio",
+    "maxCompressedBytes", "maxCompressionRatio",
     "maxConcurrent", "maxDecompressedBytes", "maxQueued", "maxRedirects", "policyRef", "timeoutMs",
   ];
   if (Reflect.ownKeys(record).length !== keys.length || keys.some((key) => {
     const descriptor = Object.getOwnPropertyDescriptor(record, key);
     return descriptor === undefined || !descriptor.enumerable || !("value" in descriptor);
   })) throw new TypeError("product network policy has an invalid exact shape");
-  if (isProxy(record.allowedPorts) || !Array.isArray(record.allowedPorts)
-    || record.allowedPorts.length === 0 || record.allowedPorts.length > 32) {
-    throw new TypeError("allowed network ports must be a bounded array");
-  }
-  const portDescriptors = Object.getOwnPropertyDescriptors(record.allowedPorts);
-  const allowedPorts = record.allowedPorts.map((_port, index) => {
-    const descriptor = portDescriptors[String(index)];
-    if (descriptor === undefined || !descriptor.enumerable || !("value" in descriptor)) {
-      throw new TypeError("allowed network ports must be a dense own-data array");
-    }
-    return boundedInteger(descriptor.value, 1, 65_535, "allowed network port");
-  });
-  if (Reflect.ownKeys(record.allowedPorts).length !== record.allowedPorts.length + 1
-    || new Set(allowedPorts).size !== allowedPorts.length) {
-    throw new TypeError("allowed network ports must be dense and unique");
-  }
   return Object.freeze({
-    allowedHosts: exactHostnameArray(record.allowedHosts, "allowed network hosts"),
-    allowedPorts: Object.freeze(allowedPorts),
-    deniedHosts: exactHostnameArray(record.deniedHosts, "denied network hosts"),
     maxCompressedBytes: boundedInteger(record.maxCompressedBytes, 1, 20 * 1_024 * 1_024, "compressed response bound"),
     maxCompressionRatio: boundedInteger(record.maxCompressionRatio, 1, 100, "decompression ratio bound"),
     maxConcurrent: boundedInteger(record.maxConcurrent, 1, 64, "network concurrency bound"),
@@ -251,9 +169,6 @@ export const validateProductNetworkPolicy = (value: unknown): ProductNetworkPoli
     timeoutMs: boundedInteger(record.timeoutMs, 1, 120_000, "network timeout"),
   });
 };
-
-const hostMatches = (hostname: string, rule: string): boolean =>
-  hostname === rule || hostname.endsWith(`.${rule}`);
 
 const parseHttpUrl = (rawUrl: string): URL => {
   let url: URL;
@@ -269,27 +184,9 @@ const parseHttpUrl = (rawUrl: string): URL => {
   return url;
 };
 
-const parseSafeUrl = (rawUrl: string, policy: ProductNetworkPolicy): URL => {
-  const url = parseHttpUrl(rawUrl);
-  const hostname = url.hostname.toLowerCase().replace(/\.$/u, "");
-  if (hostname.length === 0 || hostname === "localhost" || hostname.endsWith(".localhost")
-    || hostname.endsWith(".local") || hostname.endsWith(".internal") || hostname.endsWith(".home")
-    || hostname.endsWith(".lan") || policy.deniedHosts.some((rule) => hostMatches(hostname, rule))
-    || (policy.allowedHosts.length > 0 && !policy.allowedHosts.some((rule) => hostMatches(hostname, rule)))) {
-    throw new ProductToolError("unsafe_destination", "WebFetch destination host is denied");
-  }
-  const port = url.port === "" ? (url.protocol === "https:" ? 443 : 80) : Number(url.port);
-  if (!Number.isSafeInteger(port) || !policy.allowedPorts.includes(port)) {
-    throw new ProductToolError("unsafe_destination", "WebFetch destination port is denied");
-  }
-  url.hostname = hostname;
-  url.hash = "";
-  return url;
-};
-
-// Configured MCP names follow the OS resolver (including hosts and local names).
-// The operation awaits resolver settlement even after cancellation; no detached DNS work.
-const configuredLookup = async (hostname: string, signal: AbortSignal): Promise<readonly ProductDnsAnswer[]> => {
+// Every Web and MCP destination uses the machine's resolver, including hosts
+// files, local names and proxy-managed Fake-IP addresses.
+const systemLookup = async (hostname: string, signal: AbortSignal): Promise<readonly ProductDnsAnswer[]> => {
   signal.throwIfAborted();
   const family = isIP(hostname);
   if (family === 4 || family === 6) return [{ address: hostname, family }];
@@ -298,187 +195,16 @@ const configuredLookup = async (hostname: string, signal: AbortSignal): Promise<
   return answers.map(answer => ({ address: answer.address, family: answer.family as 4 | 6 }));
 };
 
-const systemLookup = async (hostname: string, signal: AbortSignal): Promise<readonly ProductDnsAnswer[]> => {
-  signal.throwIfAborted();
-  const literalFamily = isIP(hostname);
-  if (literalFamily === 4 || literalFamily === 6) return [{ address: hostname, family: literalFamily }];
-  const resolver = new Resolver();
-  const abort = (): void => { resolver.cancel(); };
-  signal.addEventListener("abort", abort, { once: true });
-  if (signal.aborted) abort();
-  const resolveFamily = async (family: 4 | 6): Promise<readonly ProductDnsAnswer[]> => {
-    try {
-      const addresses = family === 4
-        ? await resolver.resolve4(hostname)
-        : await resolver.resolve6(hostname);
-      return addresses.map((address) => Object.freeze({ address, family }));
-    } catch (error) {
-      if (isDnsNoData(error)) return [];
-      throw error;
-    }
-  };
-  try {
-    const [ipv4, ipv6] = await settleDnsFamilyLookups(resolveFamily(4), resolveFamily(6));
-    signal.throwIfAborted();
-    return Object.freeze([...ipv4, ...ipv6]);
-  } finally {
-    signal.removeEventListener("abort", abort);
-  }
-};
-
-export const settleDnsFamilyLookups = async (
-  ipv4: Promise<readonly ProductDnsAnswer[]>,
-  ipv6: Promise<readonly ProductDnsAnswer[]>,
-): Promise<readonly [readonly ProductDnsAnswer[], readonly ProductDnsAnswer[]]> => {
-  const [ipv4Result, ipv6Result] = await Promise.allSettled([ipv4, ipv6]);
-  if (ipv4Result.status === "rejected") throw ipv4Result.reason;
-  if (ipv6Result.status === "rejected") throw ipv6Result.reason;
-  return Object.freeze([ipv4Result.value, ipv6Result.value]);
-};
-
 const lookupHostname = (hostname: string): string =>
   hostname.startsWith("[") && hostname.endsWith("]") ? hostname.slice(1, -1) : hostname;
-
-const isDnsNoData = (error: unknown): boolean => {
-  if (error === null || typeof error !== "object") return false;
-  const descriptor = Object.getOwnPropertyDescriptor(error, "code");
-  return descriptor !== undefined && "value" in descriptor
-    && (descriptor.value === "ENODATA" || descriptor.value === "ENOTFOUND");
-};
-
-const ipv6Parts = (address: string): readonly number[] | undefined => {
-  const normalized = address.toLowerCase().split("%")[0] ?? address;
-  const sides = normalized.split("::");
-  if (sides.length > 2) return undefined;
-  const parseSide = (side: string): number[] | undefined => {
-    if (side === "") return [];
-    const result: number[] = [];
-    for (const token of side.split(":")) {
-      if (token.includes(".")) {
-        const bytes = token.split(".").map(Number);
-        if (bytes.length !== 4 || bytes.some((byte) => !Number.isInteger(byte) || byte < 0 || byte > 255)) return undefined;
-        result.push(((bytes[0] ?? 0) << 8) | (bytes[1] ?? 0), ((bytes[2] ?? 0) << 8) | (bytes[3] ?? 0));
-      } else {
-        if (!/^[0-9a-f]{1,4}$/u.test(token)) return undefined;
-        result.push(Number.parseInt(token, 16));
-      }
-    }
-    return result;
-  };
-  const left = parseSide(sides[0] ?? "");
-  const right = parseSide(sides[1] ?? "");
-  if (left === undefined || right === undefined) return undefined;
-  const missing = 8 - left.length - right.length;
-  if (missing < 0 || (sides.length === 1 && missing !== 0) || (sides.length === 2 && missing < 1)) return undefined;
-  return [...left, ...Array.from({ length: missing }, () => 0), ...right];
-};
-
-const ipv6Bytes = (parts: readonly number[]): Uint8Array => {
-  const bytes = new Uint8Array(16);
-  for (let index = 0; index < 8; index += 1) {
-    const value = parts[index] ?? 0;
-    bytes[index * 2] = value >>> 8;
-    bytes[index * 2 + 1] = value & 0xff;
-  }
-  return bytes;
-};
-
-const ipv4FromBytes = (bytes: Uint8Array): string =>
-  `${bytes[0] ?? 0}.${bytes[1] ?? 0}.${bytes[2] ?? 0}.${bytes[3] ?? 0}`;
-
-const extractRfc6052 = (bytes: Uint8Array, prefixLength: Pref64["length"]): Uint8Array | undefined => {
-  if (prefixLength === 96) return bytes.slice(12, 16);
-  if (bytes[8] !== 0) return undefined;
-  const prefixBytes = prefixLength / 8;
-  const beforeU = 8 - prefixBytes;
-  const result = new Uint8Array(4);
-  result.set(bytes.slice(prefixBytes, 8), 0);
-  result.set(bytes.slice(9, 9 + 4 - beforeU), beforeU);
-  if (bytes.slice(9 + 4 - beforeU).some((byte) => byte !== 0)) return undefined;
-  return result;
-};
-
-const discoverPref64 = (answers: readonly ProductDnsAnswer[]): readonly Pref64[] => {
-  const result = new Map<string, Pref64>();
-  for (const answer of answers) {
-    if (answer.family !== 6) continue;
-    const parts = ipv6Parts(answer.address);
-    if (parts === undefined) continue;
-    const bytes = ipv6Bytes(parts);
-    for (const length of [32, 40, 48, 56, 64, 96] as const) {
-      const extracted = extractRfc6052(bytes, length);
-      if (extracted === undefined) continue;
-      const ipv4 = ipv4FromBytes(extracted);
-      if (ipv4 !== "192.0.0.170" && ipv4 !== "192.0.0.171") continue;
-      const prefix = bytes.slice(0, length / 8);
-      result.set(`${length}:${Buffer.from(prefix).toString("hex")}`, { length, prefix });
-    }
-  }
-  return Object.freeze([...result.values()]);
-};
-
-const prefixMatches = (bytes: Uint8Array, prefix: Pref64): boolean =>
-  prefix.prefix.every((byte, index) => bytes[index] === byte);
-
-const embeddedIpv4 = (address: string, pref64s: readonly Pref64[]): string | undefined => {
-  const parts = ipv6Parts(address);
-  if (parts === undefined) return undefined;
-  const bytes = ipv6Bytes(parts);
-  for (const pref64 of pref64s) {
-    if (!prefixMatches(bytes, pref64)) continue;
-    const extracted = extractRfc6052(bytes, pref64.length);
-    if (extracted !== undefined) return ipv4FromBytes(extracted);
-  }
-  const [p0, p1, p2, p3, p4, p5, p6, p7] = parts as [number, number, number, number, number, number, number, number];
-  let value: number | undefined;
-  if ((p0 === 0x64 && p1 === 0xff9b && parts.slice(2, 6).every((part) => part === 0))
-    || (parts.slice(0, 5).every((part) => part === 0) && (p5 === 0 || p5 === 0xffff))
-    || (parts.slice(0, 4).every((part) => part === 0) && p4 === 0xffff && p5 === 0)
-    || (p4 === 0 && p5 === 0x5efe)) {
-    value = p6 * 0x10000 + p7;
-  } else if (p0 === 0x2002) {
-    value = p1 * 0x10000 + p2;
-  } else if (p0 === 0x2001 && p1 === 0) {
-    value = (p6 * 0x10000 + p7) ^ 0xffffffff;
-  } else if (p0 === 0x64 && p1 === 0xff9b && p2 === 1 && (p4 >>> 8) === 0
-    && (p5 & 0xff) === 0 && p6 === 0 && p7 === 0) {
-    value = p3 * 0x10000 + ((p4 & 0xff) * 0x100) + (p5 >>> 8);
-  }
-  if (value === undefined) return undefined;
-  const normalized = value >>> 0;
-  return `${normalized >>> 24}.${(normalized >>> 16) & 0xff}.${(normalized >>> 8) & 0xff}.${normalized & 0xff}`;
-};
-
-const selectPublicAddress = (
-  addresses: readonly ProductDnsAnswer[],
-  pref64s: readonly Pref64[],
-): ProductDnsAnswer => {
-  if (addresses.length === 0) throw new ProductToolError("unsafe_destination", "WebFetch destination has no DNS address");
-  for (const address of addresses) {
-    if (isIP(address.address) !== address.family) {
-      throw new ProductToolError("unsafe_destination", "WebFetch DNS result is malformed");
-    }
-    const family = address.family === 4 ? "ipv4" : "ipv6";
-    const embedded = address.family === 6 ? embeddedIpv4(address.address, pref64s) : undefined;
-    if (blockedAddresses.check(address.address, family)
-      || (embedded !== undefined && blockedAddresses.check(embedded, "ipv4"))) {
-      throw new ProductToolError("unsafe_destination", "WebFetch destination resolved to a non-public address");
-    }
-  }
-  const selected = addresses[0];
-  if (selected === undefined) {
-    throw new ProductToolError("unsafe_destination", "WebFetch destination has no DNS address");
-  }
-  return selected;
-};
 
 const headerValue = (
   value: string | readonly string[] | undefined,
 ): string | undefined => typeof value === "string" ? value : value?.length === 1 ? value[0] : undefined;
 
-const parseRedirectUrl = (location: string, current: URL, policy: ProductNetworkPolicy): URL => {
+const parseRedirectUrl = (location: string, current: URL): URL => {
   try {
-    return parseSafeUrl(new URL(location, current).toString(), policy);
+    return parseHttpUrl(new URL(location, current).toString());
   } catch (error) {
     if (error instanceof ProductToolError) throw error;
     throw new ProductToolError("unsafe_destination", "WebFetch redirect URL is invalid", { cause: error });
@@ -678,7 +404,6 @@ const normalizeOpenRequest = (
 export class ProductSafeHttpClient {
   readonly #lookup: (hostname: string, signal: AbortSignal) => Promise<readonly ProductDnsAnswer[]>;
   readonly #policy: ProductNetworkPolicy;
-  readonly #destinationPolicy: "public-web" | "host-configured";
   readonly #transport: ProductHttpTransport;
   readonly #proxyTransportFor: ((url: URL) => ProductHttpProxyTransport | undefined) | undefined;
   #active = 0;
@@ -689,16 +414,10 @@ export class ProductSafeHttpClient {
     const candidate: unknown = config;
     if (candidate === null || typeof candidate !== "object" || Array.isArray(candidate) || isProxy(candidate)
       || (Object.getPrototypeOf(candidate) !== Object.prototype && Object.getPrototypeOf(candidate) !== null)
-      || Reflect.ownKeys(candidate).some((key) => key !== "lookup" && key !== "transport" && key !== "proxyTransportFor" && key !== "destinationPolicy")) {
+      || Reflect.ownKeys(candidate).some((key) => key !== "lookup" && key !== "transport" && key !== "proxyTransportFor")) {
       throw new TypeError("safe HTTP client config must be a plain exact object");
     }
     const normalized = candidate as ProductSafeHttpClientConfig;
-    const destination = Object.getOwnPropertyDescriptor(normalized, "destinationPolicy");
-    if (destination !== undefined && (!("value" in destination)
-      || (destination.value !== "public-web" && destination.value !== "host-configured"))) {
-      throw new TypeError("HTTP destination policy must be selected by trusted composition");
-    }
-    this.#destinationPolicy = destination?.value as ProductSafeHttpClientConfig["destinationPolicy"] ?? "public-web";
     const proxyDescriptor = Object.getOwnPropertyDescriptor(normalized, "proxyTransportFor");
     if (proxyDescriptor !== undefined && (!("value" in proxyDescriptor)
       || typeof proxyDescriptor.value !== "function" || isProxy(proxyDescriptor.value))) {
@@ -718,7 +437,7 @@ export class ProductSafeHttpClient {
       throw new TypeError("safe HTTP transport must be an own-data capability");
     }
     this.#lookup = lookupDescriptor === undefined
-      ? this.#destinationPolicy === "host-configured" ? configuredLookup : systemLookup
+      ? systemLookup
       : (hostname, signal) => Reflect.apply(
           lookupDescriptor.value as (hostname: string, signal: AbortSignal) => Promise<readonly ProductDnsAnswer[]>,
           normalized,
@@ -762,7 +481,7 @@ export class ProductSafeHttpClient {
     let response: ProductHttpResponse | undefined;
     try {
       release = await this.#acquire(signal);
-      const url = this.#destinationPolicy === "host-configured" ? parseHttpUrl(rawUrl) : parseSafeUrl(rawUrl, this.#policy);
+      const url = parseHttpUrl(rawUrl);
       const dispatched = this.#dispatch(url, signal, normalized.request);
       response = await dispatched;
       if ([301, 302, 303, 307, 308].includes(response.statusCode)) {
@@ -811,7 +530,7 @@ export class ProductSafeHttpClient {
       throw new ProductToolError("network_policy_denied", "operation-frozen network policy denies WebFetch");
     }
     try {
-      let current = parseSafeUrl(rawUrl, this.#policy);
+      let current = parseHttpUrl(rawUrl);
       const redirectOrigins: string[] = [];
       for (let redirectCount = 0; ; redirectCount += 1) {
         throwIfProductToolAborted(context.signal);
@@ -836,7 +555,7 @@ export class ProductSafeHttpClient {
               if (location === undefined) {
                 throw new ProductToolError("unsafe_destination", "WebFetch redirect has no Location header");
               }
-              const next = parseRedirectUrl(location, current, this.#policy);
+              const next = parseRedirectUrl(location, current);
               if (next.origin !== current.origin) redirectOrigins.push(next.origin);
               current = next;
               continue;
@@ -886,24 +605,17 @@ export class ProductSafeHttpClient {
   async #dispatch(url: URL, signal: AbortSignal, request?: ProductHttpRequest): Promise<ProductHttpResponse> {
     signal.throwIfAborted();
     const outgoingRequest = request ?? DEFAULT_WEB_FETCH_REQUEST;
-    // Public-Web callers retain literal-address checks even through a proxy.
-    // Configured MCP destinations instead derive authority from their Host descriptor.
-    const literal = lookupHostname(url.hostname);
-    const family = isIP(literal);
-    if (this.#destinationPolicy === "public-web" && (family === 4 || family === 6)) selectPublicAddress([{ address: literal, family }], []);
     const proxy: unknown = this.#proxyTransportFor?.(url);
     let dispatched: Promise<ProductHttpResponse>;
     if (proxy === undefined) {
-      const resolved = await this.#resolve(url.hostname, signal);
+      const addresses = this.#normalizeDnsAnswers(await this.#lookup(lookupHostname(url.hostname), signal));
       signal.throwIfAborted();
-      const addresses = this.#destinationPolicy === "public-web"
-        ? [selectPublicAddress(resolved.addresses, resolved.pref64s)] : resolved.addresses;
       if (addresses.length === 0) throw new ProductToolError("unsafe_destination", "HTTP destination has no DNS address");
       // Node selects a reachable pinned address before sending the single HTTP request.
       dispatched = this.#transport.dispatch(url, addresses, signal, outgoingRequest);
     } else {
       // An explicitly selected proxy owns remote DNS. The caller has already
-      // applied URL/hostname/literal-address policy; a proxy failure never falls back.
+      // validated the request URL; a proxy failure never falls back.
       if (proxy === null || typeof proxy !== "object" || isProxy(proxy)) {
         throw new TypeError("safe HTTP proxy transport must be an own-data capability");
       }
@@ -915,28 +627,6 @@ export class ProductSafeHttpClient {
       dispatched = Reflect.apply(dispatch.value as ProductHttpProxyTransport["dispatch"], proxy, [url, signal, outgoingRequest]);
     }
     return dispatched;
-  }
-
-  async #resolve(hostname: string, signal: AbortSignal): Promise<Readonly<{
-    addresses: readonly ProductDnsAnswer[];
-    pref64s: readonly Pref64[];
-  }>> {
-    const canonicalHostname = lookupHostname(hostname);
-    const addresses = this.#normalizeDnsAnswers(await this.#lookup(canonicalHostname, signal));
-    signal.throwIfAborted();
-    const needPref64 = this.#destinationPolicy === "public-web" && addresses.some((address) => address.family === 6) && isIP(canonicalHostname) === 0
-      && canonicalHostname !== "ipv4only.arpa";
-    const discovery = needPref64
-      ? await this.#lookup("ipv4only.arpa", signal).then(
-          (answers) => this.#normalizeDnsAnswers(answers),
-          (error: unknown) => {
-            if (isDnsNoData(error)) return [];
-            throw error;
-          },
-        )
-      : [];
-    signal.throwIfAborted();
-    return Object.freeze({ addresses, pref64s: discoverPref64(discovery) });
   }
 
   #normalizeDnsAnswers(value: unknown): readonly ProductDnsAnswer[] {

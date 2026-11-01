@@ -64,7 +64,7 @@ const normalizeConfig = (value: unknown): Readonly<{
 const remoteEndpoint = (raw: string): URL => {
   const url = new URL(raw);
   // The descriptor is supplied by the trusted Host, including local/intranet
-  // destinations. Public-Web SSRF policy belongs to model-selected Web URLs.
+  // destinations. Shared HTTP transport does not impose address-class bans.
   if ((url.protocol !== "http:" && url.protocol !== "https:")
     || url.username !== "" || url.password !== "" || url.hash !== "" || url.hostname.length === 0) {
     throw new TypeError("MCP endpoint must be HTTP(S) without URL credentials or fragment");
