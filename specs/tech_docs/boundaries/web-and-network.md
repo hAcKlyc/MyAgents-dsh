@@ -72,10 +72,23 @@ evaluating code. It merges duplicate sources and retains bounded service text in
 Missing or partially understood result structure yields `unverified_search_results`, preserving
 usable sources and text. If domain filters were requested, retained unverified text also carries
 `unverified_domain_filter`. Plain service text never creates verified citations. Explicit server-tool
-errors still fail, even in HTTP 200 responses or alongside earlier hits. The complete result is bounded
+errors are collected separately from successful search data, even within HTTP 200 responses. The Host
+retains completed results with bounded failure explanations in canonical `answer`; no completed search
+still fails, while a completed zero-hit search remains valid. Product forwards validated `answer` and
+verification warnings through native `WebSearchResult.content`, preserving explanations in formatting
+and replay metadata. The complete result is bounded
 including JSON escaping and source/citation duplication; capacity trimming sets `truncated`.
 Provider prose alone is not evidence of search completion. Real-provider acceptance
 requires an artifact-bound campaign on the selected route.
+
+The native multi-query aggregator settles every query under caller cancellation, merges completed
+queries through its existing round-robin/cap logic, and reports rejected query causes in `content`.
+It does not cancel successful siblings because another query failed. If every query rejects, the
+invocation fails with the bounded causes; an empty completed result is distinct from rejection.
+Caller cancellation and Product deadlines still drain pending work and fail before result publication.
+The pinned upstream has no public partial-success policy; [ADR 0016](../../adr/0016-web-search-partial-results.md)
+records the minimal native patch and its removal condition. There is no alternate search tool or
+backend retry. Host Provider error redaction and business-code interpretation remain Host-owned.
 
 ## 6. MCP networking
 

@@ -4,7 +4,8 @@ import { ToolCallId } from "@deepseek-ai/dsh-llm";
 import { ToolRuntime } from "@deepseek-ai/dsh-tools";
 import { SystemPrompt } from "@deepseek-ai/dsh-system-prompt";
 import { WebRuntime } from "@deepseek-ai/dsh-web";
-import type { ProductToolContext } from "@myagents-dsh/tool-runtime-product";
+import { CANONICAL_TOOL_CONTRACTS } from "@myagents-dsh/tool-contracts";
+import { ProductToolError, type ProductToolContext } from "@myagents-dsh/tool-runtime-product";
 import {
   CanonicalWebTools,
   ProductSafeHttpClient,
@@ -184,6 +185,138 @@ const createWebHarness = async (options: Readonly<{
 };
 
 describe("safe Web Providers and canonical Web tools", () => {
+  const searchConfig = (run: NonNullable<CanonicalWebToolsConfig["search"]>["run"]): NonNullable<CanonicalWebToolsConfig["search"]> => ({
+    available: () => true, credentialRef: "credential-ref-v1", policyRef: policy.policyRef,
+    providerId: "approved-search", run,
+  });
+  const searchResult = (answer?: string) => ({
+    citations: [{ title: "Source", url: "https://example.com/result" }], durationMs: 1,
+    results: [{ title: "Source", url: "https://example.com/result", snippet: "Evidence" }],
+    searchCount: 1, truncated: false, ...(answer === undefined ? {} : { answer }),
+  });
+
+  it("preserves Host partial-search explanations in native output and replay metadata", async () => {
+    const harness = await createWebHarness({ search: searchConfig(() => Promise.resolve({
+      ...searchResult("Zhipu content safety rejection (1301); one successful result retained."),
+      warnings: ["unverified_search_results", "unverified_domain_filter"] as const,
+    })) });
+    try {
+      const result = await harness.execute("web_search", { queries: ["fixture"] });
+      expect(result).toMatchObject({ isError: false, meta: { sources: [{ url: "https://example.com/result" }] } });
+      expect(JSON.stringify(result.value)).toContain("1301");
+      expect(JSON.stringify(result.meta)).toContain("1301");
+      expect(JSON.stringify(result)).toContain("could not be verified");
+      expect(JSON.stringify(result)).toContain("Domain filtering");
+    } finally { await harness.context.fiber.dispose(); }
+  });
+
+  it("keeps a slower successful query when a sibling query fails", async () => {
+    let release!: () => void;
+    const gate = new Promise<void>(resolve => { release = resolve; });
+    let signal: AbortSignal | undefined;
+    const harness = await createWebHarness({ search: searchConfig(async request => {
+      if (request.query === "blocked") throw new ProductToolError("provider_search_failed", "Zhipu input or generated content rejected (1301).");
+      signal = request.signal;
+      await gate;
+      request.signal.throwIfAborted();
+      return searchResult();
+    }) });
+    try {
+      const pending = harness.execute("web_search", { queries: ["blocked", "completed"] });
+      await new Promise<void>(resolve => setImmediate(resolve));
+      const siblingAborted = signal?.aborted;
+      release();
+      const result = await pending;
+      expect(siblingAborted).toBe(false);
+      expect(result).toMatchObject({ isError: false, value: { sources: [{ url: "https://example.com/result" }] } });
+      expect(JSON.stringify(result.value)).toContain("1301");
+      expect(JSON.stringify(result)).toContain("blocked");
+    } finally { release(); await harness.context.fiber.dispose(); }
+  });
+
+  it("keeps an empty completed query distinct from an entirely failed batch", async () => {
+    const harness = await createWebHarness({ search: searchConfig(request => request.query === "blocked"
+      ? Promise.reject(new ProductToolError("provider_search_failed", "Zhipu content rejected (1301)."))
+      : Promise.resolve({ ...searchResult(), citations: [], results: [] })) });
+    try {
+      const partial = await harness.execute("web_search", { queries: ["blocked", "no-matches"] });
+      expect(partial).toMatchObject({ isError: false, value: { sources: [] } });
+      expect(JSON.stringify(partial.value)).toContain("1301");
+      const failed = await harness.execute("web_search", { queries: ["blocked"] });
+      expect(failed.isError).toBe(true);
+      expect(JSON.stringify(failed)).toContain("1301");
+    } finally { await harness.context.fiber.dispose(); }
+  });
+
+  it("reports all query failures when no query completed", async () => {
+    const harness = await createWebHarness({ search: searchConfig(request => Promise.reject(
+      new ProductToolError("provider_search_failed", request.query === "blocked" ? "Zhipu content rejected (1301)." : "Zhipu rate limit reached (1302)."),
+    )) });
+    try {
+      const result = await harness.execute("web_search", { queries: ["blocked", "limited"] });
+      expect(result.isError).toBe(true);
+      expect(JSON.stringify(result)).toContain("1301");
+      expect(JSON.stringify(result)).toContain("1302");
+    } finally { await harness.context.fiber.dispose(); }
+  });
+
+  it("cancels and drains every batched query instead of publishing partial success after cancellation", async () => {
+    const controller = new AbortController();
+    let release!: () => void;
+    let started!: () => void;
+    const gate = new Promise<void>(resolve => { release = resolve; });
+    const ready = new Promise<void>(resolve => { started = resolve; });
+    let drained = false;
+    const harness = await createWebHarness({ product: productContext(controller.signal), search: searchConfig(async request => {
+      if (request.query === "completed") return searchResult();
+      started();
+      await gate;
+      drained = true;
+      request.signal.throwIfAborted();
+      return searchResult();
+    }) });
+    try {
+      const pending = harness.execute("web_search", { queries: ["completed", "pending"] });
+      await ready;
+      controller.abort(new Error("cancel batch"));
+      let settled = false;
+      void pending.then(() => { settled = true; });
+      await new Promise<void>(resolve => setImmediate(resolve));
+      expect(settled).toBe(false);
+      release();
+      const result = await pending;
+      expect(drained).toBe(true);
+      expect(result.isError).toBe(true);
+      expect(JSON.stringify(result)).not.toContain('"sources"');
+    } finally { release(); await harness.context.fiber.dispose(); }
+  });
+
+  it("keeps an expired Product deadline authoritative over completed sibling results", async () => {
+    const timeoutMs = CANONICAL_TOOL_CONTRACTS.WebSearch.timeoutMs;
+    if (timeoutMs === undefined) throw new Error("WebSearch must retain its Product deadline");
+    vi.useFakeTimers();
+    let release!: () => void;
+    let started!: () => void;
+    const gate = new Promise<void>(resolve => { release = resolve; });
+    const ready = new Promise<void>(resolve => { started = resolve; });
+    const harness = await createWebHarness({ search: searchConfig(async request => {
+      if (request.query === "completed") return searchResult();
+      started();
+      await gate;
+      request.signal.throwIfAborted();
+      return searchResult();
+    }) });
+    try {
+      const pending = harness.execute("web_search", { queries: ["completed", "pending"] });
+      await ready;
+      await vi.advanceTimersByTimeAsync(timeoutMs + 1);
+      release();
+      const result = await pending;
+      expect(result).toMatchObject({ isError: true, error: { info: { code: "TOOL_TIMEOUT" } } });
+      expect(JSON.stringify(result)).not.toContain('"sources"');
+    } finally { release(); await harness.context.fiber.dispose(); vi.useRealTimers(); }
+  });
+
   it("uses DSH web tool schemas and output through the product network and permission provider", async () => {
     const authorize = vi.fn(() => Promise.resolve());
     const harness = await createWebHarness({

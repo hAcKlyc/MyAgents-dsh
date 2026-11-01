@@ -1,0 +1,140 @@
+diff --git a/packages/web/tool-web/src/search.ts b/packages/web/tool-web/src/search.ts
+index deaad1b48dfd6441e8c6bbeace8d68a6f8ff1e4a..076d37114549525b06a34f2000d911435331503a 100644
+--- a/packages/web/tool-web/src/search.ts
++++ b/packages/web/tool-web/src/search.ts
+@@ -218,9 +218,9 @@
+ /**
+  * Run one or more searches through the web seam. A single query keeps the
+  * provider's exact result; multiple queries run concurrently and are merged
+- * into one normalized result capped at `maxResults`. A failed search aborts
+- * its siblings, and this function waits for every search to settle before
+- * rethrowing the first failure.
++ * into one normalized result capped at `maxResults`. Query failures are
++ * reported alongside completed searches. Caller cancellation still drains
++ * every request and fails the tool; a batch with no completed query fails.
+  *
+  * @param ctx - context whose `web` service performs the searches.
+  * @param queries - validated non-empty queries.
+@@ -237,22 +237,28 @@
+   if (queries.length === 1) {
+     return ctx.web.search({ query: queries[0] as string, maxResults }, signal)
+   }
+-  const controller = new AbortController()
+-  const batchSignal = AbortSignal.any([signal, controller.signal])
+-  let firstFailure: { error: unknown } | undefined
+-  const results: WebSearchResult[] = []
+-  const searches = queries.map(async (query, index) => {
+-    try {
+-      results[index] = await ctx.web.search({ query, maxResults }, batchSignal)
+-    } catch (error) {
+-      if (firstFailure === undefined) firstFailure = { error }
+-      controller.abort(error)
+-      throw error
+-    }
+-  })
+-  await Promise.allSettled(searches)
+-  if (firstFailure !== undefined) throw firstFailure.error
+-  return mergeSearchResults(queries, results, maxResults)
++  const settled = await Promise.allSettled(queries.map(async query =>
++    ctx.web.search({ query, maxResults }, signal)))
++  signal.throwIfAborted()
++  const completed = settled.flatMap((result, index) => result.status === 'fulfilled'
++    ? [{ query: queries[index] as string, result: result.value }] : [])
++  const failures = settled.flatMap((result, index) => result.status === 'rejected'
++    ? [{ query: queries[index] as string, error: result.reason as unknown }] : [])
++  const failureText = failures.map(({ query, error }) =>
++    `- ${JSON.stringify(query).slice(0, 512)}: ${error instanceof Error ? error.message.slice(0, 4096) : 'Search request failed.'}`,
++  ).join('\n')
++  if (completed.length === 0) {
++    throw new AggregateError(failures.map(failure => failure.error), `All web searches failed:\n${failureText}`)
++  }
++  const merged = mergeSearchResults(completed.map(item => item.query), completed.map(item => item.result), maxResults)
++  if (failures.length === 0) return merged
++  return {
++    ...merged,
++    content: [
++      `Some searches failed; completed search results are retained:\n${failureText}`,
++      merged.content ?? (merged.sources.length === 0 ? 'Completed searches returned no results.' : ''),
++    ].filter(Boolean).join('\n\n'),
++  }
+ }
+ 
+ /** Merge per-query results into one deduplicated, round-robin, capped result. */
+diff --git a/packages/web/tool-web/tests/tool-web.spec.ts b/packages/web/tool-web/tests/tool-web.spec.ts
+index ee1b47898b8b2f5374d720b59edb29743ce706a9..3505b8af45fde839b827ef9e773c1f34837dd2e2 100644
+--- a/packages/web/tool-web/tests/tool-web.spec.ts
++++ b/packages/web/tool-web/tests/tool-web.spec.ts
+@@ -595,7 +595,7 @@
+     await fiber.dispose()
+   })
+ 
+-  it('aborts sibling searches and waits for them to settle before reporting a batch failure', async () => {
++  it('retains a slower successful sibling after a query fails', async () => {
+     let siblingAborted = false
+     let releaseSibling: (() => void) | undefined
+     const provider: WebSearchProvider = {
+@@ -603,8 +603,8 @@
+       available: () => available,
+       search: (request, signal) => {
+         if (request.query === 'one') return Promise.reject(new Error('first search failed'))
+-        return new Promise((_resolve, reject) => {
+-          releaseSibling = () => { reject(new Error('sibling search stopped')) }
++        return new Promise((resolve) => {
++          releaseSibling = () => { resolve({ sources: [{ url: 'https://source.test' }], truncated: false }) }
+           signal?.addEventListener('abort', () => {
+             siblingAborted = true
+           }, { once: true })
+@@ -616,15 +616,42 @@
+     let callSettled = false
+     void pending.then(() => { callSettled = true })
+     try {
+-      await vi.waitFor(() => { expect(siblingAborted).toBe(true) })
++      await vi.waitFor(() => { expect(releaseSibling).toBeDefined() })
+       await Promise.resolve()
++      expect(siblingAborted).toBe(false)
+       expect(callSettled).toBe(false)
+     } finally {
+       releaseSibling?.()
+     }
+     const out = await pending
++    expect(out.isError).toBe(false)
++    expect(out.value).toMatchObject({ sources: [{ url: 'https://source.test' }], content: expect.stringContaining('first search failed') })
++    await fiber.dispose()
++  })
++
++  it('reports every failed query when no query completes', async () => {
++    const provider: WebSearchProvider = {
++      id: 'stub-search', available: () => available,
++      search: request => Promise.reject(new Error(`${request.query} search failed`)),
++    }
++    const { fiber, call } = await mountTools({ webConfig: { searchProvider: 'stub-search' }, search: provider })
++    const out = await call('web_search', { queries: ['one', 'two'] })
+     expect(out.isError).toBe(true)
+-    expect(out.content).toEqual([{ type: 'text', text: 'Error: first search failed' }])
++    expect(out.content).toEqual([{ type: 'text', text: expect.stringContaining('one search failed') }])
++    expect(out.content).toEqual([{ type: 'text', text: expect.stringContaining('two search failed') }])
++    await fiber.dispose()
++  })
++
++  it('treats completed zero-hit searches as success alongside failed queries', async () => {
++    const provider: WebSearchProvider = {
++      id: 'stub-search', available: () => available,
++      search: request => request.query === 'one' ? Promise.reject(new Error('one search failed'))
++        : Promise.resolve({ sources: [], truncated: false }),
++    }
++    const { fiber, call } = await mountTools({ webConfig: { searchProvider: 'stub-search' }, search: provider })
++    const out = await call('web_search', { queries: ['one', 'two'] })
++    expect(out.isError).toBe(false)
++    expect(out.value).toMatchObject({ sources: [], content: expect.stringContaining('one search failed') })
+     await fiber.dispose()
+   })
+ 
+@@ -796,7 +823,7 @@
+     const pending = ctx.tools.execute({ callId: ToolCallId('search-multi-1'), name: 'web_search', arguments: { queries: ['one', 'two'] }, signal: controller.signal })
+     await vi.waitFor(() => { expect(signals).toHaveLength(2) })
+     expect(signals[0]).toBe(signals[1])
+-    expect(signals[0]).not.toBe(controller.signal)
++    expect(signals[0]).toBe(controller.signal)
+     controller.abort(new Error('caller cancelled'))
+     await pending
+     expect(signals.every(signal => signal?.aborted === true)).toBe(true)

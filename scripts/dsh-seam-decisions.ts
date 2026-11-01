@@ -183,10 +183,13 @@ export const DSH_SEAM_SOURCE = Object.freeze({
     Object.freeze({"path": "packages/llm/llm-pi-ai/src/catalog.ts", "blob": "6ccd0cae052594ae2a8b475aa4d37d089de39e01", "sha256": "a318a9f4b6631098ba7f575db9b826c32624ae0683dafd2c8b2a5c8f17c5257c"}),
     Object.freeze({"path": "packages/llm/llm-pi-ai/src/index.ts", "blob": "a7b00faa79d433ea2c090b78ff1c36b5604d1a44", "sha256": "aa8e003584d7e2215609ce503f6d5d0c1eb7d8d65eadab39180c665e7e44b939"}),
     Object.freeze({"path": "packages/llm/llm-pi-ai/tests/catalog.spec.ts", "blob": "e142027ae669565ceebf5843b617027b65d9fd1e", "sha256": "14d4883568b50188515dc8f7d18e3589598e846fc5b47d6dd6ffea3482428dff"}),
+    Object.freeze({"path": "packages/web/tool-web/src/search.ts", "blob": "deaad1b48dfd6441e8c6bbeace8d68a6f8ff1e4a", "sha256": "7fa69d836cf682f0a6a3854f90e91cf4f746d90c91881fe92d11aeed5c66a2ee"}),
+    Object.freeze({"path": "packages/web/tool-web/tests/tool-web.spec.ts", "blob": "ee1b47898b8b2f5374d720b59edb29743ce706a9", "sha256": "f2b28175258cd8784e3ba3e5b11a3142f2a7c1182184ca7af84a07b5ed9999f9"}),
   ]),
 });
 
 export const PATCHED_SOURCE_TESTS = Object.freeze([
+  "packages/web/tool-web/tests/tool-web.spec.ts",
   "packages/llm/llm-pi-ai/tests/catalog.spec.ts",
   "packages/llm/llm-pi-ai/tests/model-conversation-config.spec.ts",
   "packages/session/session-projection/tests/registration-types.spec.ts",
@@ -244,6 +247,7 @@ const FILE_TOOL_COMPOSITION_PATCH = "specs/dsh/patches/0011-file-tool-compositio
 const HOST_NEUTRAL_TIME_PATCH = "specs/dsh/patches/0013-host-neutral-time-context.patch";
 const SESSION_PROJECTION_PUBLIC_TYPES_PATCH = "specs/dsh/patches/0014-session-projection-public-types.patch";
 const MODEL_CONVERSATION_UPDATES_PATCH = "specs/dsh/patches/0015-model-update-capabilities.patch";
+const WEB_SEARCH_PARTIAL_RESULTS_PATCH = "specs/dsh/patches/0016-web-search-partial-results.patch";
 export const DSH_SEAM_PATCHES = Object.freeze([
   WAKE_PATCH,
   PRE_ASSISTANT_COMMIT_PATCH,
@@ -258,6 +262,7 @@ export const DSH_SEAM_PATCHES = Object.freeze([
   HOST_NEUTRAL_TIME_PATCH,
   SESSION_PROJECTION_PUBLIC_TYPES_PATCH,
   MODEL_CONVERSATION_UPDATES_PATCH,
+  WEB_SEARCH_PARTIAL_RESULTS_PATCH,
 ] as const);
 
 export interface DshSeamPatchSnapshot {
@@ -313,6 +318,16 @@ export function buildDshSeamDecisions(): object {
     candidateIntegration: "0.2.1 RC2 upgrade; exact acceptance requires rebuilt artifact, Runtime composition and Host gates",
     patchSeries: DSH_SEAM_PATCHES.map((path, index) => patchEvidence(path, index + 1)),
     decisions: [
+      {
+        id: "DSH-SEAM-017", upgradeDisposition: "rebase", seam: "native-web-search-partial-results",
+        status: "candidate_patch_pending_product_validation",
+        adr: "specs/adr/0016-web-search-partial-results.md",
+        rejected: "replace native search execution, convert rejected queries into successful empty results, or recover private aggregator state in Product middleware",
+        selectedPublicApi: "native applyWebSearchTool aggregation and existing WebSearchResult content/sources presentation",
+        patch: patch(WEB_SEARCH_PARTIAL_RESULTS_PATCH),
+        executableEvidence: ["a rejected query retains slower completed siblings and reports its failure", "all rejected queries remain failed; completed zero-hit queries remain successful", "caller cancellation drains every request and prevents partial publication", "native source caps, round-robin deduplication and replay metadata remain unchanged"],
+        removalCondition: "official native WebSearch aggregation retains completed queries, reports partial and all-failed causes, and preserves drained cancellation without an alternate tool pipeline",
+      },
       {
         id: "DSH-SEAM-016", upgradeDisposition: "rebase", seam: "model-declared-conversation-update-capabilities",
         status: "candidate_patch_pending_product_validation",
@@ -595,6 +610,7 @@ export const DSH_SEAM_INSTALL_FILTERS = Object.freeze([
   "--filter", "@deepseek-ai/dsh-session-persistence-jsonl...",
   "--filter", "@deepseek-ai/dsh-fs-local...",
   "--filter", "@deepseek-ai/dsh-tool-fs...",
+  "--filter", "@deepseek-ai/dsh-tool-web...",
   "--filter", "@deepseek-ai/dsh-working-directory...",
   // The subagent closure reaches unrelated document and office packages.
   "--filter", "@deepseek-ai/dsh-subagent",
@@ -694,6 +710,7 @@ export function verifyDshSeamSource(
       "packages/session/session-persistence-jsonl/tsconfig.json",
       "packages/fs/fs-local/tsconfig.json",
       "packages/fs/tool-fs/tsconfig.json",
+      "packages/web/tool-web/tsconfig.json",
       "packages/session/working-directory/tsconfig.json",
       "packages/subagent/subagent/tsconfig.json",
       "packages/subagent/subagent-spawn-in-process/tsconfig.json",

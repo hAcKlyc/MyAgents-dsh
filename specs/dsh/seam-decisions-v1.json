@@ -842,6 +842,16 @@
         "path": "packages/llm/llm-pi-ai/tests/catalog.spec.ts",
         "blob": "e142027ae669565ceebf5843b617027b65d9fd1e",
         "sha256": "14d4883568b50188515dc8f7d18e3589598e846fc5b47d6dd6ffea3482428dff"
+      },
+      {
+        "path": "packages/web/tool-web/src/search.ts",
+        "blob": "deaad1b48dfd6441e8c6bbeace8d68a6f8ff1e4a",
+        "sha256": "7fa69d836cf682f0a6a3854f90e91cf4f746d90c91881fe92d11aeed5c66a2ee"
+      },
+      {
+        "path": "packages/web/tool-web/tests/tool-web.spec.ts",
+        "blob": "ee1b47898b8b2f5374d720b59edb29743ce706a9",
+        "sha256": "f2b28175258cd8784e3ba3e5b11a3142f2a7c1182184ca7af84a07b5ed9999f9"
       }
     ]
   },
@@ -912,9 +922,35 @@
       "order": 13,
       "path": "specs/dsh/patches/0015-model-update-capabilities.patch",
       "sha256": "0f7f15d4a8bb8088d42ba470c39a4dc045d678d0545987fd6479f7a1beefae98"
+    },
+    {
+      "order": 14,
+      "path": "specs/dsh/patches/0016-web-search-partial-results.patch",
+      "sha256": "4b38e847810da0cdc9807f29c426151e49a074c0d14b34e6906bc80a0fb9c07f"
     }
   ],
   "decisions": [
+    {
+      "id": "DSH-SEAM-017",
+      "upgradeDisposition": "rebase",
+      "seam": "native-web-search-partial-results",
+      "status": "candidate_patch_pending_product_validation",
+      "adr": "specs/adr/0016-web-search-partial-results.md",
+      "rejected": "replace native search execution, convert rejected queries into successful empty results, or recover private aggregator state in Product middleware",
+      "selectedPublicApi": "native applyWebSearchTool aggregation and existing WebSearchResult content/sources presentation",
+      "patch": {
+        "order": 14,
+        "path": "specs/dsh/patches/0016-web-search-partial-results.patch",
+        "sha256": "4b38e847810da0cdc9807f29c426151e49a074c0d14b34e6906bc80a0fb9c07f"
+      },
+      "executableEvidence": [
+        "a rejected query retains slower completed siblings and reports its failure",
+        "all rejected queries remain failed; completed zero-hit queries remain successful",
+        "caller cancellation drains every request and prevents partial publication",
+        "native source caps, round-robin deduplication and replay metadata remain unchanged"
+      ],
+      "removalCondition": "official native WebSearch aggregation retains completed queries, reports partial and all-failed causes, and preserves drained cancellation without an alternate tool pipeline"
+    },
     {
       "id": "DSH-SEAM-016",
       "upgradeDisposition": "rebase",
@@ -1245,6 +1281,7 @@
     "runtimeSemantics": "tests/dsh-seam-spikes.unit.test.ts",
     "patchedSourceTypecheck": "tsc -b tsconfig.host.json",
     "patchedSourceTests": [
+      "packages/web/tool-web/tests/tool-web.spec.ts",
       "packages/llm/llm-pi-ai/tests/catalog.spec.ts",
       "packages/llm/llm-pi-ai/tests/model-conversation-config.spec.ts",
       "packages/session/session-projection/tests/registration-types.spec.ts",
