@@ -10,7 +10,7 @@ When the fixed upstream checkout is available at the documented sibling path, `n
 
 - Source/design evidence is the exact official `0.2.1-rc.2` commit and tree in the [generated source baseline](./dsh-baseline-v1.json) and [seam registry](./seam-decisions-v1.json).
 - Development dependency resolution is exact public npm `0.2.1-rc.2` plus Cordis `4.0.5`, independently pinned by package-lock tarball URLs and integrities.
-- Candidate distribution `0.1.19` is source-built with thirteen audited DSH patches across sixteen recorded seams. Separately pinned pi-ai `1.1.0` has two source patches and its own [source authority](../pi-ai/seam-evidence-v1.json). The rebuilt, verified patched-artifact manifest owns the package inventory and exact executable bytes. Previous manifests do not establish acceptance for this candidate, which has not been published.
+- Candidate distribution `0.1.19` is source-built with fourteen audited DSH patches across seventeen recorded seams. Separately pinned pi-ai `1.1.0` has two source patches and its own [source authority](../pi-ai/seam-evidence-v1.json). The rebuilt, verified patched-artifact manifest owns the package inventory and exact executable bytes. Previous manifests do not establish acceptance for this candidate, which has not been published.
 
 The public registry manifests omit `gitHead`. Their exact association with the tagged source remains `unproven`; the project therefore does not claim that the fixed source commit produced those registry tarballs. The custom executable artifact is independently tied to source, patch, builder, lock, package and consumer bytes.
 
@@ -40,7 +40,7 @@ Seam 003 rebases the missing trusted event validation onto a public plugin facto
 only its payload validator, while DSH owns the private tracker and teardown order. Seam 004 remains
 public composition. No old SQLite Session backend or development-history migration remains.
 
-`seam-decisions-v1.json` records sixteen seams and thirteen DSH patches. Native asynchronous child
+`seam-decisions-v1.json` records seventeen seams and fourteen DSH patches. Native asynchronous child
 lifecycle replaces the former Product lifecycle additions: seams 006 and 009 retain
 released descriptor version 5 admission, literal-persona restoration and delegation text that
 defers to the effective approval policy. Native dynamic
@@ -52,6 +52,8 @@ requests use the same model facts. It rejects route-wide or wrong-family declara
 sibling models independent. Released V4 logs and
 version 5 child histories are preserved, including explicit refusal to continue historical
 externally owned children. New version 3 child writes do not imply old-reader downgrade support.
+Seam 017 retains completed native Web searches alongside failed queries through existing content and
+replay fields; [ADR 0016](../adr/0016-web-search-partial-results.md) records the adaptation and removal condition.
 The source gate verifies every exact upstream blob, applies the ordered series only in a detached
 worktree and runs the selected source regressions. The patchless seam 004 still requires fresh
 Product and native ownership proof. The affected ADRs preserve each semantic and removal condition.

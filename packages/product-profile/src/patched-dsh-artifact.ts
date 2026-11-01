@@ -54,6 +54,7 @@ const expectedRuntimePackageNames = Object.freeze([
   "@deepseek-ai/dsh-tool-subagent",
   "@deepseek-ai/dsh-tool-subagent-control",
   "@deepseek-ai/dsh-tool-pwsh",
+  "@deepseek-ai/dsh-tool-web",
   "@deepseek-ai/dsh-tools",
   "@deepseek-ai/dsh-util-values",
   "@deepseek-ai/dsh-working-directory",
@@ -87,6 +88,7 @@ export interface AcceptedPatchedDshArtifactAuthority {
     "timeContext.hostNeutralPolicy",
     "sessionProjections.stateBoundRegistration",
     "llm-pi-ai.modelConversationUpdates",
+    "tool-web.partialSearchResults",
   ];
 }
 
@@ -156,6 +158,7 @@ const buildAcceptedAuthority = (value: unknown): AcceptedPatchedDshArtifactAutho
     "timeContext.hostNeutralPolicy",
     "sessionProjections.stateBoundRegistration",
     "llm-pi-ai.modelConversationUpdates",
+    "tool-web.partialSearchResults",
   ];
   if (!Array.isArray(requiredPatchedSeams)
     || JSON.stringify(requiredPatchedSeams) !== JSON.stringify(expectedSeams)) {

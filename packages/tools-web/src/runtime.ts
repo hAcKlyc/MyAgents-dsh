@@ -354,8 +354,7 @@ class ProductSearchProvider implements WebSearchProvider {
       || store.context.environment.network.policyRef !== this.policyRef) {
       throw new ProductToolError("web_search_unavailable", "WebSearch Provider is unavailable");
     }
-    // The stock search tool composes a sibling-cancellation signal for batched
-    // queries. Preserve that cancellation as well as the Product deadline.
+    // Preserve the native caller cancellation as well as the Product deadline.
     const context = signal === undefined || signal === store.context.signal
       ? store.context
       : Object.freeze({ ...store.context, signal: AbortSignal.any([store.context.signal, signal]) });
@@ -418,7 +417,13 @@ class ProductSearchProvider implements WebSearchProvider {
       release();
     }
     store.detail = detail;
+    const content = [
+      ...(detail.warnings?.includes("unverified_search_results") ? ["Some search results could not be verified."] : []),
+      ...(detail.warnings?.includes("unverified_domain_filter") ? ["Domain filtering could not be verified for the unverified search content."] : []),
+      ...(detail.answer ? [detail.answer] : []),
+    ].join("\n\n");
     return Object.freeze({
+      ...(content ? { content } : {}),
       sources: Object.freeze(detail.results.map((result) => Object.freeze({
         snippet: result.snippet,
         title: result.title,

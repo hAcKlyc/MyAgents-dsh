@@ -2,7 +2,7 @@
 
 ADRs explain durable choices that cannot be reconstructed safely from code alone. Current running architecture lives in `specs/ARCHITECTURE.md` and `specs/tech_docs/`; exact patch identity, order and removal conditions live in `specs/dsh/seam-decisions-v1.json`. Dated evidence within an ADR remains historical.
 
-The current DSH `0.2.1-rc.2` [seam registry](../dsh/seam-decisions-v1.json) records sixteen seams: thirteen patches, two retired seams and one public persistence composition. The [current source review](../dsh/upstream-refresh-2026-10-23.md) explains their candidate disposition and pending final acceptance. Dated evidence in earlier reviews remains historical.
+The current DSH `0.2.1-rc.2` [seam registry](../dsh/seam-decisions-v1.json) records seventeen seams: fourteen patches, two retired seams and one public persistence composition. The [current source review](../dsh/upstream-refresh-2026-10-23.md) explains their candidate disposition and pending final acceptance. Dated evidence in earlier reviews remains historical.
 
 | Decision | Current disposition | Executable seam |
 | --- | --- | --- |
@@ -22,5 +22,6 @@ The current DSH `0.2.1-rc.2` [seam registry](../dsh/seam-decisions-v1.json) reco
 | [ADR 0013](./0013-host-neutral-time-context.md) host-neutral time context | retained and rebased | `DSH-SEAM-014`, patch 0013 |
 | [ADR 0014](./0014-session-projection-public-registration-types.md) public projection registration types | new declaration-only repair | `DSH-SEAM-015`, patch 0014 |
 | [ADR 0015](./0015-model-update-capabilities.md) exact-model conversation updates | new model-scoped configuration admission | `DSH-SEAM-016`, patch 0015 |
+| [ADR 0016](./0016-web-search-partial-results.md) retain completed Web searches | minimal native aggregation adaptation | `DSH-SEAM-017`, patch 0016 |
 
 An official DSH update does not silently carry these decisions forward. Use the repository maintenance skill, inspect the exact current upstream seam, and classify every patch as retire, reduce, or rebase. Update the ADR disposition, generated seam registry, patch bytes, artifacts, Runtime/platform evidence, and Host handoff as one attributable chain.

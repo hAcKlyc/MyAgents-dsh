@@ -170,6 +170,8 @@ The pi-ai `1.1.0` source distribution separately carries DSH's deferred streamed
 
 Native `web_search` selects either the optional Host canonical-web capability or the explicit direct DeepSeek backend. Both DeepSeek backends use the dedicated Search API without an auxiliary model turn; the existing [Web/network](./tech_docs/boundaries/web-and-network.md#5-websearch-flow) owner bounds queries, results and domain policy. Native `web_fetch` uses Runtime-owned safe HTTP and content conversion, including PDF extraction; it does not request a utility-model summary. Both traverse the same permission, Hook and operation pipeline. Web availability never gates base model admission. Provider-owned server-tool blocks stay durable assistant content and project as `provider_tool`; they do not become canonical tool execution. See [Web/network](./tech_docs/boundaries/web-and-network.md) for transport, result and proxy ownership.
 
+Native WebSearch aggregation retains completed queries and reports partial failures through its existing content and replay fields. A batch without any completed query remains a tool failure; completed zero-hit searches remain successful. Cancellation drains all requests before publishing a terminal result. [Web/network](./tech_docs/boundaries/web-and-network.md#5-websearch-flow) owns these boundaries and the recorded native adaptation.
+
 ### 4.5 DSH foundation
 
 The official profile directly consumes pinned public DSH packages for:
