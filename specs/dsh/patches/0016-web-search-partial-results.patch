@@ -1,8 +1,8 @@
 diff --git a/packages/web/tool-web/src/search.ts b/packages/web/tool-web/src/search.ts
-index deaad1b48dfd6441e8c6bbeace8d68a6f8ff1e4a..076d37114549525b06a34f2000d911435331503a 100644
+index f0bf05242112ef60846c5797ae928670537db7dc..3a1b3b270627fc016f4057aa3f18034106c31e94 100644
 --- a/packages/web/tool-web/src/search.ts
 +++ b/packages/web/tool-web/src/search.ts
-@@ -218,9 +218,9 @@
+@@ -251,9 +251,9 @@ export function presentSearchResult(args: WebSearchArgs, result: ToolResult): We
  /**
   * Run one or more searches through the web seam. A single query keeps the
   * provider's exact result; multiple queries run concurrently and are merged
@@ -15,9 +15,9 @@ index deaad1b48dfd6441e8c6bbeace8d68a6f8ff1e4a..076d37114549525b06a34f2000d91143
   *
   * @param ctx - context whose `web` service performs the searches.
   * @param queries - validated non-empty queries.
-@@ -237,22 +237,28 @@
+@@ -273,22 +273,28 @@ async function runSearchQueries(
    if (queries.length === 1) {
-     return ctx.web.search({ query: queries[0] as string, maxResults }, signal)
+     return ctx.web.search({ query: queries[0] as string, maxResults, ...route }, signal)
    }
 -  const controller = new AbortController()
 -  const batchSignal = AbortSignal.any([signal, controller.signal])
@@ -25,7 +25,7 @@ index deaad1b48dfd6441e8c6bbeace8d68a6f8ff1e4a..076d37114549525b06a34f2000d91143
 -  const results: WebSearchResult[] = []
 -  const searches = queries.map(async (query, index) => {
 -    try {
--      results[index] = await ctx.web.search({ query, maxResults }, batchSignal)
+-      results[index] = await ctx.web.search({ query, maxResults, ...route }, batchSignal)
 -    } catch (error) {
 -      if (firstFailure === undefined) firstFailure = { error }
 -      controller.abort(error)
@@ -36,7 +36,7 @@ index deaad1b48dfd6441e8c6bbeace8d68a6f8ff1e4a..076d37114549525b06a34f2000d91143
 -  if (firstFailure !== undefined) throw firstFailure.error
 -  return mergeSearchResults(queries, results, maxResults)
 +  const settled = await Promise.allSettled(queries.map(async query =>
-+    ctx.web.search({ query, maxResults }, signal)))
++    ctx.web.search({ query, maxResults, ...route }, signal)))
 +  signal.throwIfAborted()
 +  const completed = settled.flatMap((result, index) => result.status === 'fulfilled'
 +    ? [{ query: queries[index] as string, result: result.value }] : [])
@@ -61,10 +61,10 @@ index deaad1b48dfd6441e8c6bbeace8d68a6f8ff1e4a..076d37114549525b06a34f2000d91143
  
  /** Merge per-query results into one deduplicated, round-robin, capped result. */
 diff --git a/packages/web/tool-web/tests/tool-web.spec.ts b/packages/web/tool-web/tests/tool-web.spec.ts
-index ee1b47898b8b2f5374d720b59edb29743ce706a9..3505b8af45fde839b827ef9e773c1f34837dd2e2 100644
+index 9b9866fbe3f135afdee3e1314ab7f08a6bee7a21..7e69bc1c1cc904053a2360766f32f49245e11a77 100644
 --- a/packages/web/tool-web/tests/tool-web.spec.ts
 +++ b/packages/web/tool-web/tests/tool-web.spec.ts
-@@ -595,7 +595,7 @@
+@@ -648,7 +648,7 @@ describe('tool-web execution through the real registry', () => {
      await fiber.dispose()
    })
  
@@ -73,7 +73,7 @@ index ee1b47898b8b2f5374d720b59edb29743ce706a9..3505b8af45fde839b827ef9e773c1f34
      let siblingAborted = false
      let releaseSibling: (() => void) | undefined
      const provider: WebSearchProvider = {
-@@ -603,8 +603,8 @@
+@@ -656,8 +656,8 @@ describe('tool-web execution through the real registry', () => {
        available: () => available,
        search: (request, signal) => {
          if (request.query === 'one') return Promise.reject(new Error('first search failed'))
@@ -84,7 +84,7 @@ index ee1b47898b8b2f5374d720b59edb29743ce706a9..3505b8af45fde839b827ef9e773c1f34
            signal?.addEventListener('abort', () => {
              siblingAborted = true
            }, { once: true })
-@@ -616,15 +616,42 @@
+@@ -669,15 +669,42 @@ describe('tool-web execution through the real registry', () => {
      let callSettled = false
      void pending.then(() => { callSettled = true })
      try {
@@ -129,8 +129,8 @@ index ee1b47898b8b2f5374d720b59edb29743ce706a9..3505b8af45fde839b827ef9e773c1f34
      await fiber.dispose()
    })
  
-@@ -796,7 +823,7 @@
-     const pending = ctx.tools.execute({ callId: ToolCallId('search-multi-1'), name: 'web_search', arguments: { queries: ['one', 'two'] }, signal: controller.signal })
+@@ -896,7 +923,7 @@ describe('tool-web execution through the real registry', () => {
+     const pending = executeInStep(ctx, agent, { callId: ToolCallId('search-multi-1'), name: 'web_search', arguments: { queries: ['one', 'two'] }, signal: controller.signal })
      await vi.waitFor(() => { expect(signals).toHaveLength(2) })
      expect(signals[0]).toBe(signals[1])
 -    expect(signals[0]).not.toBe(controller.signal)

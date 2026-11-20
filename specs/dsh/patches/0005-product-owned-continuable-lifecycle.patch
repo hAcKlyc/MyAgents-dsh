@@ -1,5 +1,5 @@
 diff --git a/packages/subagent/subagent/src/child-agent.ts b/packages/subagent/subagent/src/child-agent.ts
-index f9bd96125d871977bf318846905eb1f56ed238aa..aabe90389e67c17b76c5e046fa65ba7a3d973e6f 100644
+index 98ebfc9d5d03f680b853d33dd1bd85ecd1157a56..6a3fa0b46543c47c1cb7035820886bfc69c3857d 100644
 --- a/packages/subagent/subagent/src/child-agent.ts
 +++ b/packages/subagent/subagent/src/child-agent.ts
 @@ -164,15 +164,14 @@ export interface ChildComposition {
@@ -23,7 +23,7 @@ index f9bd96125d871977bf318846905eb1f56ed238aa..aabe90389e67c17b76c5e046fa65ba7a
  /**
   * Compose a child before publication and restore historical descriptor overrides.
 diff --git a/packages/subagent/subagent/src/descriptor.ts b/packages/subagent/subagent/src/descriptor.ts
-index 4b68a64852cda8403bae1ec1903558590c17f704..d2fe55010188a258a1d761d74297922902e5d9ff 100644
+index cc2158daaf0913ee5babb98a3504e2a9c0a8facf..2c6cb20ca4be479de13c95394cac12f1b6b3fa41 100644
 --- a/packages/subagent/subagent/src/descriptor.ts
 +++ b/packages/subagent/subagent/src/descriptor.ts
 @@ -83,6 +83,8 @@ export interface ContinuableSubagentDescriptorData extends SubagentDescriptorBas
@@ -112,27 +112,27 @@ index 4b68a64852cda8403bae1ec1903558590c17f704..d2fe55010188a258a1d761d742979229
   * @throws when a current-version persisted payload does not match its complete
   *   declared schema.
 diff --git a/packages/subagent/subagent/src/manager.ts b/packages/subagent/subagent/src/manager.ts
-index b89732c29efa589f02d3f363a84cf0e93ce780fa..9377c41480a0822c6291f5a9e1e4a2f49ea6fcd1 100644
+index 7d622b777aa30368a53b12246a9c62367138b394..ac7a92abd20fb0a5fa6d02fa996bff045600da85 100644
 --- a/packages/subagent/subagent/src/manager.ts
 +++ b/packages/subagent/subagent/src/manager.ts
-@@ -1353,6 +1353,12 @@ export class SubagentManager {
-         'NOT_RESUMABLE',
-       )
-     }
-+    if (descriptor.settlementDelivery === 'external') {
-+      throw new SubagentError(
-+        `subagent "${childId}" belongs to a historical external settlement owner and is read-only`,
-+        'NOT_RESUMABLE',
-+      )
-+    }
-     let activation: Activation
-     try {
-       const independentlySelected = hasIndependentPresetSelection(ownEvents)
+@@ -1227,6 +1227,12 @@ export class SubagentManager {
+           'NOT_RESUMABLE',
+         )
+       }
++      if (descriptor.settlementDelivery === 'external') {
++        throw new SubagentError(
++          `subagent "${childId}" belongs to a historical external settlement owner and is read-only`,
++          'NOT_RESUMABLE',
++        )
++      }
+       const { ancestors, path } = await this.resolveCreationAncestry(source, signal, root)
+       let activation: Activation
+       try {
 diff --git a/packages/subagent/subagent/src/projection.ts b/packages/subagent/subagent/src/projection.ts
-index 541721f2c17948ba68cadf0c5c4a0a2cf7f5d427..0b484ebb8fedf94d9ea0ea2446facf817573ec77 100644
+index 3fe2eacc285b41e96e744a8a0dadd33e06f63cc2..d8daaee6a11f542b78f35d0034c2ba44ba2e6980 100644
 --- a/packages/subagent/subagent/src/projection.ts
 +++ b/packages/subagent/subagent/src/projection.ts
-@@ -184,7 +184,7 @@ export const subagentIdentityProjectionDefinition = {
+@@ -178,7 +178,7 @@ export const subagentIdentityProjectionDefinition = {
      return identity === undefined ? {} : { identity }
    },
    wire: { viewSchema: identitySchema, view: state => state.identity ?? null },
@@ -144,7 +144,7 @@ index 541721f2c17948ba68cadf0c5c4a0a2cf7f5d427..0b484ebb8fedf94d9ea0ea2446facf81
 +  stateVersion: 3,
  } satisfies ProjectionDefinition<'subagent', IdentityState>
 diff --git a/packages/subagent/subagent/tests/activation-policy.spec.ts b/packages/subagent/subagent/tests/activation-policy.spec.ts
-index 38d9d44005a9388664de93ee0911a9554fa3944a..bdd075237e16916f41e3d92399a77a91cfde5293 100644
+index e061c840c34e77d86abc21248899388fabb65fa5..956cbd4cf53e566cce86b382498101c6588c1c21 100644
 --- a/packages/subagent/subagent/tests/activation-policy.spec.ts
 +++ b/packages/subagent/subagent/tests/activation-policy.spec.ts
 @@ -17,7 +17,7 @@ import type { ContentBlock } from '@deepseek-ai/dsh-llm'
@@ -210,17 +210,17 @@ index 38d9d44005a9388664de93ee0911a9554fa3944a..bdd075237e16916f41e3d92399a77a91
 +        .filter((block): block is Extract<ContentBlock, { type: 'text' }> => block.type === 'text')
 +        .map(block => block.text).join('\n')
 +      expect(contextText).toContain('You are a delegated subagent')
-+      expect(contextText).toContain(policy === 'never' ? 'Approval prompts are disabled' : 'Approval policy: ask.')
++      expect(contextText).toContain(policy === 'never' ? 'Approval prompts are disabled' : 'Approval prompts are enabled')
 +      expect(contextText).not.toContain('operations that require approval are rejected automatically')
      } finally {
        await run.dispose()
      }
 diff --git a/packages/subagent/subagent/tests/legacy-descriptor.spec.ts b/packages/subagent/subagent/tests/legacy-descriptor.spec.ts
 new file mode 100644
-index 0000000000000000000000000000000000000000..51fce255181d95d3119bb3a3f5675a0eb6c8094e
+index 0000000000000000000000000000000000000000..28442359fef4317c7ed1bfcdf83841b84ef015a3
 --- /dev/null
 +++ b/packages/subagent/subagent/tests/legacy-descriptor.spec.ts
-@@ -0,0 +1,84 @@
+@@ -0,0 +1,86 @@
 +import { afterEach, describe, expect, it, vi } from 'vitest'
 +import { mkdtemp, rm } from 'node:fs/promises'
 +import { tmpdir } from 'node:os'
@@ -231,7 +231,6 @@ index 0000000000000000000000000000000000000000..51fce255181d95d3119bb3a3f5675a0e
 +import { SessionId, type SessionEvent } from '@deepseek-ai/dsh-session'
 +import * as JsonlSessionPersistence from '@deepseek-ai/dsh-session-persistence-jsonl'
 +import SubagentRuntime, { foldSubagentDescriptor, snapshotSubagentDescriptor } from '../src/index.ts'
-+import { queueHostSubagentPrompt } from '../src/internal.ts'
 +import { MockAdapter, textResponse } from '../../../core/agent-loop/tests/mock-adapter.ts'
 +import { TestSessionQuery } from './test-session-query.ts'
 +import { mountWorkingDirectoryFixture } from './working-directory-fixture.ts'
@@ -264,10 +263,13 @@ index 0000000000000000000000000000000000000000..51fce255181d95d3119bb3a3f5675a0e
 +  handle.agent.session.append('turn/end', { turn: 1, reason: { kind: 'completed' } })
 +  await ctx.sessions.flush(handle.agent.session)
 +  const childId = handle.agent.id
++  parent.session.append('subagent/catalog', { version: 0, mode: 'continuable', childId,
++    childCreatedAt: handle.agent.session.header.createdAt, label: 'released child' })
++  await ctx.sessions.flush(parent.session)
 +  await handle.dispose()
 +  return { ctx, parent, childId, adapter,
-+    send: () => queueHostSubagentPrompt(ctx.subagents, parent, childId,
-+      [{ type: 'text', text: 'continue legacy work' }], { kind: 'user' }, new AbortController().signal) }
++    send: () => ctx.subagents.sendMessage(parent, childId,
++      [{ type: 'text', text: 'continue legacy work' }], { signal: new AbortController().signal }) }
 +}
 +
 +describe('released MyAgents descriptor compatibility', () => {

@@ -2066,7 +2066,7 @@ export class SdkOperationService extends Service {
     this.assertHealthy();
     const previous = this.primaryAgentValue;
     if (previous === undefined) return;
-    if (previous === agent || this.ctx.agents.get(previous.id) === previous
+    if (previous === agent || this.ctx.sessions.get(previous.id) === previous.session
       || this.acceptingValue || this.cancellationReasonsValue.size !== 0
       || this.pendingRequestContextSeqs.size !== 0
       || (this.childSettlementValue !== undefined && !this.childSettlementValue.settled)) {

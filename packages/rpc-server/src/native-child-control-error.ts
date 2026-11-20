@@ -12,7 +12,6 @@ export function rethrowNativeChildControlError(error: unknown): never {
           "This child has no supported continuation state. Historical externally owned children are read-only.");
       case "subagent/unauthorized":
         throw new ProtocolError("subagent_unauthorized", "The child does not belong to the addressed parent.");
-      case "subagent/parent-unavailable":
       case "subagent/delivery-unavailable":
         throw new ProtocolError("subagent_unavailable", "The native child or its parent is temporarily unavailable.", true);
       case "gateway/cancelled":

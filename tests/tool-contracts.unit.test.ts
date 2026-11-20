@@ -79,7 +79,7 @@ describe("canonical tool contract authority", () => {
     expect(CANONICAL_TOOL_CONTRACTS.Agent.sideEffect).toBe("delegation");
     expect(CANONICAL_TOOL_CONTRACTS.SendMessage.sideEffect).toBe("delegation");
     expect(CANONICAL_TOOL_CONTRACTS.AskUserQuestion.timeoutMs).toBeUndefined();
-    expect(CANONICAL_TOOL_CONTRACTS.Agent.inputSchema.properties).not.toHaveProperty("name");
+    expect(CANONICAL_TOOL_CONTRACTS.Agent.inputSchema.properties).toHaveProperty("name");
     expect(CANONICAL_TOOL_NAMES.filter((name) =>
       CANONICAL_TOOL_CONTRACTS[name].planPolicy.mode === "managed-plan-file-only")).toEqual(["Write", "Edit"]);
     expect(CANONICAL_TOOL_NAMES.filter((name) =>

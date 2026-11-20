@@ -8041,7 +8041,7 @@
                 "type": "string"
               },
               "distributionVersion": {
-                "const": "0.1.23",
+                "const": "0.1.24",
                 "type": "string"
               },
               "name": {
@@ -8049,7 +8049,7 @@
                 "type": "string"
               },
               "version": {
-                "const": "0.2.1-rc.2.myagents.687f282e8625.e5a10cf9cb87",
+                "const": "0.2.2-rc.5.myagents.9c2670d3bce5.87972f9c8ecd",
                 "type": "string"
               }
             },
@@ -8068,7 +8068,7 @@
             "type": "string"
           },
           "runtimeVersion": {
-            "const": "0.1.23",
+            "const": "0.1.24",
             "type": "string"
           },
           "schemaSha256": {
@@ -10960,7 +10960,7 @@
                 "additionalProperties": false,
                 "properties": {
                   "contractSha256": {
-                    "const": "2c94637da82a6f839b51fdc62eaade4538d562abea104776c6377702ab4a92dd",
+                    "const": "e44f610ee1e9f569393b9f2fb18f7cec1098b32c680af24eb761bfd6301cb20e",
                     "type": "string"
                   },
                   "diagnostics": {
@@ -12057,6 +12057,53 @@
                                 "type": "boolean"
                               },
                               "tool": {
+                                "const": "wait_agent",
+                                "type": "string"
+                              }
+                            },
+                            "required": [
+                              "tool",
+                              "available"
+                            ],
+                            "type": "object"
+                          },
+                          {
+                            "additionalProperties": false,
+                            "properties": {
+                              "available": {
+                                "const": false,
+                                "type": "boolean"
+                              },
+                              "reasonCode": {
+                                "maxLength": 256,
+                                "minLength": 1,
+                                "pattern": "^[^\\u0000-\\u001F\\u007F]+$",
+                                "type": "string"
+                              },
+                              "tool": {
+                                "const": "wait_agent",
+                                "type": "string"
+                              }
+                            },
+                            "required": [
+                              "tool",
+                              "available",
+                              "reasonCode"
+                            ],
+                            "type": "object"
+                          }
+                        ]
+                      },
+                      {
+                        "anyOf": [
+                          {
+                            "additionalProperties": false,
+                            "properties": {
+                              "available": {
+                                "const": true,
+                                "type": "boolean"
+                              },
+                              "tool": {
                                 "const": "TaskCreate",
                                 "type": "string"
                               }
@@ -12236,7 +12283,7 @@
                         ]
                       }
                     ],
-                    "minItems": 27,
+                    "minItems": 28,
                     "type": "array"
                   },
                   "digest": {
@@ -12339,6 +12386,10 @@
                           "type": "string"
                         },
                         {
+                          "const": "wait_agent",
+                          "type": "string"
+                        },
+                        {
                           "const": "TaskCreate",
                           "type": "string"
                         },
@@ -12356,7 +12407,7 @@
                         }
                       ]
                     },
-                    "maxItems": 27,
+                    "maxItems": 28,
                     "type": "array",
                     "uniqueItems": true
                   },
@@ -12460,6 +12511,10 @@
                         "type": "string"
                       },
                       {
+                        "const": "wait_agent",
+                        "type": "string"
+                      },
+                      {
                         "const": "TaskCreate",
                         "type": "string"
                       },
@@ -12476,7 +12531,7 @@
                         "type": "string"
                       }
                     ],
-                    "minItems": 27,
+                    "minItems": 28,
                     "type": "array"
                   },
                   "revision": {
@@ -15247,7 +15302,7 @@
                 "additionalProperties": false,
                 "properties": {
                   "contractSha256": {
-                    "const": "2c94637da82a6f839b51fdc62eaade4538d562abea104776c6377702ab4a92dd",
+                    "const": "e44f610ee1e9f569393b9f2fb18f7cec1098b32c680af24eb761bfd6301cb20e",
                     "type": "string"
                   },
                   "diagnostics": {
@@ -16344,6 +16399,53 @@
                                 "type": "boolean"
                               },
                               "tool": {
+                                "const": "wait_agent",
+                                "type": "string"
+                              }
+                            },
+                            "required": [
+                              "tool",
+                              "available"
+                            ],
+                            "type": "object"
+                          },
+                          {
+                            "additionalProperties": false,
+                            "properties": {
+                              "available": {
+                                "const": false,
+                                "type": "boolean"
+                              },
+                              "reasonCode": {
+                                "maxLength": 256,
+                                "minLength": 1,
+                                "pattern": "^[^\\u0000-\\u001F\\u007F]+$",
+                                "type": "string"
+                              },
+                              "tool": {
+                                "const": "wait_agent",
+                                "type": "string"
+                              }
+                            },
+                            "required": [
+                              "tool",
+                              "available",
+                              "reasonCode"
+                            ],
+                            "type": "object"
+                          }
+                        ]
+                      },
+                      {
+                        "anyOf": [
+                          {
+                            "additionalProperties": false,
+                            "properties": {
+                              "available": {
+                                "const": true,
+                                "type": "boolean"
+                              },
+                              "tool": {
                                 "const": "TaskCreate",
                                 "type": "string"
                               }
@@ -16523,7 +16625,7 @@
                         ]
                       }
                     ],
-                    "minItems": 27,
+                    "minItems": 28,
                     "type": "array"
                   },
                   "digest": {
@@ -16626,6 +16728,10 @@
                           "type": "string"
                         },
                         {
+                          "const": "wait_agent",
+                          "type": "string"
+                        },
+                        {
                           "const": "TaskCreate",
                           "type": "string"
                         },
@@ -16643,7 +16749,7 @@
                         }
                       ]
                     },
-                    "maxItems": 27,
+                    "maxItems": 28,
                     "type": "array",
                     "uniqueItems": true
                   },
@@ -16747,6 +16853,10 @@
                         "type": "string"
                       },
                       {
+                        "const": "wait_agent",
+                        "type": "string"
+                      },
+                      {
                         "const": "TaskCreate",
                         "type": "string"
                       },
@@ -16763,7 +16873,7 @@
                         "type": "string"
                       }
                     ],
-                    "minItems": 27,
+                    "minItems": 28,
                     "type": "array"
                   },
                   "revision": {

@@ -1,3 +1,5 @@
+import * as NativeToolExecutor from "@deepseek-ai/dsh-tool-executor-native";
+import { executeToolFixture } from "@deepseek-ai/dsh-tool-testkit";
 import { createHook } from "node:async_hooks";
 import { modelToolNames } from "@myagents-dsh/protocol";
 import { Context } from "@deepseek-ai/cordis";
@@ -100,9 +102,11 @@ const mounted = async (options: MountedOptions = {}) => {
   const context = new Context();
   contexts.push(context);
   await context.plugin(SessionStore);
+  await context.plugin(SessionProjectionRegistry);
   await context.plugin(AgentRegistry);
   await context.plugin(SystemPrompt);
-  await context.plugin(ToolRuntime, { mode: "native" });
+  await context.plugin(ToolRuntime);
+  await context.plugin(NativeToolExecutor);
   await context.plugin(ToolCallTimeoutPolicy);
   await context.plugin(ApprovalService, { policy: "ask" });
   await context.plugin(UserQuestionService);
@@ -110,7 +114,6 @@ const mounted = async (options: MountedOptions = {}) => {
   await context.plugin(LocalWorkspaceFileSystem, {
     platform: selectPlatformAdapter(`${process.platform}-${process.arch}`),
   });
-  await context.plugin(SessionProjectionRegistry);
   await context.plugin(WorkingDirectoryService, { defaultDirectory: workspace });
 
   const environment = Object.freeze({
@@ -148,7 +151,7 @@ const mounted = async (options: MountedOptions = {}) => {
   const session = context.sessions.create(SessionId("interaction-plan-session"));
   session.append("turn/start", { turn: 1 });
   const agent = Object.freeze({ ctx: context, id: "interaction-plan-session", session }) as unknown as Agent;
-  context.agents.enter(agent, undefined);
+  context.agents.enter(agent);
 
   const questionResponders: QuestionResponder[] = [];
   const questionRequests: AskUserQuestionRequest[] = [];
@@ -277,7 +280,7 @@ const mounted = async (options: MountedOptions = {}) => {
     signal = new AbortController().signal,
   ) => {
     callNumber += 1;
-    return await context.tools.execute({
+    return await executeToolFixture(context, {
       agent,
       arguments: argumentsValue,
       callId: ToolCallId(`plan-call-${callNumber}`),
@@ -838,9 +841,9 @@ describe("canonical interaction and DSH-backed plan mode", () => {
       id: "interaction-plan-child",
       session: childSession,
     }) as unknown as Agent;
-    state.context.agents.enter(child, state.agent);
+    state.context.agents.enter(child);
     const childCall = ToolCallId("child-plan-entry-call");
-    const childEntry = await state.context.tools.execute({
+    const childEntry = await executeToolFixture(state.context, {
       agent: child,
       arguments: {},
       callId: childCall,
@@ -851,7 +854,7 @@ describe("canonical interaction and DSH-backed plan mode", () => {
     expect(childEntry.isError).toBe(true);
     const questionCount = state.questionRequests.length;
     const childAskCall = ToolCallId("child-plan-question-call");
-    const childAsk = await state.context.tools.execute({
+    const childAsk = await executeToolFixture(state.context, {
       agent: child,
       arguments: {
         questions: [{

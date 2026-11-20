@@ -36,7 +36,7 @@ export const compilePatchedDshSeams = (
   disposeAgentGuard();
   const woke: boolean | undefined = agent.wakePending?.(messageId);
   void woke;
-  const waitForChildren = ctx.subagents.waitForChildren;
+  const waitForChildren = ctx.subagents.waitForTreeWork;
   const drainDescendants = ctx.subagents.drainDescendants;
   const startActivation = ctx.subagents.startActivation;
   const settlementDelivery: ContinuableSubagentDescriptorData["settlementDelivery"] = "external";

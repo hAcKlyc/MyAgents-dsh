@@ -1,12 +1,22 @@
 # ADR 0014 — Keep public projection registration valid with client-only types
 
-- Status: accepted candidate adaptation; fresh packed consumer verification required
+- Status: superseded in the 0.2.2-rc.5 candidate by the public typed registration handle
 - Date: 2026-10-23
 - Seam: `DSH-SEAM-015`
 - Patch: `0014-session-projection-public-types.patch`
 
 The [seam registry](../dsh/seam-decisions-v1.json) owns exact DSH `0.2.1-rc.2` source,
 blob and patch identities. This is a declaration-only repair; it adds no runtime owner or behavior.
+
+## RC.5 migration
+
+RC.5 infers private fold state from its registered schema and returns an awaited,
+typed handle for that registration. A consumer can import client-only views
+without declaring a private state map. Product readers use the returned handle.
+The strict consumer fixture covers a client-only view, a visible registered view,
+a host-only registration, missing wire definitions, and incompatible initial state.
+The public declarations compile with library checking enabled. The fixture is
+also part of the clean packed consumer gate.
 
 ## Context
 

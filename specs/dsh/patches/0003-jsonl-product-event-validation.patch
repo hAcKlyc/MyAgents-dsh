@@ -1,5 +1,5 @@
 diff --git a/packages/session/session-persistence-jsonl/README.md b/packages/session/session-persistence-jsonl/README.md
-index 5782c614689a590f95cf0370bac9d55af44e3c7d..5cbc0e506edc282505cd97a568c961f5f05b29a2 100644
+index 2de63df367a24722812b7cd494a2fb0b6ba5d8cc..57d23c428281f16336bcfadbd62413c42416b7ba 100644
 --- a/packages/session/session-persistence-jsonl/README.md
 +++ b/packages/session/session-persistence-jsonl/README.md
 @@ -179,3 +179,5 @@ These limits define when this backend is a poor fit or needs special operational
@@ -9,7 +9,7 @@ index 5782c614689a590f95cf0370bac9d55af44e3c7d..5cbc0e506edc282505cd97a568c961f5
 +
 +Trusted builders may use `withStoredEventValidation(validator)` to recognize additional required event payloads. The callback receives immutable non-native events, returns true only after complete validation, and throws for malformed known extensions even when ignorable. Native events always retain native validation. The factory uses the same plugin lifecycle and ordered consumer/tracker teardown as stock JSONL; it exposes no backend class or tracker.
 diff --git a/packages/session/session-persistence-jsonl/src/index.ts b/packages/session/session-persistence-jsonl/src/index.ts
-index 3c3c13589fbcf74842ba8090a74e2d12e7baad79..bb370f24c97cdc79c1e0b0895818497080a33aa7 100644
+index f8351fa9ee75db9790859de9672d1602c0c05664..3f3e0fee274ecfa89e605e3d2c2efc54e0130671 100644
 --- a/packages/session/session-persistence-jsonl/src/index.ts
 +++ b/packages/session/session-persistence-jsonl/src/index.ts
 @@ -34,7 +34,7 @@ import {
@@ -64,7 +64,7 @@ index 3c3c13589fbcf74842ba8090a74e2d12e7baad79..bb370f24c97cdc79c1e0b08958184970
    // --- SessionPersistence service API ---
  
    /**
-@@ -725,7 +752,7 @@ class JsonlSessionPersistence extends SessionPersistence {
+@@ -727,7 +754,7 @@ class JsonlSessionPersistence extends SessionPersistence {
      const meta = this.currentHeader(prepared.artifact.header)
      assertStoredId(id, meta)
      const events = prepared.artifact.events as SessionEvent[]
@@ -73,7 +73,7 @@ index 3c3c13589fbcf74842ba8090a74e2d12e7baad79..bb370f24c97cdc79c1e0b08958184970
      const stored: PreparedStoredLog = {
        status: 'prepared',
        validateRelatedSources,
-@@ -857,7 +884,7 @@ class JsonlSessionPersistence extends SessionPersistence {
+@@ -859,7 +886,7 @@ class JsonlSessionPersistence extends SessionPersistence {
      signal?.throwIfAborted()
      assertStoredId(expectedId, parsed.meta)
      const location = this.locate(parsed.meta)
@@ -82,7 +82,7 @@ index 3c3c13589fbcf74842ba8090a74e2d12e7baad79..bb370f24c97cdc79c1e0b08958184970
      const { events, ...rest } = parsed
      const stored: CurrentStoredLog = {
        status: 'current',
-@@ -1820,6 +1847,37 @@ export const Config: z<Config> = z.object({
+@@ -1822,6 +1849,37 @@ export const Config: z<Config> = z.object({
   * @returns resolves when the service is ready.
   */
  export async function apply(ctx: Context, config: Config): Promise<void> {
@@ -120,7 +120,7 @@ index 3c3c13589fbcf74842ba8090a74e2d12e7baad79..bb370f24c97cdc79c1e0b08958184970
    let service!: Fiber
    // Keep this generator synchronous so thenable disposers are registered as functions, not awaited.
    ctx.effect(function* () {
-@@ -1828,7 +1886,7 @@ export async function apply(ctx: Context, config: Config): Promise<void> {
+@@ -1830,7 +1888,7 @@ export async function apply(ctx: Context, config: Config): Promise<void> {
      service = ctx.plugin({
        name: 'session-persistence-jsonl-service',
        apply(serviceCtx: Context) {
@@ -216,7 +216,7 @@ index 0000000000000000000000000000000000000000..adc993a45499361ce5f7053330f6917c
 +  })
 +})
 diff --git a/packages/session/session-persistence-jsonl/tests/teardown-loader.e2e.ts b/packages/session/session-persistence-jsonl/tests/teardown-loader.e2e.ts
-index e8f301a85109f857cd03bda0867c97f6126747e0..d7dfd4c7684162296ae0aab04eb338d86033705f 100644
+index b06980f01490064196006d20e53e224fe69c2915..ceb9e321980e2377d14c9f57a07f52e085ee7371 100644
 --- a/packages/session/session-persistence-jsonl/tests/teardown-loader.e2e.ts
 +++ b/packages/session/session-persistence-jsonl/tests/teardown-loader.e2e.ts
 @@ -14,7 +14,7 @@ import { pathToFileURL } from 'node:url'

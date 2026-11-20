@@ -19,6 +19,8 @@ const expectedRuntimePackageNames = Object.freeze([
   "@deepseek-ai/dsh-compaction-tool-result-pruner",
   "@deepseek-ai/dsh-fs-local",
   "@deepseek-ai/dsh-fs-sandbox",
+  "@deepseek-ai/dsh-tool-executor-native",
+  "@deepseek-ai/dsh-tool-executor-ptc",
   "@deepseek-ai/dsh-tool-fs",
   "@deepseek-ai/dsh-jobs",
   "@deepseek-ai/dsh-jobs-local",
@@ -68,7 +70,7 @@ export interface AcceptedPatchedDshArtifactAuthority {
   readonly manifestSha256: string;
   readonly sha256SumsSha256: string;
   readonly consumerLockSha256: string;
-  readonly packageCount: 104;
+  readonly packageCount: 111;
   readonly runtimePackages: Readonly<Record<AcceptedDshRuntimePackageName, string>>;
   readonly requiredPatchedSeams: readonly [
     "agent.wakePending",
@@ -86,9 +88,9 @@ export interface AcceptedPatchedDshArtifactAuthority {
     "fs-local.beforePublish",
     "fs-local.createParents",
     "timeContext.hostNeutralPolicy",
-    "sessionProjections.stateBoundRegistration",
     "llm-pi-ai.modelConversationUpdates",
     "tool-web.partialSearchResults",
+    "subagents.queueHostPrompt",
   ];
 }
 
@@ -122,7 +124,7 @@ const buildAcceptedAuthority = (value: unknown): AcceptedPatchedDshArtifactAutho
     "runtimePackages",
     "requiredPatchedSeams",
   ], "accepted patched DSH artifact authority");
-  if (authority.formatVersion !== 1 || authority.packageCount !== 104
+  if (authority.formatVersion !== 1 || authority.packageCount !== 111
     || typeof authority.artifactVersion !== "string"
     || !/^\d+\.\d+\.\d+-rc\.\d+\.myagents\.[a-f0-9]{12}\.[a-f0-9]{12}$/u.test(authority.artifactVersion)) {
     throw new TypeError("accepted patched DSH artifact identity is invalid");
@@ -134,7 +136,7 @@ const buildAcceptedAuthority = (value: unknown): AcceptedPatchedDshArtifactAutho
   const runtimePackages = runtimeValue as Record<string, unknown>;
   exactKeys(runtimePackages, expectedRuntimePackageNames, "accepted patched DSH runtime package authority");
   for (const name of expectedRuntimePackageNames) {
-    const expectedVersion = name === "@deepseek-ai/cordis" ? "4.0.5" : authority.artifactVersion;
+    const expectedVersion = name === "@deepseek-ai/cordis" ? "4.1.0" : authority.artifactVersion;
     if (runtimePackages[name] !== expectedVersion) {
       throw new TypeError(`${name} differs from the accepted patched DSH artifact version`);
     }
@@ -156,9 +158,9 @@ const buildAcceptedAuthority = (value: unknown): AcceptedPatchedDshArtifactAutho
     "fs-local.beforePublish",
     "fs-local.createParents",
     "timeContext.hostNeutralPolicy",
-    "sessionProjections.stateBoundRegistration",
     "llm-pi-ai.modelConversationUpdates",
     "tool-web.partialSearchResults",
+    "subagents.queueHostPrompt",
   ];
   if (!Array.isArray(requiredPatchedSeams)
     || JSON.stringify(requiredPatchedSeams) !== JSON.stringify(expectedSeams)) {
@@ -174,7 +176,7 @@ const buildAcceptedAuthority = (value: unknown): AcceptedPatchedDshArtifactAutho
     manifestSha256: exactSha256(authority.manifestSha256, "accepted patched DSH manifest"),
     sha256SumsSha256: exactSha256(authority.sha256SumsSha256, "accepted patched DSH SHA256SUMS"),
     consumerLockSha256: exactSha256(authority.consumerLockSha256, "accepted patched DSH consumer lock"),
-    packageCount: 104,
+    packageCount: 111,
     runtimePackages: frozenPackages,
     requiredPatchedSeams: Object.freeze(expectedSeams) as AcceptedPatchedDshArtifactAuthority["requiredPatchedSeams"],
   });

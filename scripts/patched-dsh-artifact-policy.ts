@@ -46,7 +46,7 @@ const runtimeDependencySections = Object.freeze([
 ] as const);
 
 export const PATCHED_DSH_ARTIFACT_SCHEMA_VERSION = 1;
-export const PATCHED_DSH_ARTIFACT_PACKAGE_COUNT = 104;
+export const PATCHED_DSH_ARTIFACT_PACKAGE_COUNT = 111;
 const patchedDshPnpmVersion = "11.28.5";
 export const PATCHED_DSH_EXTERNAL_ROOT_COMPATIBILITY_PACKAGES = Object.freeze([
   "@img/sharp-wasm32",
@@ -55,6 +55,10 @@ export const PATCHED_DSH_COMPILE_FIXTURES = Object.freeze([
   Object.freeze({
     sourcePath: "packages/product-profile/src/dsh-public-surface.compile.ts",
     stagedFilename: "dsh-public-surface.compile.ts",
+  }),
+  Object.freeze({
+    sourcePath: "specs/dsh/fixtures/session-projection.compile.ts.txt",
+    stagedFilename: "session-projection.compile.ts",
   }),
   Object.freeze({
     sourcePath: "specs/dsh/fixtures/patched-dsh-seams.compile.ts.txt",
@@ -478,6 +482,15 @@ export const stageDshWorkspaceManifest = (
 ): DshPackageManifest => {
   const stagedObject = structuredClone(manifest) as JsonObject;
   stagedObject.version = artifactVersion;
+  // RC.5 publishes source and maps for development. The runtime contains
+  // compiled entry points and declarations from the same source build.
+  if (Array.isArray(stagedObject.files)) {
+    stagedObject.files = stagedObject.files.filter((path: unknown) =>
+      typeof path === "string" && path !== "src" && !path.endsWith(".map"));
+  }
+  if (stagedObject.exports && typeof stagedObject.exports === "object") {
+    delete (stagedObject.exports as Record<string, unknown>)["./src/*"];
+  }
   const staged = stagedObject as DshPackageManifest;
   for (const section of dependencySections) {
     const entries = dependencyEntries(staged, section);

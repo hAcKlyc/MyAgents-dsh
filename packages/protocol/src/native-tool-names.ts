@@ -13,7 +13,7 @@ export const NATIVE_TOOL_NAMES = Object.freeze({
 } as const);
 
 export type NativeToolName = (typeof NATIVE_TOOL_NAMES)[keyof typeof NATIVE_TOOL_NAMES]
-  | "read_image" | "fork_agent" | "list_agents";
+  | "read_image" | "fork_agent" | "list_agents" | "wait_agent";
 
 const reverse: Readonly<Record<string, string>> = Object.freeze(Object.fromEntries(
   Object.entries(NATIVE_TOOL_NAMES).map(([canonical, official]) => [official, canonical]),
@@ -22,7 +22,7 @@ const reverse: Readonly<Record<string, string>> = Object.freeze(Object.fromEntri
 export const canonicalToolForModelName = (name: string): string =>
   name === "read_image" ? "Read"
     : name === "fork_agent" ? "Agent"
-      : name === "list_agents" ? "SendMessage" : reverse[name] ?? name;
+      : (name === "list_agents" || name === "wait_agent") ? "SendMessage" : reverse[name] ?? name;
 
 export const modelToolNames = <T extends string>(
   canonical: readonly T[],
@@ -31,5 +31,5 @@ export const modelToolNames = <T extends string>(
       return replacement === undefined ? [name]
         : replacement === "read" ? ["read", "read_image"]
           : replacement === "subagent" ? ["subagent", "fork_agent"]
-            : replacement === "send_message" ? ["send_message", "list_agents"] : [replacement];
+            : replacement === "send_message" ? ["send_message", "list_agents", "wait_agent"] : [replacement];
     }));

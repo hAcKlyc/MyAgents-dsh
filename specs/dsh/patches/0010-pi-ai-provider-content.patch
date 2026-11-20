@@ -1,10 +1,10 @@
 diff --git a/packages/llm/llm-pi-ai/README.md b/packages/llm/llm-pi-ai/README.md
-index af66591776a9f5c9024282613ffc717125de0437..29948120ab07779a1b6b1580e6cc96c22cb9395a 100644
+index 2bba84d774c401f2ed8c25527861125f72d33a8d..ba4ea2904a1f7b5fe065e182d7ec2e36966409fa 100644
 --- a/packages/llm/llm-pi-ai/README.md
 +++ b/packages/llm/llm-pi-ai/README.md
-@@ -184,6 +184,8 @@ The `pre-commit` hook runs `node_modules/.bin/tsx packages/llm/llm-pi-ai/scripts
+@@ -198,6 +198,8 @@ Successful assistant responses store a versioned, lossless-JSON replay state bes
  
- Successful assistant responses store a versioned, lossless-JSON replay state beside the provider and model that produced them — response-level facts plus one per-block entry per streamed block. At request time, `LlmRuntime` passes replay state only when the same adapter instance owns both routes; the adapter validates it and restores native response ids, provider signatures, and optional `providerThinkingLevel` effort metadata, keeping absent effort metadata absent. Replay validates the requested model identity against the assistant source and uses it to retain same-model signatures; provider-reported response models remain diagnostic metadata. Absent or unusable replay state degrades to provider-neutral content while preserving the assistant source’s required provider and model. pi-ai tool-call arguments are parsed objects, so the adapter parses input and re-stringifies output to the harness raw-JSON convention; pi-ai in-stream error events map to terminal `finish` chunks. Protocol conversion operates on request-local copies. Switching from A to B and back to A preserves the stored content, including empty text blocks, tool ids, original block order, and native replay metadata; unsupported signatures are omitted only from the foreign request.
+ Anthropic can bind each signed thinking block to the request prefix it was generated under: system prompt, tools, and earlier messages. Accounts and requests that enforce this check reject a request that replays a stale block. Anthropic Messages responses therefore record a SHA-256 digest of their request context as `prefixDigest`. A later Anthropic Messages request recomputes the digest of the reconstructed prefix before each replayed response and omits that response's signed and redacted thinking when the digests differ, as after compaction, tool-result pruning, image offload, or a system-prompt or tool change. Replay state without `prefixDigest`, written before this check existed, is treated the same way, which repairs conversations that already fail. Text, tool calls, and unsigned thinking remain; a response that held only signed thinking is no longer sent. Omitted thinking stays omitted on later requests. Manual thinking requires the final assistant turn of a tool round to start with a thinking block, so when a request enables thinking and the model's compat does not set `forceAdaptiveThinking`, the assistant message whose tool round the request continues with tool results keeps its thinking.
  
 +Provider-executed tool calls and results remain ordered, structured content. They never enter the client tool executor. Matching-route replay restores their raw blocks while retaining distinct requested and response model identities. This behavior requires the paired pi-ai transport extension; an unpatched transport cannot emit the extra content events.
 +
@@ -12,18 +12,31 @@ index af66591776a9f5c9024282613ffc717125de0437..29948120ab07779a1b6b1580e6cc96c2
  
  -----
 diff --git a/packages/llm/llm-pi-ai/README.zh.md b/packages/llm/llm-pi-ai/README.zh.md
-index b5e79c14a24d33ae9d1b13b8a1a81f49e6c9ed2e..b813dae2bfd65b65bf08f54d63483bda5c840246 100644
+index 9a964b8681143336d89f5401bd867fcaaf3e5378..c28f089355116ec0c6a63869c82e17ac1e5aafe5 100644
 --- a/packages/llm/llm-pi-ai/README.zh.md
 +++ b/packages/llm/llm-pi-ai/README.zh.md
-@@ -184,6 +184,8 @@ git add packages/llm/llm-pi-ai/src/provider-data.generated.ts
+@@ -198,6 +198,8 @@ git add packages/llm/llm-pi-ai/src/provider-data.generated.ts
  
- 成功 assistant 响应会存储带版本的、无损 JSON 回放状态，与产生它们的提供方和模型放在一起——响应级事实加每个流式块一条逐块条目。请求时，`LlmRuntime` 仅当同一适配器实例拥有两条路由时才传递回放状态；适配器校验它并恢复原生响应 id、提供方签名与可选的 `providerThinkingLevel` effort 元数据，缺失的 effort 元数据仍保持缺失。回放会对照 assistant 来源校验请求模型身份，并用它保留同模型签名；提供方报告的响应模型仅作为诊断元数据。回放状态缺失或无法使用时会降级为提供方无关内容，并保留 assistant 来源中必需的提供方和模型。pi-ai 工具调用参数是解析后的对象，因此适配器解析输入并重新字符串化输出，以符合 harness 原始 JSON 约定；pi-ai 流内错误事件映射为终止 `finish` 分片。 协议转换仅作用于请求副本。从 A 切换到 B 再切回 A 时，存储的内容保持完整，包括空文本块、工具 id、原始块顺序和原生回放元数据；不受支持的签名仅从发给其他协议的请求中省略。
+ Anthropic 可以将每个已签名 thinking 块绑定到生成它时的请求前缀：系统提示词、工具和此前的消息。执行此检查的账户和请求会拒绝回放过期块的请求。因此，Anthropic Messages 响应会将其请求上下文的 SHA-256 摘要记录为 `prefixDigest`。后续 Anthropic Messages 请求会在每个回放响应之前重新计算重建前缀的摘要；摘要不同时，例如在压缩、工具结果裁剪、图片卸载或系统提示词或工具变化之后，省略该响应的已签名 thinking 与 redacted thinking。不含 `prefixDigest` 的回放状态（在此检查出现之前写入）按同样方式处理，从而修复已经失败的对话。文本、工具调用和未签名 thinking 保留；只含已签名 thinking 的响应不再发送。已省略的 thinking 在后续请求中保持省略。手动思考要求工具轮次的最后一个 assistant 轮次以 thinking 块开头，因此当请求启用 thinking 且模型的 compat 未设置 `forceAdaptiveThinking` 时，请求以工具结果延续的工具轮次对应的 assistant 消息会保留其 thinking。
  
 +提供方执行的工具调用与结果保持有序的结构化内容，绝不进入客户端工具执行器。匹配路由的回放恢复原始块，同时保留请求模型与响应模型的独立标识。该行为依赖配套的 pi-ai 传输扩展；未打补丁的传输无法发出额外内容事件。
 +
  </details>
  
  -----
+diff --git a/packages/llm/llm-pi-ai/src/prefix-binding.ts b/packages/llm/llm-pi-ai/src/prefix-binding.ts
+index 9ca530c33932cb4f02e3a0f4096db979eaf76f4e..97305d5888e1bf56da5012263cd0e78747ba591a 100644
+--- a/packages/llm/llm-pi-ai/src/prefix-binding.ts
++++ b/packages/llm/llm-pi-ai/src/prefix-binding.ts
+@@ -23,7 +23,7 @@ import { createHash } from 'node:crypto'
+ import type { Api, AssistantMessage, Context as PiContext } from '@earendil-works/pi-ai'
+ 
+ /** Recorded request-prefix digests of reconstructed assistant messages, owned by one context conversion. */
+-export type PrefixDigests = Map<AssistantMessage, string>
++export type PrefixDigests = Map<Pick<AssistantMessage, 'role'>, string>
+ 
+ /** Wire protocol whose thinking signatures bind to the request prefix. */
+ const PREFIX_BOUND_API = 'anthropic-messages'
 diff --git a/packages/llm/llm-pi-ai/src/provider-content.ts b/packages/llm/llm-pi-ai/src/provider-content.ts
 new file mode 100644
 index 0000000000000000000000000000000000000000..02d5de8c9ef634761060692e0b02f731ca1b1038
@@ -107,13 +120,13 @@ index 0000000000000000000000000000000000000000..02d5de8c9ef634761060692e0b02f731
 +  return message
 +}
 diff --git a/packages/llm/llm-pi-ai/src/replay.ts b/packages/llm/llm-pi-ai/src/replay.ts
-index 098f4a63017c2d48c5b562986dc82069e5a804c4..ec9de783167acfd1c5fccb9e835fb4f0dfafece7 100644
+index ba1be42e142c13135279caf90a7f1d1950caab6f..b8f2e0774fccea4b5f5e105885160b578d5e451d 100644
 --- a/packages/llm/llm-pi-ai/src/replay.ts
 +++ b/packages/llm/llm-pi-ai/src/replay.ts
-@@ -11,12 +11,15 @@
- import { LlmError } from '@deepseek-ai/dsh-llm'
+@@ -12,12 +12,15 @@ import { LlmError } from '@deepseek-ai/dsh-llm'
  import type { AssistantMessage as HarnessAssistantMessage, ModelMessageSource, ReplayEnvelope } from '@deepseek-ai/dsh-llm'
  import type { Api, AssistantMessage, ToolCall, Usage as PiUsage } from '@earendil-works/pi-ai'
+ import type { PrefixDigests } from './prefix-binding.ts'
 +import type { PiAssistantMessage } from './provider-content.ts'
  
  /** Per-block half of the pi-ai replay envelope, one entry per content block. */
@@ -126,16 +139,16 @@ index 098f4a63017c2d48c5b562986dc82069e5a804c4..ec9de783167acfd1c5fccb9e835fb4f0
  
  /** Versioned response-level half of the pi-ai replay envelope. */
  export interface PiAiReplayResponse {
-@@ -74,7 +77,7 @@ function emptyPiUsage(): PiUsage {
-  * @param requestedModel - request identity stored in the assistant source; defaults to the native model.
+@@ -78,7 +81,7 @@ function emptyPiUsage(): PiUsage {
+  * @param prefixDigest - digest of the request context, recorded when the protocol binds thinking to it.
   * @returns the versioned lossless-JSON replay projection.
   */
--export function toPiReplayState(message: AssistantMessage, requestedModel = message.model): ReplayEnvelope {
-+export function toPiReplayState(message: PiAssistantMessage, requestedModel = message.model): ReplayEnvelope {
+-export function toPiReplayState(message: AssistantMessage, requestedModel = message.model, prefixDigest?: string): ReplayEnvelope {
++export function toPiReplayState(message: PiAssistantMessage, requestedModel = message.model, prefixDigest?: string): ReplayEnvelope {
    const response: PiAiReplayResponse = {
      kind: 'pi-ai',
      version: 2,
-@@ -104,6 +107,8 @@ export function toPiReplayState(message: AssistantMessage, requestedModel = mess
+@@ -109,6 +112,8 @@ export function toPiReplayState(message: AssistantMessage, requestedModel = mess
            ...block.thoughtSignature === undefined ? {} : { thoughtSignature: block.thoughtSignature },
            ...block.namespace === undefined ? {} : { namespace: block.namespace },
          }
@@ -144,7 +157,7 @@ index 098f4a63017c2d48c5b562986dc82069e5a804c4..ec9de783167acfd1c5fccb9e835fb4f0
        }
      }),
    }
-@@ -136,7 +141,9 @@ function readReplayState(value: unknown): PiAiReplayState {
+@@ -142,7 +147,9 @@ function readReplayState(value: unknown): PiAiReplayState {
    for (const [index, value] of blocks.entries()) {
      if (typeof value !== 'object' || value === null || Array.isArray(value)) return invalidReplay(`block ${index} must be an object`)
      const block = value as Record<string, unknown>
@@ -155,12 +168,12 @@ index 098f4a63017c2d48c5b562986dc82069e5a804c4..ec9de783167acfd1c5fccb9e835fb4f0
      for (const signature of ['textSignature', 'thinkingSignature', 'thoughtSignature', 'namespace'] as const) {
        if (block[signature] !== undefined && typeof block[signature] !== 'string') return invalidReplay(`block ${index} ${signature} must be a string`)
      }
-@@ -184,12 +191,12 @@ function foreignAssistant(message: HarnessAssistantMessage): AssistantMessage {
- }
- 
- /** Recombine durable Harness content with validated pi-ai replay metadata. */
--function replayedAssistant(message: HarnessAssistantMessage, source: ModelMessageSource, rawState: unknown): AssistantMessage {
-+function replayedAssistant(message: HarnessAssistantMessage, source: ModelMessageSource, rawState: unknown): PiAssistantMessage {
+@@ -195,12 +202,12 @@ function replayedAssistant(
+   source: ModelMessageSource,
+   rawState: unknown,
+   prefixDigests?: PrefixDigests,
+-): AssistantMessage {
++): PiAssistantMessage {
    const state = readReplayState(rawState)
    if (state.response.provider !== source.provider) return invalidReplay('provider does not match assistant source')
    if (state.response.model !== source.model) return invalidReplay('model does not match assistant source')
@@ -170,7 +183,7 @@ index 098f4a63017c2d48c5b562986dc82069e5a804c4..ec9de783167acfd1c5fccb9e835fb4f0
      const replay = state.blocks[index]
      if (replay === undefined || replay.type !== block.type) return invalidReplay(`block ${index} does not match assistant content`)
      switch (block.type) {
-@@ -212,6 +219,22 @@ function replayedAssistant(message: HarnessAssistantMessage, source: ModelMessag
+@@ -223,11 +230,27 @@ function replayedAssistant(
          ...replay.type === 'tool-call' && replay.thoughtSignature !== undefined ? { thoughtSignature: replay.thoughtSignature } : {},
          ...replay.type === 'tool-call' && replay.namespace !== undefined ? { namespace: replay.namespace } : {},
        }
@@ -193,29 +206,35 @@ index 098f4a63017c2d48c5b562986dc82069e5a804c4..ec9de783167acfd1c5fccb9e835fb4f0
        /* v8 ignore next -- readReplayState rejects unknown replay tags, so an equal plugin-added Harness tag cannot reach this switch */
        default: return invalidReplay(`block ${index} has an unsupported Harness type`)
      }
-@@ -248,7 +271,7 @@ export function toPiAssistant(message: HarnessAssistantMessage, onDegrade?: (rea
+   })
+-  const assistant: AssistantMessage = {
++  const assistant: PiAssistantMessage = {
+     role: 'assistant',
+     content,
+     api: state.response.api,
+@@ -266,7 +289,7 @@ export function toPiAssistant(
    const source = message.source
    if (source.replayState === undefined) return foreignAssistant(message)
    try {
--    return replayedAssistant(message, source, source.replayState)
-+    return replayedAssistant(message, source, source.replayState) as unknown as AssistantMessage
+-    return replayedAssistant(message, source, source.replayState, prefixDigests)
++    return replayedAssistant(message, source, source.replayState, prefixDigests) as unknown as AssistantMessage
    } catch (error: unknown) {
      /* v8 ignore next -- replayedAssistant throws only INVALID_REPLAY_STATE LlmErrors; the
         guard keeps a future non-replay failure loud instead of silently degrading it */
 diff --git a/packages/llm/llm-pi-ai/src/stream.ts b/packages/llm/llm-pi-ai/src/stream.ts
-index 30e9c79412a300adc8a373b1a5e2caa77cb69ad6..6a7bc07a56d99a6f6e104e7030295c0306a11f41 100644
+index c3bfc1cd3f0068cdc6a74ca0f424b7dbed030a04..b11af3129ef150f5c8603d695e23e55efb95171a 100644
 --- a/packages/llm/llm-pi-ai/src/stream.ts
 +++ b/packages/llm/llm-pi-ai/src/stream.ts
 @@ -13,6 +13,7 @@ import { CONTEXT_WINDOW_EXCEEDED_CODE, EMPTY_RESPONSE_CODE, isContextWindowExcee
- import type { FinishReason, StreamChunk, TokenUsage, ToolCallId } from '@deepseek-ai/dsh-llm'
+ import type { BuiltinLlmFailureCode, FinishReason, StreamChunk, TokenUsage, ToolCallId } from '@deepseek-ai/dsh-llm'
  import { isContextOverflow } from '@earendil-works/pi-ai/utils/overflow'
  import type { AssistantMessage, AssistantMessageEvent, Usage as PiUsage } from '@earendil-works/pi-ai'
 +import { asPiAssistantMessage, type PiProviderToolContent, type PiProviderToolEvent, type ProviderToolCallBlock, type ProviderToolResultBlock } from './provider-content.ts'
  import { toPiReplayState } from './replay.ts'
  
  /**
-@@ -140,7 +141,7 @@ export function mapStopReason(message: AssistantMessage, contextWindow?: number)
-  *   `LlmError` (`STREAM_CLOSED`) if the source ends without a terminal event.
+@@ -151,7 +152,7 @@ export function mapStopReason(message: AssistantMessage, contextWindow?: number)
+  *   output retains its terminal reason so the assembler can discard incomplete calls.
   */
  export async function* toStreamChunks(
 -  events: AsyncIterable<AssistantMessageEvent>,
@@ -223,14 +242,14 @@ index 30e9c79412a300adc8a373b1a5e2caa77cb69ad6..6a7bc07a56d99a6f6e104e7030295c03
    contextWindow?: number,
    callerSignal?: AbortSignal,
    requestedModel?: string,
-@@ -205,12 +206,31 @@ export async function* toStreamChunks(
+@@ -222,6 +223,25 @@ export async function* toStreamChunks(
            },
          }
          break
 +      case 'provider_tool_start': {
 +        const block = event.partial.content[event.contentIndex]
 +        if (block?.type !== 'providerToolCall' && block?.type !== 'providerToolResult') {
-+          throw new LlmError('pi-ai Provider tool start lacks matching content', 'INVALID_PROVIDER_CONTENT')
++          throw LlmError.fromFailure({ message: 'pi-ai Provider tool start lacks matching content', code: 'INVALID_PROVIDER_CONTENT' })
 +        }
 +        yield {
 +          type: 'block-start',
@@ -248,29 +267,31 @@ index 30e9c79412a300adc8a373b1a5e2caa77cb69ad6..6a7bc07a56d99a6f6e104e7030295c03
 +        break
        case 'done':
          yield { type: 'usage', usage: mapUsage(event.message.usage) }
+         if (argumentsError !== undefined && event.message.stopReason !== 'length') {
+@@ -230,7 +250,7 @@ export async function* toStreamChunks(
          yield {
            type: 'finish',
            reason: mapStopReason(event.message, contextWindow),
--          replayState: toPiReplayState(event.message, requestedModel),
-+          replayState: toPiReplayState(asPiAssistantMessage(event.message), requestedModel),
+-          replayState: toPiReplayState(event.message, requestedModel, prefixDigest),
++          replayState: toPiReplayState(asPiAssistantMessage(event.message), requestedModel, prefixDigest),
          }
          return
        case 'error':
-@@ -232,3 +252,38 @@ export async function* toStreamChunks(
+@@ -252,3 +272,38 @@ export async function* toStreamChunks(
    }
    throw new LlmError('pi-ai event stream ended without done/error', 'STREAM_CLOSED')
  }
 +
 +function requiredString(value: unknown, description: string): string {
 +  if (typeof value !== 'string' || value.length === 0) {
-+    throw new LlmError(`pi-ai Provider content ${description} must be a non-empty string`, 'INVALID_PROVIDER_CONTENT')
++    throw LlmError.fromFailure({ message: `pi-ai Provider content ${description} must be a non-empty string`, code: 'INVALID_PROVIDER_CONTENT' })
 +  }
 +  return value
 +}
 +
 +function record(value: unknown, description: string): Readonly<Record<string, unknown>> {
 +  if (value === null || typeof value !== 'object' || Array.isArray(value)) {
-+    throw new LlmError(`pi-ai Provider content ${description} must be an object`, 'INVALID_PROVIDER_CONTENT')
++    throw LlmError.fromFailure({ message: `pi-ai Provider content ${description} must be an object`, code: 'INVALID_PROVIDER_CONTENT' })
 +  }
 +  return value as Readonly<Record<string, unknown>>
 +}
@@ -296,7 +317,7 @@ index 30e9c79412a300adc8a373b1a5e2caa77cb69ad6..6a7bc07a56d99a6f6e104e7030295c03
 +  }
 +}
 diff --git a/packages/llm/llm-pi-ai/tests/convert.spec.ts b/packages/llm/llm-pi-ai/tests/convert.spec.ts
-index d6c86ba4b8818963483483abbd68b776f2c53c49..ce5121500fc7a1a9703eb3310b3a22f122bf7f4c 100644
+index ff5a65870b9f672a19befe4d655067729479902b..ffda9387aaa808943bd4215beb09ea45186f0308 100644
 --- a/packages/llm/llm-pi-ai/tests/convert.spec.ts
 +++ b/packages/llm/llm-pi-ai/tests/convert.spec.ts
 @@ -7,6 +7,7 @@ import type { AssistantMessage, AssistantMessageEvent, Usage } from '@earendil-w
@@ -387,7 +408,7 @@ index d6c86ba4b8818963483483abbd68b776f2c53c49..ce5121500fc7a1a9703eb3310b3a22f1
    it('degrades unsupported replay-state versions to provider-neutral history', () => {
      const onDegrade = vi.fn()
      const context = toPiContext({
-@@ -815,6 +882,85 @@ describe('toStreamChunks', () => {
+@@ -816,6 +883,85 @@ describe('toStreamChunks', () => {
      ])
    })
  

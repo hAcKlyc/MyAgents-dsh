@@ -1,17 +1,17 @@
 diff --git a/packages/core/agent-loop/src/agent.ts b/packages/core/agent-loop/src/agent.ts
-index adf2e33ddcc9b37e8e20e89203a276bcdf18ee5d..83bd0ff9aa2ff9901cb0d60d90241bbfc01c1e3e 100644
+index 7ec43dd1323edc6e2b488d7c9d35fdd2d323abbd..be9e2f6e4ffb563244d7dca6a6c7a664c804ef4f 100644
 --- a/packages/core/agent-loop/src/agent.ts
 +++ b/packages/core/agent-loop/src/agent.ts
-@@ -16,7 +16,7 @@ import type {
+@@ -19,7 +19,7 @@ import type {
    RequestErrorAction,
  } from '@deepseek-ai/dsh-agent'
- import { agentEvents, assembleContextFor } from '@deepseek-ai/dsh-agent'
+ import { AgentModel, agentEvents, assembleContextFor } from '@deepseek-ai/dsh-agent'
 -import type { GenerateOptions, LlmCallConfig, Message, PreparedLlmCall } from '@deepseek-ai/dsh-llm'
 +import type { GenerateOptions, LlmCallConfig, Message, MessageId, PreparedLlmCall } from '@deepseek-ai/dsh-llm'
  import {
    LlmError,
    createAssistantMessage,
-@@ -160,6 +160,14 @@ export class ReactLoopAgent implements Agent {
+@@ -177,6 +177,14 @@ export class ReactLoopAgent implements Agent {
      if (wakeup) this.wakeDriver(wakingAfterAbort)
    }
  
@@ -27,10 +27,10 @@ index adf2e33ddcc9b37e8e20e89203a276bcdf18ee5d..83bd0ff9aa2ff9901cb0d60d90241bbf
      this.send(input, 'next-turn', true)
    }
 diff --git a/packages/core/agent-loop/tests/cancel.spec.ts b/packages/core/agent-loop/tests/cancel.spec.ts
-index add362835b44d0edc7663d94566654c47866b7a8..0ef61ff66a8f50dea630e924d9e93f8fcbfc7ca1 100644
+index e5e9be01fc4bf0d619bb693eec688a49ebd5f438..6602317d6ee1d4fb5c56386228249c9cfe16df47 100644
 --- a/packages/core/agent-loop/tests/cancel.spec.ts
 +++ b/packages/core/agent-loop/tests/cancel.spec.ts
-@@ -144,6 +144,46 @@ describe('Agent.cancel()', () => {
+@@ -147,6 +147,46 @@ describe('Agent.cancel()', () => {
      expect(endings).toEqual([{ kind: 'aborted', reason: { kind: 'user' } }, { kind: 'completed' }])
    })
  
@@ -78,10 +78,10 @@ index add362835b44d0edc7663d94566654c47866b7a8..0ef61ff66a8f50dea630e924d9e93f8f
      const adapter = new MockAdapter([textResponse('reply')])
      const ctx = await harness(adapter)
 diff --git a/packages/core/agent/src/runtime-types.ts b/packages/core/agent/src/runtime-types.ts
-index 0fa89afc054a819493206cef65dd7907092cdd7f..1da251f007d363532efb8841316739fd278f76e9 100644
+index 7012dfdf50b7c78b07697fbe0cdc9defec7bb957..20139006e1ae1db6326be0175ca35139d6f40c77 100644
 --- a/packages/core/agent/src/runtime-types.ts
 +++ b/packages/core/agent/src/runtime-types.ts
-@@ -190,6 +190,17 @@ declare module './types.ts' {
+@@ -220,6 +220,17 @@ declare module './types.ts' {
     */
      whenIdle(): Promise<void>
  

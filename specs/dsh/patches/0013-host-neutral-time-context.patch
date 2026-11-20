@@ -1,8 +1,8 @@
 diff --git a/packages/context/time-context/src/index.ts b/packages/context/time-context/src/index.ts
-index 493630a8118206fade80d7229dd049f2b83f12f9..5fedad78c7419625f82474434ff49a9a494be310 100644
+index 160beb9e8a46b9a09206d8ee52fa463a951877e9..33f90deef1d8fb07d8c5ac5939c60b9c16cf3a20 100644
 --- a/packages/context/time-context/src/index.ts
 +++ b/packages/context/time-context/src/index.ts
-@@ -110,7 +110,7 @@ function renderText(
+@@ -108,7 +108,7 @@ function renderText(
    const baseline = step === 1 ? 'model-visible message' : 'step context'
    const browserText = renderBrowserTimeZoneContext(browserContext)
    return `Time sampled while preparing turn ${turn}, step ${step}: ${formatTimestamp(now, formatter, timeZone)}\n`
@@ -12,10 +12,10 @@ index 493630a8118206fade80d7229dd049f2b83f12f9..5fedad78c7419625f82474434ff49a9a
  }
  
 diff --git a/packages/context/time-context/tests/time-context.spec.ts b/packages/context/time-context/tests/time-context.spec.ts
-index 92499007d1abfad8b1e08dcc37d353a9229bee3d..ba0bed0227e9dcf3aa8b3cc98766761051b9ced8 100644
+index ba07a2f1f63150bf01eb453e748fae6434f8d8b5..76d2b820a712ff8d3e75962cb0826b1285de3538 100644
 --- a/packages/context/time-context/tests/time-context.spec.ts
 +++ b/packages/context/time-context/tests/time-context.spec.ts
-@@ -201,6 +201,8 @@ describe('durable step context', () => {
+@@ -202,6 +202,8 @@ describe('durable step context', () => {
  
      await fire(ctx, sessionAgent(session), 1, 1)
  
@@ -24,7 +24,7 @@ index 92499007d1abfad8b1e08dcc37d353a9229bee3d..ba0bed0227e9dcf3aa8b3cc987667610
      expect(contextTexts(session)[0]).toContain(
        'Elapsed since the preceding model-visible message: unavailable.',
      )
-@@ -218,7 +220,6 @@ describe('durable step context', () => {
+@@ -219,7 +221,6 @@ describe('durable step context', () => {
  
      expect(contextTexts(session)[1]).toBe(
        'Time sampled while preparing turn 3, step 2: 2026-07-14T00:01:01+00:00[UTC]\n'
@@ -32,7 +32,7 @@ index 92499007d1abfad8b1e08dcc37d353a9229bee3d..ba0bed0227e9dcf3aa8b3cc987667610
        + 'Elapsed since the preceding step context: 1m 1s.',
      )
    })
-@@ -541,3 +542,27 @@ describe('real Loader export path', () => {
+@@ -655,3 +656,27 @@ describe('real Loader export path', () => {
      expect(contextTexts(session)[0]).toContain('Time sampled while preparing turn 1, step 1:')
    })
  })

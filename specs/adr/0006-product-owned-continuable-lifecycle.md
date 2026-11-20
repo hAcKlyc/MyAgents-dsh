@@ -1,12 +1,12 @@
 # ADR 0006 — Preserve historical child ownership while adopting native activations
 
-Status: accepted; revised for DSH `0.2.1-rc.2` on 2026-10-23.
+Status: accepted; revised for DSH `0.2.2-rc.5` on 2026-11-21.
 
 The [seam registry](../dsh/seam-decisions-v1.json) owns exact patch bytes and source identities. `DSH-SEAM-006` is reduced to historical descriptor compatibility and truthful delegation context. The previous ProductWork execution contract is superseded: its execution owner was already removed, and its old setup, external-settlement, exact-retirement, quiet-ancestor and pending-wake APIs have no current Product caller.
 
 ## Decision
 
-DSH's public `startActivation`, `waitForChildren`, `drainDescendants`, `prompt` and `interruptByParent` own current execution. Native delegation returns a child ID immediately. The manager owns child creation, FIFO input, ancestry, capacity, cleanup and parent result delivery. MyAgents retains its Host permissions, operation admission and truthful terminal projection through existing public composition.
+DSH's public `startActivation`, `waitForTreeWork`, `drainDescendants`, `prompt` and `interruptByUser` own current execution. Native delegation returns a child ID immediately. The manager owns child creation, FIFO input, ancestry, capacity, cleanup and parent result delivery. MyAgents retains its Host permissions, operation admission and truthful terminal projection through existing public composition.
 
 The native delegation context describes the child's identity and inability to grant itself permissions. It does not predict approval outcomes: the existing effective approval and sandbox context providers own those facts. The upstream static claim that every child approval is rejected contradicts Host-composed `ask`, even when a real Host approval succeeds. The native child scope automatically registers this contribution and rejects another registration under the same name, so public composition cannot replace it in that scope. The patch changes only its text; native default `never`, Host publication policy, and actual approval execution remain unchanged.
 
@@ -16,7 +16,7 @@ A historical `settlementDelivery: external` record is readable but cannot resume
 
 ## Completion and cancellation
 
-Root idleness alone cannot mean Product completion after native asynchronous delegation. The Product operation owner joins `waitForChildren` outside operation admission serialization, then validates the same root object, idle state and Session sequence. Native notifications remain free to admit their parent turn. A progressing descendant or changed prefix delays the Product terminal; the final terminal still derives from actual native turn-end facts. Native lifecycle failure fences the Session instead of inventing success.
+Root idleness alone cannot mean Product completion after native asynchronous delegation. The Product operation owner joins `waitForTreeWork` outside operation admission serialization, then validates the same root object, idle state and Session sequence. Native notifications remain free to admit their parent turn. A progressing descendant or changed prefix delays the Product terminal; the final terminal still derives from actual native turn-end facts. Native lifecycle failure fences the Session instead of inventing success.
 
 A quiescent mutation obtains a fresh native observation outside admission serialization and rechecks within it before committing. Host child Inbox admission shares that serialization and invalidates an older observation, since waking a parked child need not change the root log. Cancellation withdraws that mutation's wait without cancelling unrelated native work. Primary retirement invokes native descendant drain, waits for its pending join, then settles the root and releases the generation. A rejected native lifecycle join uses the existing primary settlement-failure signal to release the Host waiter without another RPC; ordinary failed child work remains a native result.
 

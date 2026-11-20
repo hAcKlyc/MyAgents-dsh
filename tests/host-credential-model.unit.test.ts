@@ -5,6 +5,7 @@ import { SessionProjectionRegistry } from "@deepseek-ai/dsh-session-projection";
 import { SystemPrompt } from "@deepseek-ai/dsh-system-prompt";
 import { ToolRuntime } from "@deepseek-ai/dsh-tools";
 import { LlmRuntime, createUserMessage } from "@deepseek-ai/dsh-llm";
+import * as NativeToolExecutor from "@deepseek-ai/dsh-tool-executor-native";
 import { Context } from "@deepseek-ai/cordis";
 import type { CredentialRef } from "@deepseek-ai/dsh-credentials";
 import { freezeMessage, MessageId, type GenerateOptions } from "@deepseek-ai/dsh-llm";
@@ -188,6 +189,7 @@ describe("Host credential and model route", () => {
     await root.plugin(SessionProjectionRegistry);
     await root.plugin(SystemPrompt, { includeHarnessIdentity: false, personaPrefix: "", personaSuffix: "" });
     await root.plugin(ToolRuntime);
+    await root.plugin(NativeToolExecutor);
     await root.plugin(AgentRegistry);
     await root.plugin(AgentLoop, { agents: [] });
     let requestIndex = 0;

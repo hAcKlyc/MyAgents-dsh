@@ -1,5 +1,5 @@
 diff --git a/packages/subagent/subagent/src/child-agent.ts b/packages/subagent/subagent/src/child-agent.ts
-index f9bd96125d871977bf318846905eb1f56ed238aa..fdd6a58f2ddab828aedbd41e1a9d92ac665ad632 100644
+index 6a3fa0b46543c47c1cb7035820886bfc69c3857d..d3577f0dd9f7d21b6cc26333d9eea910a4c0cd16 100644
 --- a/packages/subagent/subagent/src/child-agent.ts
 +++ b/packages/subagent/subagent/src/child-agent.ts
 @@ -159,6 +159,8 @@ export interface ChildComposition {
@@ -20,7 +20,7 @@ index f9bd96125d871977bf318846905eb1f56ed238aa..fdd6a58f2ddab828aedbd41e1a9d92ac
    }
    if (composition.toolFilter !== undefined) childCtx.tools.restrict(composition.toolFilter)
 diff --git a/packages/subagent/subagent/src/descriptor.ts b/packages/subagent/subagent/src/descriptor.ts
-index d2fe55010188a258a1d761d74297922902e5d9ff..146490fb3f052044f13dc11cf3d94b3272370f39 100644
+index 2c6cb20ca4be479de13c95394cac12f1b6b3fa41..c31692f4394f0586db62ae23321c4808501d8f38 100644
 --- a/packages/subagent/subagent/src/descriptor.ts
 +++ b/packages/subagent/subagent/src/descriptor.ts
 @@ -81,6 +81,8 @@ export interface ContinuableSubagentDescriptorData extends SubagentDescriptorBas
@@ -70,24 +70,22 @@ index d2fe55010188a258a1d761d74297922902e5d9ff..146490fb3f052044f13dc11cf3d94b32
      ...settlementDelivery !== undefined ? { settlementDelivery } : {},
    }
 diff --git a/packages/subagent/subagent/src/manager.ts b/packages/subagent/subagent/src/manager.ts
-index 9377c41480a0822c6291f5a9e1e4a2f49ea6fcd1..f9eac0d8871e33683e9451c4a4a7c678179ba935 100644
+index ac7a92abd20fb0a5fa6d02fa996bff045600da85..41a3dc61b4f0d0ad4817c47c6801bf2e85024eab 100644
 --- a/packages/subagent/subagent/src/manager.ts
 +++ b/packages/subagent/subagent/src/manager.ts
-@@ -1378,7 +1378,8 @@ export class SubagentManager {
-             ? { reasoningEffort: ReasoningEffortId(descriptor.agentReasoningEffort) }
-             : {},
-         },
--        composition: { agentPreset: agentPreset ?? undefined, persona: descriptor.persona, toolFilter: descriptor.toolFilter },
-+        composition: { agentPreset: agentPreset ?? undefined, persona: descriptor.persona,
-+          personaInterpolate: descriptor.personaInterpolate, toolFilter: descriptor.toolFilter },
-         signal: options.signal,
-       })
-     } catch (error: unknown) {
+@@ -1258,6 +1258,7 @@ export class SubagentManager {
+           composition: {
+             agentPreset: agentPreset ?? undefined,
+             persona: descriptor.persona,
++            personaInterpolate: descriptor.personaInterpolate,
+             toolFilter: descriptor.toolFilter,
+           },
+           signal,
 diff --git a/packages/subagent/subagent/tests/legacy-descriptor.spec.ts b/packages/subagent/subagent/tests/legacy-descriptor.spec.ts
-index 51fce255181d95d3119bb3a3f5675a0eb6c8094e..24d45a92982e77cf73236d314895c2929d7856ce 100644
+index 28442359fef4317c7ed1bfcdf83841b84ef015a3..f196011483d1d49bc59aeba6463c931501e1c210 100644
 --- a/packages/subagent/subagent/tests/legacy-descriptor.spec.ts
 +++ b/packages/subagent/subagent/tests/legacy-descriptor.spec.ts
-@@ -73,6 +73,20 @@ describe('released MyAgents descriptor compatibility', () => {
+@@ -75,6 +75,20 @@ describe('released MyAgents descriptor compatibility', () => {
        && row.data.message.content.some(block => block.type === 'text' && block.text === 'resumed legacy child'))).toBe(true)
    })
  

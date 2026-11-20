@@ -3257,13 +3257,13 @@
       "executionInputSchema": {
         "additionalProperties": false,
         "properties": {
-          "background": {
-            "type": "boolean"
-          },
           "description": {
             "type": "string"
           },
           "model": {
+            "type": "string"
+          },
+          "name": {
             "type": "string"
           },
           "prompt": {
@@ -3285,13 +3285,13 @@
       "inputSchema": {
         "additionalProperties": false,
         "properties": {
-          "background": {
-            "type": "boolean"
-          },
           "description": {
             "type": "string"
           },
           "model": {
+            "type": "string"
+          },
+          "name": {
             "type": "string"
           },
           "prompt": {
@@ -3326,47 +3326,21 @@
         "maxStructuredItems": 64
       },
       "outputSchema": {
-        "anyOf": [
-          {
-            "additionalProperties": false,
-            "properties": {
-              "kind": {
-                "const": "continuable",
-                "type": "string"
-              },
-              "subagentId": {
-                "type": "string"
-              }
-            },
-            "required": [
-              "kind",
-              "subagentId"
-            ],
-            "type": "object"
+        "additionalProperties": false,
+        "properties": {
+          "kind": {
+            "const": "activation",
+            "type": "string"
           },
-          {
-            "additionalProperties": false,
-            "properties": {
-              "kind": {
-                "const": "foreground",
-                "type": "string"
-              },
-              "output": {
-                "items": {},
-                "type": "array"
-              },
-              "runId": {
-                "type": "string"
-              }
-            },
-            "required": [
-              "kind",
-              "runId",
-              "output"
-            ],
-            "type": "object"
+          "name": {
+            "type": "string"
           }
-        ]
+        },
+        "required": [
+          "kind",
+          "name"
+        ],
+        "type": "object"
       },
       "permissionClass": "agent.spawn",
       "planPolicy": {
@@ -3401,24 +3375,24 @@
       "executionInputSchema": {
         "additionalProperties": false,
         "properties": {
-          "agent_id": {
+          "agent": {
             "type": "string"
           }
         },
         "required": [
-          "agent_id"
+          "agent"
         ],
         "type": "object"
       },
       "inputSchema": {
         "additionalProperties": false,
         "properties": {
-          "agent_id": {
+          "agent": {
             "type": "string"
           }
         },
         "required": [
-          "agent_id"
+          "agent"
         ],
         "type": "object"
       },
@@ -3466,7 +3440,7 @@
       ],
       "checkpoint": "none",
       "concurrency": "parallel",
-      "description": "Policy for native send_message and list_agents. Native messaging addresses a direct continuable child or the resident child's direct parent by agent_id. Delivery confirmation is not the recipient's answer. DSH owns the catalog and Inbox.",
+      "description": "Policy for native send_message, list_agents and wait_agent. Native messaging addresses another member of the same tree by name or Session ID. Delivery confirmation is not the recipient's answer. DSH owns the catalog and Inbox.",
       "errorCodes": [
         {
           "code": "permission_denied",
@@ -3477,7 +3451,7 @@
       "executionInputSchema": {
         "additionalProperties": false,
         "properties": {
-          "agent_id": {
+          "agent": {
             "type": "string"
           },
           "message": {
@@ -3485,7 +3459,7 @@
           }
         },
         "required": [
-          "agent_id",
+          "agent",
           "message"
         ],
         "type": "object"
@@ -3493,7 +3467,7 @@
       "inputSchema": {
         "additionalProperties": false,
         "properties": {
-          "agent_id": {
+          "agent": {
             "type": "string"
           },
           "message": {
@@ -3501,7 +3475,7 @@
           }
         },
         "required": [
-          "agent_id",
+          "agent",
           "message"
         ],
         "type": "object"
@@ -4373,7 +4347,7 @@
       ],
       "checkpoint": "none",
       "concurrency": "session_serial",
-      "description": "Update a task by ID in your personal list by default, or pass list: shared for collaborative work. Read its latest state with TaskGet first. Only the root agent may assign shared work to a continuable child or offer it to specific child IDs with offerTo. An offered child may claim an unassigned, unblocked task atomically. Do not claim someone else's task, change another agent's personal list, or mark unfinished work complete. Use the exact child runtime ID returned by subagent, fork_agent, or list_agents for owner/offerTo; owner: root names the root agent. Claim offered work with status: in_progress (owner is inferred). Normal statuses are pending, in_progress, completed; completed tasks may be corrected or reopened. Use status: deleted to remove obsolete work and clean all dependency references; deleted returns task: null. The legacy cancelled status is retained for compatibility and does not resolve blockers. An empty or unchanged update succeeds without changing the list revision. addBlocks/addBlockedBy add dependencies within the same list; cycles are rejected. metadata values of null remove keys. Results carry the list revision at the top level.",
+      "description": "Update a task by ID in your personal list by default, or pass list: shared for collaborative work. Read its latest state with TaskGet first. Only the root agent may assign shared work to a continuable child or offer it to specific children with offerTo. An offered child may claim an unassigned, unblocked task atomically. Do not claim someone else's task, change another agent's personal list, or mark unfinished work complete. Use a direct child name from subagent, fork_agent or list_agents for owner/offerTo. Stored child Session IDs also work. Use owner: lead for the root agent. Claim offered work with status: in_progress (owner is inferred). Normal statuses are pending, in_progress, completed; completed tasks may be corrected or reopened. Use status: deleted to remove obsolete work and clean all dependency references; deleted returns task: null. The legacy cancelled status is retained for compatibility and does not resolve blockers. An empty or unchanged update succeeds without changing the list revision. addBlocks/addBlockedBy add dependencies within the same list; cycles are rejected. metadata values of null remove keys. Results carry the list revision at the top level.",
       "errorCodes": [
         {
           "code": "task_not_found",

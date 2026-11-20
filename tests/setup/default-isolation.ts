@@ -148,8 +148,11 @@ replace(process, "loadEnvFile", blocked("process.loadEnvFile"));
 // pi-ai's browser-safe User-Agent loader reads only these OS facts. Do not
 // expose module loading as a way around the network/process/worker guards.
 const osMetadata = Object.freeze({ arch, platform, release });
+// The test process runs Node with a script entry. DSH uses only this deployment fact.
+const seaMetadata = Object.freeze({ isSea: () => false });
 replace(process, "getBuiltinModule", (name: string) => {
   if (name === "node:os" || name === "os") return osMetadata;
+  if (name === "node:sea") return seaMetadata;
   return blocked("process.getBuiltinModule")();
 });
 

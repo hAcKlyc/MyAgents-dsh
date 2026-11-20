@@ -1,8 +1,8 @@
 diff --git a/docs/architecture.md b/docs/architecture.md
-index 03d88148c7992f1c856efc44df0a930470f90f70..87844638517fc8ede8321091b454e24b7289d392 100644
+index c7c036016b16c68d0beab5ec7af14c55a5f584e3..ab349f689d3d136fa03315be37e187e0abb92817 100644
 --- a/docs/architecture.md
 +++ b/docs/architecture.md
-@@ -95,6 +95,7 @@ turn/start
+@@ -97,6 +97,7 @@ turn/start
       derive and freeze model history from the log
       stream the bound prepared call -> llm/stream -> agent/assistant-stream start
         agent/assistant-stream chunk*
@@ -11,10 +11,10 @@ index 03d88148c7992f1c856efc44df0a930470f90f70..87844638517fc8ede8321091b454e24b
       tool/call* -> tools/pre-execute -> tools/execute -> tools/post-execute -> tool/result*
       step/end
 diff --git a/docs/architecture.zh.md b/docs/architecture.zh.md
-index 870fa1c996ba569f882a7cb70e62f0bd655c64af..33f3ec02171068067ba57baf8103c62b65f7829a 100644
+index 2eae1137696639cc473afefbdf255c44eee32939..6c013310c1472a59c2d957dc0b5cf6fb7ccb8548 100644
 --- a/docs/architecture.zh.md
 +++ b/docs/architecture.zh.md
-@@ -99,6 +99,7 @@ turn/start
+@@ -101,6 +101,7 @@ turn/start
       derive and freeze model history from the log
       stream the bound prepared call -> llm/stream -> agent/assistant-stream start
         agent/assistant-stream chunk*
@@ -23,39 +23,39 @@ index 870fa1c996ba569f882a7cb70e62f0bd655c64af..33f3ec02171068067ba57baf8103c62b
       tool/call* -> tools/pre-execute -> tools/execute -> tools/post-execute -> tool/result*
       step/end
 diff --git a/packages/core/agent-loop/README.md b/packages/core/agent-loop/README.md
-index 62dcd35a92a39c1a4696e2e031a0296534fcface..d8e23a8fab066fa596395dbc4ce39a0585cf3c80 100644
+index 30443d6acee22bc0109be67295055d14acc9d047..494d285d80d8e11bcb59a2bbd4122083278484b7 100644
 --- a/packages/core/agent-loop/README.md
 +++ b/packages/core/agent-loop/README.md
-@@ -228,3 +228,5 @@ These limits define when the loop needs special care. They are current package c
+@@ -244,3 +244,5 @@ These limits define when the loop needs special care. They are current package c
  None.
  
  </details>
 +
 +The `agent/pre-assistant-commit` waterfall governs tool arguments before assistant settlement. Identity and non-tool content are preserved; durable history, permission and execution consume one validated plan while the source stream remains unchanged. Rejection or cancellation commits no governed message.
 diff --git a/packages/core/agent-loop/README.zh.md b/packages/core/agent-loop/README.zh.md
-index ee355a328d0b5b9cdc6ac1c1e93ad7296a8ab5be..1bf5c899940c9c9931d8c9c2d90f8a6f8fb73bc5 100644
+index e20aa96f37df7679ab2b40f1a735a754de5c45af..fade1624623381fae09d241f623b5bffb194db86 100644
 --- a/packages/core/agent-loop/README.zh.md
 +++ b/packages/core/agent-loop/README.zh.md
-@@ -228,3 +228,5 @@ const handle = await ctx.agents.create({
+@@ -244,3 +244,5 @@ loop 在发布工厂前等待必需的注册完成。它对模型选择和 inbox
  无。
  
  </details>
 +
 +`agent/pre-assistant-commit` waterfall 在助手消息结算前处理工具参数。标识和非工具内容保持不变；持久化历史、权限与执行共用验证后的计划，原始流保持不变。拒绝或取消不提交处理后的消息。
 diff --git a/packages/core/agent-loop/src/agent.ts b/packages/core/agent-loop/src/agent.ts
-index 83bd0ff9aa2ff9901cb0d60d90241bbfc01c1e3e..43a4125b690737a41e29032f23c160400ba4d352 100644
+index be9e2f6e4ffb563244d7dca6a6c7a664c804ef4f..663e5f271f4c4f8f569cc844166a263892f0d23f 100644
 --- a/packages/core/agent-loop/src/agent.ts
 +++ b/packages/core/agent-loop/src/agent.ts
-@@ -12,19 +12,22 @@ import type {
-   AgentStatus,
-   CancelOptions,
+@@ -15,19 +15,22 @@ import type {
+   ModelSelectionProjectionState,
    InboxTarget,
+   InboxState,
 +  PreparedAssistantCommit,
 +  PreparedAssistantToolCall,
    PreStepDecision,
    RequestErrorAction,
  } from '@deepseek-ai/dsh-agent'
- import { agentEvents, assembleContextFor } from '@deepseek-ai/dsh-agent'
+ import { AgentModel, agentEvents, assembleContextFor } from '@deepseek-ai/dsh-agent'
 -import type { GenerateOptions, LlmCallConfig, Message, MessageId, PreparedLlmCall } from '@deepseek-ai/dsh-llm'
 +import type { AssistantMessage, GenerateOptions, LlmCallConfig, Message, MessageId, PreparedLlmCall, ToolCallBlock } from '@deepseek-ai/dsh-llm'
  import {
@@ -71,8 +71,8 @@ index 83bd0ff9aa2ff9901cb0d60d90241bbfc01c1e3e..43a4125b690737a41e29032f23c16040
  import type { Scope } from '@deepseek-ai/dsh-scope'
  import { createScope } from '@deepseek-ai/dsh-scope'
  import type { EpochHeader, RequestContext, Session, SessionId, SessionSeq, TurnEndReason, UserMessage } from '@deepseek-ai/dsh-session'
-@@ -60,6 +63,127 @@ type PreparedStep =
-     assembly: PromptAssembly
+@@ -74,6 +77,127 @@ type PreparedStep =
+     toolSet: ResolvedToolSet
    }
  
 +/** Match DSH execution parsing while retaining a lossless immutable value. */
@@ -199,7 +199,7 @@ index 83bd0ff9aa2ff9901cb0d60d90241bbfc01c1e3e..43a4125b690737a41e29032f23c16040
  /** Remove adapter-derived values before plugins propose the next request config. */
  function requestProposal(header: EpochHeader): LlmCallConfig {
    if (header.adapterDefaults === undefined) return header.config
-@@ -534,7 +658,7 @@ export class ReactLoopAgent implements Agent {
+@@ -577,7 +701,7 @@ export class ReactLoopAgent implements Agent {
            continue
          }
  
@@ -208,7 +208,7 @@ index 83bd0ff9aa2ff9901cb0d60d90241bbfc01c1e3e..43a4125b690737a41e29032f23c16040
            content: live.blocks(),
            source: {
              provider: request.provider,
-@@ -542,6 +666,20 @@ export class ReactLoopAgent implements Agent {
+@@ -585,6 +709,20 @@ export class ReactLoopAgent implements Agent {
              ...live.replayState !== undefined ? { replayState: live.replayState } : {},
            },
          })
@@ -229,26 +229,26 @@ index 83bd0ff9aa2ff9901cb0d60d90241bbfc01c1e3e..43a4125b690737a41e29032f23c16040
          live.settle(
            'assistant/message',
            () => this.session.append('assistant/message', {
-@@ -554,10 +692,11 @@ export class ReactLoopAgent implements Agent {
+@@ -597,12 +735,11 @@ export class ReactLoopAgent implements Agent {
          )
          if (finish.kind === 'max-tokens') return { kind: 'max-tokens' }
  
 -        const toolCalls = message.content.filter(block => block.type === 'tool-call')
          if (toolCalls.length === 0) return { kind: 'completed' }
-         const { concluded } = await executeToolCalls(
--          this.loopCtx, turn, step, toolCalls, signal,
-+          this.loopCtx, turn, step,
-+          toolCalls.map(call => ({ type: 'tool-call', id: call.callId, name: call.name, arguments: call.rawArguments })),
-+          signal,
-           context => this.inbox.splice('next-step', this.inbox.nextStep.length, 0, [context]),
-         )
-         return concluded ? { kind: 'completed' } : null
+         const maxParallelToolCalls = this.loopCtx.agentLoop.config.maxParallelToolCalls.get()
+         try {
+           const result = await this.loopCtx.tools.execute({
+-            calls: toolCalls, signal, agent: this, log: { turn, step },
++            calls: message.content.filter((block): block is ToolCallBlock => block.type === 'tool-call'), signal, agent: this, log: { turn, step },
+             maxParallelToolCalls, toolSet: decision.toolSet,
+           })
+           for (const context of result.additionalContexts) {
 diff --git a/packages/core/agent-loop/tests/pre-assistant-commit.spec.ts b/packages/core/agent-loop/tests/pre-assistant-commit.spec.ts
 new file mode 100644
-index 0000000000000000000000000000000000000000..af3b7096b4a80b91b2d34b44d5bdf36beb209d98
+index 0000000000000000000000000000000000000000..fdf6fb4173f317fede2a84edbac401c40afc0766
 --- /dev/null
 +++ b/packages/core/agent-loop/tests/pre-assistant-commit.spec.ts
-@@ -0,0 +1,346 @@
+@@ -0,0 +1,349 @@
 +import { afterEach, describe, expect, it } from 'vitest'
 +import { mkdtemp, rm } from 'node:fs/promises'
 +import { tmpdir } from 'node:os'
@@ -273,7 +273,9 @@ index 0000000000000000000000000000000000000000..af3b7096b4a80b91b2d34b44d5bdf36b
 +import SessionProjectionRegistry from '@deepseek-ai/dsh-session-projection'
 +import * as JsonlSessionPersistence from '@deepseek-ai/dsh-session-persistence-jsonl'
 +import SystemPrompt from '@deepseek-ai/dsh-system-prompt'
-+import ToolRuntime, { defineContentToolFixture } from '@deepseek-ai/dsh-tools'
++import ToolRuntime from '@deepseek-ai/dsh-tools'
++import { defineContentToolFixture } from '@deepseek-ai/dsh-tool-testkit'
++import * as NativeToolExecutor from '@deepseek-ai/dsh-tool-executor-native'
 +import { maxTokensResponse, MockAdapter, textResponse, toolCallResponse } from './mock-adapter.ts'
 +
 +const contexts: Context[] = []
@@ -292,6 +294,7 @@ index 0000000000000000000000000000000000000000..af3b7096b4a80b91b2d34b44d5bdf36b
 +  await ctx.plugin(SessionProjectionRegistry)
 +  await ctx.plugin(SystemPrompt)
 +  await ctx.plugin(ToolRuntime)
++  await ctx.plugin(NativeToolExecutor)
 +  await ctx.plugin(AgentRegistry)
 +  await ctx.plugin(AgentLoop, { agents: [] })
 +  ctx.llm.registerAdapter(['mock'], adapter)
@@ -596,7 +599,7 @@ index 0000000000000000000000000000000000000000..af3b7096b4a80b91b2d34b44d5bdf36b
 +  })
 +})
 diff --git a/packages/core/agent/src/runtime-types.ts b/packages/core/agent/src/runtime-types.ts
-index 1da251f007d363532efb8841316739fd278f76e9..ae84e6215f6305057d708ea5cd242157019e2205 100644
+index 20139006e1ae1db6326be0175ca35139d6f40c77..292804bf2786c4e482b26c12313a8e78b249580f 100644
 --- a/packages/core/agent/src/runtime-types.ts
 +++ b/packages/core/agent/src/runtime-types.ts
 @@ -8,10 +8,11 @@
@@ -609,10 +612,10 @@ index 1da251f007d363532efb8841316739fd278f76e9..ae84e6215f6305057d708ea5cd242157
  import type { AgentCancelCause, Session, SessionSeq, UserMessage } from '@deepseek-ai/dsh-session'
  export type { AgentCancelCause } from '@deepseek-ai/dsh-session'
 +import type { JsonValue } from '@deepseek-ai/dsh-util-values'
- import type { Agent, InboxTarget } from './types.ts'
+ import type { Agent, InboxTarget, ModelSelection } from './types.ts'
  export type { Agent } from './types.ts'
  import type {} from '@deepseek-ai/dsh-system-prompt'
-@@ -121,6 +122,20 @@ export type PreStepDecision =
+@@ -148,6 +149,20 @@ export type PreStepDecision =
  /** Action returned by a listener that owns model-request recovery. */
  export type RequestErrorAction = { kind: 'retry' } | undefined
  
@@ -633,7 +636,7 @@ index 1da251f007d363532efb8841316739fd278f76e9..ae84e6215f6305057d708ea5cd242157
  /** Why a session lifecycle began; seeded creates are `startup`, while persisted loads are `resume`. */
  export type SessionStartSource = 'startup' | 'resume' | 'clear' | 'compact'
  
-@@ -346,6 +361,16 @@ declare module '@deepseek-ai/cordis' {
+@@ -383,6 +398,16 @@ declare module '@deepseek-ai/cordis' {
       * @mode waterfall
      */
      'agent/request'(this: Scoped<Agent>, payload: { agent: Agent; turn: number; step: number; signal: AbortSignal }, next: () => Promise<LlmCallConfig>): Promise<LlmCallConfig>

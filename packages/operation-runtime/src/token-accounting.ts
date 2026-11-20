@@ -51,7 +51,7 @@ export const deriveSummaryTokenUsage = (events: readonly SessionEvent[]): ExactR
       // restored count cannot substantiate an exact billing disclosure.
       const calls = "llmStreamCallCount" in event.data ? event.data.llmStreamCallCount : undefined;
       if (calls !== undefined && (event.data.llmStreamCall !== true
-        || !Number.isSafeInteger(calls) || calls < 1 || calls > 2)) return undefined;
+        || typeof calls !== "number" || !Number.isSafeInteger(calls) || calls < 1 || calls > 2)) return undefined;
       const usage = exactReportedUsage(event.data.usage);
       if (usage === undefined) return undefined;
       const added = addExactReportedUsage(result, usage);

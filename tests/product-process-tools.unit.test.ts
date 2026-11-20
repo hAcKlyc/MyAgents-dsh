@@ -1,3 +1,5 @@
+import * as NativeToolExecutor from "@deepseek-ai/dsh-tool-executor-native";
+import { executeToolFixture } from "@deepseek-ai/dsh-tool-testkit";
 import { modelToolNames } from "@myagents-dsh/protocol";
 import { Readable } from "node:stream";
 import { LocalBashExecutor } from "@deepseek-ai/dsh-bash-local";
@@ -241,6 +243,7 @@ const harness = async (options: Readonly<{
     resolve: () => ({ mode: "workspace-write", workspaceRoot: workspace }),
   } as never);
   await context.plugin(LocalWorkspaceFileSystem, { platform: selectPlatformAdapter(resolveRuntimePlatformTarget(process.platform, process.arch)) });
+  await context.plugin(SessionProjectionRegistry);
   await context.plugin(AgentRegistry);
   const fakeSubprocess = context.subprocess as FakeSubprocessRuntime;
   const inject = vi.fn<(message: unknown) => void>();
@@ -336,9 +339,9 @@ const harness = async (options: Readonly<{
     executableSha256,
   });
   await context.plugin(SystemPrompt);
-  await context.plugin(SessionProjectionRegistry);
   await context.plugin(WorkingDirectoryService);
-  await context.plugin(ShellPresentationToolRuntime, { mode: "native" });
+  await context.plugin(ShellPresentationToolRuntime);
+  await context.plugin(NativeToolExecutor);
   await context.plugin(ToolCallTimeoutPolicy);
   let permissionDecision: "allow" | "deny" = "allow";
   let permissionPromise: Promise<"allow" | "deny"> | undefined;
@@ -407,7 +410,7 @@ const harness = async (options: Readonly<{
   let call = 0;
   const execute = async (args: Record<string, unknown>, signal = new AbortController().signal, name: string = options.dialect ?? "bash") => {
     call += 1;
-    return context.tools.execute({
+    return executeToolFixture(context, {
       agent,
       arguments: name === "bash" || name === "pwsh" ? { description: "Fixture command", ...args } : args,
       callId: ToolCallId(`bash-${call}`),

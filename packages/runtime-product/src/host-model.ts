@@ -668,10 +668,10 @@ const sanitizeProviderFailure = (error: unknown, label = "Provider"): LlmError =
   if (!isProxy(error) && error instanceof LlmError) {
     const code = Object.getOwnPropertyDescriptor(error, "code");
     if (code !== undefined && "value" in code && typeof code.value === "string") {
-      return new LlmError(`${label} request failed`, safeProviderFailureCode(code.value));
+      return LlmError.fromFailure({ message: `${label} request failed`, code: safeProviderFailureCode(code.value) });
     }
   }
-  return new LlmError(`${label} request failed`, "PROVIDER_FAILURE");
+  return LlmError.fromFailure({ message: `${label} request failed`, code: "PROVIDER_FAILURE" });
 };
 
 const sanitizeProviderChunk = (chunk: StreamChunk, label = "Provider"): StreamChunk => {
@@ -1254,7 +1254,7 @@ const scopedProviderStream = async function* (
         await run(() => returnIterator())
           .catch((error: unknown) => Promise.reject(failure === undefined
             ? sanitizeProviderFailure(error)
-            : new LlmError("Provider request and cleanup failed", "PROVIDER_FAILURE")));
+            : LlmError.fromFailure({ message: "Provider request and cleanup failed", code: "PROVIDER_FAILURE" })));
       }
     }
   } finally {
@@ -1393,10 +1393,7 @@ export class HostDeepSeekLlmAdapter extends LlmAdapter {
         if (!exhausted && returnIterator !== undefined) {
           await run(() => returnIterator()).catch((error: unknown) => Promise.reject(failure === undefined
             ? sanitizeProviderFailure(error, "DeepSeek provider")
-            : new LlmError(
-                "DeepSeek provider request and cleanup failed",
-                "PROVIDER_FAILURE",
-              )));
+            : LlmError.fromFailure({ message: "DeepSeek provider request and cleanup failed", code: "PROVIDER_FAILURE" })));
         }
       }
     } finally {

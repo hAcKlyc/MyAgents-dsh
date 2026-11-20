@@ -1,0 +1,27 @@
+import type { Session } from "@deepseek-ai/dsh-session";
+import type { SessionProjectionRegistry } from "@deepseek-ai/dsh-session-projection";
+import { z } from "zod";
+
+declare module "@deepseek-ai/dsh-session-projection/types" {
+  interface SessionProjectionMap {
+    "fixture/client-view": string;
+    "fixture/registered-view": string;
+  }
+}
+
+export async function checkProjectionHandles(registry: SessionProjectionRegistry, session: Session): Promise<void> {
+  const host = { key: "fixture/host" as const, stateVersion: 1, stateSchema: z.number(),
+    init: () => 0, apply: (state: number) => state + 1 };
+  const handle = await registry.register(host);
+  const value: number = handle.stateOf(session);
+  const wire = { key: "fixture/registered-view" as const, stateVersion: 1, stateSchema: z.number(),
+    init: () => 0, apply: (state: number) => state, wire: { viewSchema: z.string(), view: String } };
+  const visible = await registry.register(wire);
+  const read: () => number = visible.readerFor(session);
+  void [value, read];
+  // @ts-expect-error A client-visible key requires a wire view even when host state is supplied.
+  await registry.register({ ...host, key: "fixture/client-view" as const });
+  // @ts-expect-error The fold must initialize the state described by the schema.
+  await registry.register({ ...host, init: () => "invalid" });
+  await Promise.all([handle.dispose(), visible.dispose()]);
+}

@@ -1,3 +1,5 @@
+import * as NativeToolExecutor from "@deepseek-ai/dsh-tool-executor-native";
+import { executeToolFixture } from "@deepseek-ai/dsh-tool-testkit";
 import { createHook } from "node:async_hooks";
 import { Context } from "@deepseek-ai/cordis";
 import { AgentRegistry, type Agent } from "@deepseek-ai/dsh-agent";
@@ -26,7 +28,7 @@ afterEach(async () => {
 });
 
 interface MountedOptions {
-  readonly isKnownCollaborator?: (root: Agent, agentId: string) => boolean;
+  readonly resolveCollaborator?: (root: Agent, address: string) => string | undefined;
   readonly flush?: (session: Session) => Promise<unknown>;
   readonly notifySharedTask?: (root: Agent, childId: string, taskId: string, signal: AbortSignal) => Promise<void>;
 }
@@ -38,12 +40,13 @@ const mounted = async (options: MountedOptions = {}) => {
   await context.plugin(SessionProjectionRegistry);
   await context.plugin(AgentRegistry);
   await context.plugin(SystemPrompt);
-  await context.plugin(ToolRuntime, { mode: "native" });
+  await context.plugin(ToolRuntime);
+  await context.plugin(NativeToolExecutor);
   await context.plugin(ToolCallTimeoutPolicy);
   const session = context.sessions.create(SessionId("task-graph-session"));
   session.append("turn/start", { turn: 1 });
   const agent = Object.freeze({ ctx: context, id: "task-graph-session", session }) as unknown as Agent;
-  context.agents.enter(agent, undefined);
+  context.agents.enter(agent);
   let current = true;
   const permissionRequests: unknown[] = [];
   context.provide("productTools", Object.freeze({
@@ -76,7 +79,7 @@ const mounted = async (options: MountedOptions = {}) => {
   }) as never);
   const flushes: string[] = [];
   await context.plugin(ProductTaskGraphService, {
-    ...(options.isKnownCollaborator === undefined ? {} : { isKnownCollaborator: options.isKnownCollaborator }),
+    ...(options.resolveCollaborator === undefined ? {} : { resolveCollaborator: options.resolveCollaborator }),
     ...(options.notifySharedTask === undefined ? {} : { notifySharedTask: options.notifySharedTask }),
     durability: Object.freeze({
       flush: (candidate: Session) => {
@@ -90,7 +93,7 @@ const mounted = async (options: MountedOptions = {}) => {
   const execute = async (name: string, argumentsValue: unknown, signal = new AbortController().signal, actor = agent) => {
     callNumber += 1;
     const callId = ToolCallId(`task-call-${callNumber}`);
-    return context.tools.execute({
+    return executeToolFixture(context, {
       agent: actor,
       arguments: argumentsValue,
       callId,
@@ -116,7 +119,7 @@ const mounted = async (options: MountedOptions = {}) => {
     child: (id: string, parentSession = agent.id, register = true) => {
       const childSession = context.sessions.create(SessionId(id), { meta: { origin: "subagent", parentSession } });
       const child = Object.freeze({ ctx: context, id: SessionId(id), session: childSession }) as unknown as Agent;
-      if (register) context.agents.enter(child, agent);
+      if (register) context.agents.enter(child);
       return child;
     },
     setCurrent: (value: boolean) => { current = value; },
@@ -135,7 +138,7 @@ describe("durable Session-local product TaskGraph", () => {
     await successful(state, "TaskCreate", { subject: "Parent only", description: "Parent work" });
     const session = state.context.sessions.fork(state.session, undefined, SessionId("fork-task-child"));
     const child = Object.freeze({ ctx: state.context, id: session.id, session }) as unknown as Agent;
-    state.context.agents.enter(child, state.agent);
+    state.context.agents.enter(child);
     expect(state.context.productTaskGraph.snapshot(child, "personal").tasks).toEqual([]);
     const result = state.output(await state.execute("TaskCreate", { subject: "Child only", description: "Child work" }, undefined, child)) as { task: { id: string; subject: string } };
     expect(result.task).toMatchObject({ id: "task-1", subject: "Child only" });
@@ -143,7 +146,7 @@ describe("durable Session-local product TaskGraph", () => {
   });
 
   it("atomically claims for the real child, fences concurrent claims, and governs explicit transfer", async () => {
-    const state = await mounted({ isKnownCollaborator: (_root, id) => id === "child-first" || id === "child-second" });
+    const state = await mounted({ resolveCollaborator: (_root, id) => ["child-first", "child-second"].includes(id) ? id : undefined });
     const first = state.child("child-first");
     const second = state.child("child-second");
     await successful(state, "TaskCreate", { subject: "Claim", description: "Shared root graph", list: "shared" });
@@ -164,7 +167,7 @@ describe("durable Session-local product TaskGraph", () => {
   });
 
   it("keeps personal lists isolated and shared tasks invisible until explicitly offered", async () => {
-    const state = await mounted({ isKnownCollaborator: (_root, id) => id === "child-first" });
+    const state = await mounted({ resolveCollaborator: (_root, id) => id === "child-first" ? id : undefined });
     const child = state.child("child-first");
     await successful(state, "TaskCreate", { subject: "Root private", description: "Root step" });
     expect(state.output(await state.execute("TaskList", {}, undefined, child))).toMatchObject({ list: "personal", tasks: [] });
@@ -181,7 +184,9 @@ describe("durable Session-local product TaskGraph", () => {
   it("reports a failed child notification without rolling back the committed shared assignment", async () => {
     const delivered: string[] = [];
     const state = await mounted({
-      isKnownCollaborator: (_root, id) => id === "child-first" || id === "child-second",
+      resolveCollaborator: (_root, address) => ({
+        reviewer: "child-first", root: "child-second", "child-first": "child-first", "child-second": "child-second",
+      })[address],
       notifySharedTask: (_root, childId, taskId) => {
         expect(taskId).toBe("task-1");
         if (childId === "child-second") throw new Error("recipient is offline");
@@ -193,13 +198,17 @@ describe("durable Session-local product TaskGraph", () => {
     const second = state.child("child-second");
     await successful(state, "TaskCreate", { subject: "Review", description: "Shared review", list: "shared" });
     const result = await successful(state, "TaskUpdate", {
-      taskId: "task-1", list: "shared", offerTo: [first.id, second.id],
+      taskId: "task-1", list: "shared", offerTo: ["reviewer", "root"],
     });
     expect(result.notification).toEqual({ deliveredTo: [first.id], failedTo: [second.id] });
     expect(delivered).toEqual([first.id]);
     expect(state.context.productTaskGraph.snapshot(state.agent).tasks[0]?.offerTo).toEqual([first.id, second.id]);
     expect(state.output(await state.execute("TaskList", { list: "shared" }, undefined, second)))
       .toMatchObject({ tasks: [{ id: "task-1" }] });
+    await successful(state, "TaskUpdate", { taskId: "task-1", list: "shared", owner: "reviewer" });
+    expect(state.context.productTaskGraph.snapshot(state.agent).tasks[0]?.owner).toBe(first.id);
+    await successful(state, "TaskUpdate", { taskId: "task-1", list: "shared", owner: "lead" });
+    expect(state.context.productTaskGraph.snapshot(state.agent).tasks[0]?.owner).toBe("root");
   });
 
   it("rejects unregistered and foreign callers or transfer targets before publishing ownership", async () => {

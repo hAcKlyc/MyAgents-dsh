@@ -649,9 +649,7 @@ export class NativeRpcServer extends Service {
           }
           await this.operationsValue.admitNativeChildPrompt(context.signal, () => context.commit(), () => compositionAuthority.context.subagents.prompt({
             requestId: params.clientMessageId as Parameters<typeof compositionAuthority.context.subagents.prompt>[0]["requestId"],
-            parentSessionId: child.parentId,
             childSessionId: child.id,
-            mode: "continuable",
             delivery: "queue",
             content: [{ type: "text", text: params.message }],
           }, context.signal)).catch(rethrowNativeChildControlError);
@@ -666,7 +664,7 @@ export class NativeRpcServer extends Service {
           }
           context.commit();
           try {
-            compositionAuthority.context.subagents.interruptByParent(child.id, child.parentId, "continuable");
+            compositionAuthority.context.subagents.interruptByUser(child.id);
           } catch (error) {
             rethrowNativeChildControlError(error);
           }

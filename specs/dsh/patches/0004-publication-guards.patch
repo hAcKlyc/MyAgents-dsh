@@ -1,8 +1,8 @@
 diff --git a/docs/subsystems/core.md b/docs/subsystems/core.md
-index 42f6d2e24a7e1ac7f662a742bd9f31f0506962b5..a3af7ad9a4702fad8c3fcb157027d23b23d8e4f5 100644
+index a00dc512efd50be69b12813b40a19e7081a8dd82..d7292e529f9d9303ebf81769c4be41673b99bc3b 100644
 --- a/docs/subsystems/core.md
 +++ b/docs/subsystems/core.md
-@@ -89,6 +89,9 @@ interface Agent {
+@@ -92,6 +92,9 @@ interface Agent {
     */
    whenIdle(): Promise<void>
  
@@ -12,7 +12,7 @@ index 42f6d2e24a7e1ac7f662a742bd9f31f0506962b5..a3af7ad9a4702fad8c3fcb157027d23b
    /**
     * Run one non-turn maintenance task from the true idle phase. The task starts
     * synchronously after claiming that phase; later waking input remains in the
-@@ -409,6 +412,32 @@ type Branded<B extends string> = string & { readonly [BRAND]: B }
+@@ -479,6 +482,32 @@ type Branded<B extends string> = string & { readonly [BRAND]: B }
  
  The two core IDs are `ToolCallId` (correlates a tool call with its result; dsh-llm) and `SessionId` (the shared live agent and durable session identity; dsh-session). Capability packages brand their own ids too, such as `JobId` in [jobs.md](jobs.md).
  
@@ -39,13 +39,13 @@ index 42f6d2e24a7e1ac7f662a742bd9f31f0506962b5..a3af7ad9a4702fad8c3fcb157027d23b
 +### `AgentPublicationGuard`
 +
 +```ts type-equiv
-+type AgentPublicationGuard = (agent: Agent, owner: Agent | undefined) => void
++type AgentPublicationGuard = (agent: Agent, proof?: object) => void
 +```
 +
- <!-- BEGIN GENERATED cordis-surface (gen-cordis-catalog.ts) — do not edit between markers -->
+ ## `TurnBoundaryProjection`
  
- <a id="cordis-surface"></a>
-@@ -655,6 +684,17 @@ withoutInitiator<T>(operation: () => T): T
+ `ctx.agents.turnBoundaryOf(session)` reads recorded turn and step positions without requiring a live Agent. The registry owns this state; consumers do not register its projection definition.
+@@ -759,6 +788,17 @@ withoutInitiator<T>(operation: () => T): T
   */
  setFactory(factory: AgentFactory): () => void
  
@@ -63,7 +63,7 @@ index 42f6d2e24a7e1ac7f662a742bd9f31f0506962b5..a3af7ad9a4702fad8c3fcb157027d23b
  /**
   * Create and publish a new agent through the registered factory.
   * Distinct from {@link register} (which records an already-constructed
-@@ -925,6 +965,29 @@ Types: [Scoped](scope.md) · [UserMessage](session.md)
+@@ -1009,6 +1049,29 @@ Types: [Scoped](scope.md) · [UserMessage](session.md)
  
  Source: [`packages/core/agent/src/runtime-types.ts`](../../packages/core/agent/src/runtime-types.ts)
  
@@ -94,10 +94,10 @@ index 42f6d2e24a7e1ac7f662a742bd9f31f0506962b5..a3af7ad9a4702fad8c3fcb157027d23b
  
  #### `agent/pre-step` — waterfall
 diff --git a/docs/subsystems/core.zh.md b/docs/subsystems/core.zh.md
-index 9714c7c62fc596798f5c7ddc0a469f8426e3443c..24bbaaac7a1b1d707601d3323b456231660950dc 100644
+index 5cb66a1692b34f1132724632c87e9e36c017226e..d82e2609e97d08ffe23f05f92aa974622fbdc0b3 100644
 --- a/docs/subsystems/core.zh.md
 +++ b/docs/subsystems/core.zh.md
-@@ -93,6 +93,9 @@ interface Agent {
+@@ -96,6 +96,9 @@ interface Agent {
     */
    whenIdle(): Promise<void>
  
@@ -107,7 +107,7 @@ index 9714c7c62fc596798f5c7ddc0a469f8426e3443c..24bbaaac7a1b1d707601d3323b456231
    /**
     * Run one non-turn maintenance task from the true idle phase. The task starts
     * synchronously after claiming that phase; later waking input remains in the
-@@ -421,6 +424,32 @@ type Branded<B extends string> = string & { readonly [BRAND]: B }
+@@ -491,6 +494,32 @@ type Branded<B extends string> = string & { readonly [BRAND]: B }
  
  两个核心 ID 是 `ToolCallId`（关联工具调用及其结果；dsh-llm）和 `SessionId`（活跃 agent 与持久会话共享的标识；dsh-session）。能力包也会品牌化各自的 id，例如 [jobs.md](jobs.zh.md) 中的 `JobId`。
  
@@ -134,13 +134,13 @@ index 9714c7c62fc596798f5c7ddc0a469f8426e3443c..24bbaaac7a1b1d707601d3323b456231
 +### `AgentPublicationGuard`
 +
 +```ts type-equiv
-+type AgentPublicationGuard = (agent: Agent, owner: Agent | undefined) => void
++type AgentPublicationGuard = (agent: Agent, proof?: object) => void
 +```
 +
- <!-- BEGIN GENERATED cordis-surface (gen-cordis-catalog.ts) — do not edit between markers -->
+ ## `TurnBoundaryProjection`
  
- <a id="cordis-surface"></a>
-@@ -667,6 +696,17 @@ withoutInitiator<T>(operation: () => T): T
+ `ctx.agents.turnBoundaryOf(session)` 读取已记录的轮次和步骤位置，无需活跃 Agent。注册表持有此状态；消费方不注册其投影定义。
+@@ -771,6 +800,17 @@ withoutInitiator<T>(operation: () => T): T
   */
  setFactory(factory: AgentFactory): () => void
  
@@ -158,7 +158,7 @@ index 9714c7c62fc596798f5c7ddc0a469f8426e3443c..24bbaaac7a1b1d707601d3323b456231
  /**
   * Create and publish a new agent through the registered factory.
   * Distinct from {@link register} (which records an already-constructed
-@@ -937,6 +977,29 @@ Types: [Scoped](scope.zh.md) · [UserMessage](session.zh.md)
+@@ -1021,6 +1061,29 @@ Types: [Scoped](scope.zh.md) · [UserMessage](session.zh.md)
  
  Source: [`packages/core/agent/src/runtime-types.ts`](../../packages/core/agent/src/runtime-types.ts)
  
@@ -189,23 +189,23 @@ index 9714c7c62fc596798f5c7ddc0a469f8426e3443c..24bbaaac7a1b1d707601d3323b456231
  
  #### `agent/pre-step` — waterfall
 diff --git a/docs/subsystems/session.md b/docs/subsystems/session.md
-index 4933734d57745a6473a460decfeaa48e24001a40..4f161a8f05720363a5ccd41f3dde5887a17d77fa 100644
+index c1651bf32e7b0cd18b23d4bd137ccf5c965b7247..f9f27614e2c3def4a37e86cf90cb4f0635c70b50 100644
 --- a/docs/subsystems/session.md
 +++ b/docs/subsystems/session.md
-@@ -809,6 +809,12 @@ The backends that consume this contract are on [persistence.md](persistence.md).
+@@ -840,6 +840,12 @@ The backends that consume this contract are on [persistence.md](persistence.md).
  
  The optional `application` selects a registered file handler without changing the system default; `workspacePathApplications({ path })` returns current handlers, names, icons, and default selection after Host path verification.
  
 +### `SessionPublicationGuard`
 +
 +```ts type-equiv
-+type SessionPublicationGuard = (session: Session) => void
++type SessionPublicationGuard = (session: Session, proof?: object) => void
 +```
 +
- <!-- BEGIN GENERATED cordis-surface (gen-cordis-catalog.ts) — do not edit between markers -->
+ ## Session-log upload exclusions
  
- <a id="cordis-surface"></a>
-@@ -1013,6 +1019,17 @@ Persistence is intentionally not implemented here — the agent lifecycle attach
+ `ctx.sessionLogDeepSeek.registerExclusion()` registers a caller-owned predicate over `SessionLogUploadRequest`. Any match omits the log contribution and its acceptance callback before reading Session events. No match preserves normal upload eligibility. The [package README](../../packages/session/session-log-deepseek/README.md#upload-exclusions) defines failure and disposal behavior.
+@@ -1119,6 +1125,17 @@ Persistence is intentionally not implemented here — the agent lifecycle attach
   */
  registerMessageProjection(projection: SessionMessageProjection): () => Promise<void>
  
@@ -224,23 +224,23 @@ index 4933734d57745a6473a460decfeaa48e24001a40..4f161a8f05720363a5ccd41f3dde5887
   * Create a session owned by the calling fiber: disposing that fiber stops
   * event notification and removes the session from the store. `options.seed`
 diff --git a/docs/subsystems/session.zh.md b/docs/subsystems/session.zh.md
-index a3e5446b610f5ddfadaea2550d0b46bf69034e50..b713a9d80925facd2b70f11aeb30cea950fa734b 100644
+index e359382e86bee8da64ef1e751f903d0608a2113b..be3291896d7656809583c1e41bd4c5572c3f62e2 100644
 --- a/docs/subsystems/session.zh.md
 +++ b/docs/subsystems/session.zh.md
-@@ -813,6 +813,12 @@ interface PluginRecord {
+@@ -844,6 +844,12 @@ interface PluginRecord {
  
  可选的 `application` 指定文件关联应用，不修改系统默认值；`workspacePathApplications({ path })` 在校验 Host 路径后返回当前关联应用、名称、图标和默认项。
  
 +### `SessionPublicationGuard`
 +
 +```ts type-equiv
-+type SessionPublicationGuard = (session: Session) => void
++type SessionPublicationGuard = (session: Session, proof?: object) => void
 +```
 +
- <!-- BEGIN GENERATED cordis-surface (gen-cordis-catalog.ts) — do not edit between markers -->
+ ## Session 日志上传排除条件
  
- <a id="cordis-surface"></a>
-@@ -1017,6 +1023,17 @@ Persistence is intentionally not implemented here — the agent lifecycle attach
+ `ctx.sessionLogDeepSeek.registerExclusion()` 注册归调用方所有的判断函数，输入为 `SessionLogUploadRequest`。任意条件匹配时，在读取 Session 事件前省略日志贡献与接受回调。没有条件匹配时保留普通上传资格判断。[包 README](../../packages/session/session-log-deepseek/README.zh.md#upload-exclusions) 定义失败与释放行为。
+@@ -1123,6 +1129,17 @@ Persistence is intentionally not implemented here — the agent lifecycle attach
   */
  registerMessageProjection(projection: SessionMessageProjection): () => Promise<void>
  
@@ -258,16 +258,64 @@ index a3e5446b610f5ddfadaea2550d0b46bf69034e50..b713a9d80925facd2b70f11aeb30cea9
  /**
   * Create a session owned by the calling fiber: disposing that fiber stops
   * event notification and removes the session from the store. `options.seed`
+diff --git a/packages/core/agent-loop/src/index.ts b/packages/core/agent-loop/src/index.ts
+index bda53c3b56788393d9d0c433690a4404fd0e766f..2bd5158db3828a73a3f08cdf575ebeb1115d3845 100644
+--- a/packages/core/agent-loop/src/index.ts
++++ b/packages/core/agent-loop/src/index.ts
+@@ -169,6 +169,7 @@ interface AgentInitializationOptions {
+   readonly source: SessionStartSource
+   readonly stored?: StoredSession | undefined
+   readonly setup?: AgentSetup | undefined
++  readonly publicationProof?: CreateAgentOptions['publicationProof']
+   readonly signal?: AbortSignal | undefined
+ }
+ 
+@@ -625,7 +626,8 @@ export class AgentLoop extends Service implements AgentFactory {
+           assertLive()
+           await this.appendUnstoredSuffix(stored, session)
+           assertLive()
+-          detachSession = agent.ctx.sessions.enter(session)
++          const proof = options.publicationProof?.(agent)
++          detachSession = agent.ctx.sessions.enter(session, proof)
+           agent.ctx.sessions.announce(session)
+           assertLive()
+           const setupCommit = await raceAbort(setup?.(agent.ctx, agent), abort.signal, id)
+@@ -634,7 +636,7 @@ export class AgentLoop extends Service implements AgentFactory {
+           assertLive()
+           // The mounted backend routes announced live events into the active
+           // write handle by session id; the loop only owns the handle itself.
+-          detachAgent = loopCtx.agents.enter(agent)
++          detachAgent = loopCtx.agents.enter(agent, proof)
+           await loopCtx.agents.announce(agent, source, abort.signal)
+           assertLive()
+           ready = true
+@@ -738,6 +740,7 @@ export class AgentLoop extends Service implements AgentFactory {
+         stored,
+         agentOptions: options.agentOptions ?? {},
+         setup: options.setup,
++        publicationProof: options.publicationProof,
+         signal: options.signal,
+         source: 'startup',
+       })
+@@ -822,6 +825,7 @@ export class AgentLoop extends Service implements AgentFactory {
+           stored: owned,
+           agentOptions: options.agentOptions ?? {},
+           setup: options.setup,
++        publicationProof: options.publicationProof,
+           signal: options.signal,
+           source: 'resume',
+         })
 diff --git a/packages/core/agent-loop/tests/publication-guards.spec.ts b/packages/core/agent-loop/tests/publication-guards.spec.ts
 new file mode 100644
-index 0000000000000000000000000000000000000000..62b3429429cd2cbd04311ed5188f92f7e2ef1edc
+index 0000000000000000000000000000000000000000..95d6efd97ecf518b6d9995fc76dacfd1203e470e
 --- /dev/null
 +++ b/packages/core/agent-loop/tests/publication-guards.spec.ts
-@@ -0,0 +1,77 @@
+@@ -0,0 +1,79 @@
 +import { Context } from '@deepseek-ai/cordis'
 +import AgentRegistry from '@deepseek-ai/dsh-agent'
 +import type { Agent } from '@deepseek-ai/dsh-agent'
 +import SessionStore, { Session, SessionId } from '@deepseek-ai/dsh-session'
++import { SessionProjectionRegistry } from '@deepseek-ai/dsh-session-projection'
 +import { describe, expect, it, vi } from 'vitest'
 +
 +const stubAgent = (id: string, session: Session): Agent => ({
@@ -298,29 +346,29 @@ index 0000000000000000000000000000000000000000..62b3429429cd2cbd04311ed5188f92f7
 +    expect(ctx.sessions.get(stock.id)).toBe(stock)
 +  })
 +
-+  it('rejects an Agent before registry mutation with exact owner attribution', async () => {
++  it('rejects an Agent before registry mutation with exact object identity', async () => {
 +    const ctx = new Context()
++    await ctx.plugin(SessionProjectionRegistry)
 +    await ctx.plugin(AgentRegistry)
 +    const allowedSession = Session.create(SessionId('allowed-agent'))
 +    const allowed = stubAgent('allowed-agent', allowedSession)
-+    const owner = stubAgent('owner', Session.create(SessionId('owner')))
-+    const guard = vi.fn((agent: Agent, candidateOwner: Agent | undefined) => {
++    const guard = vi.fn((agent: Agent) => {
 +      expect(ctx.agents.get(agent.id)).toBeUndefined()
-+      if (agent !== allowed || candidateOwner !== owner) throw new Error('agent publication denied')
++      if (agent !== allowed) throw new Error('agent publication denied')
 +    })
 +    const disposeGuard = ctx.agents.setPublicationGuard(guard)
 +
-+    expect(() => ctx.agents.enter(stubAgent('rogue-agent', Session.create(SessionId('rogue-agent'))), undefined))
++    expect(() => ctx.agents.enter(stubAgent('rogue-agent', Session.create(SessionId('rogue-agent')))))
 +      .toThrow('agent publication denied')
 +    expect(ctx.agents.list()).toEqual([])
-+    const detach = ctx.agents.enter(allowed, owner)
++    const detach = ctx.agents.enter(allowed)
 +    expect(ctx.agents.get(allowed.id)).toBe(allowed)
 +    expect(guard).toHaveBeenCalledTimes(2)
 +    detach()
 +
 +    disposeGuard()
 +    const stock = stubAgent('stock-agent', Session.create(SessionId('stock-agent')))
-+    const detachStock = ctx.agents.enter(stock, undefined)
++    const detachStock = ctx.agents.enter(stock)
 +    expect(ctx.agents.get(stock.id)).toBe(stock)
 +    detachStock()
 +  })
@@ -328,6 +376,7 @@ index 0000000000000000000000000000000000000000..62b3429429cd2cbd04311ed5188f92f7
 +  it('allows only one guard of each kind and validates the callback', async () => {
 +    const ctx = new Context()
 +    await ctx.plugin(SessionStore)
++    await ctx.plugin(SessionProjectionRegistry)
 +    await ctx.plugin(AgentRegistry)
 +    const disposeSession = ctx.sessions.setPublicationGuard(() => undefined)
 +    const disposeAgent = ctx.agents.setPublicationGuard(() => undefined)
@@ -341,39 +390,92 @@ index 0000000000000000000000000000000000000000..62b3429429cd2cbd04311ed5188f92f7
 +    disposeSession()
 +  })
 +})
+diff --git a/packages/core/agent-loop/tests/scope-lifecycle.spec.ts b/packages/core/agent-loop/tests/scope-lifecycle.spec.ts
+index 4b01c61f80ec786eed4d92685986c1b751259023..c17bb68d3670ffb8cfaaf963e73807815da34456 100644
+--- a/packages/core/agent-loop/tests/scope-lifecycle.spec.ts
++++ b/packages/core/agent-loop/tests/scope-lifecycle.spec.ts
+@@ -64,6 +64,30 @@ function disposeCurrentLifecycle(ownerCtx: Context): void {
+ }
+ 
+ describe('agent scope lifecycle', () => {
++  it('carries the Host proof only into factory-owned store insertions, including after a failed setup', async () => {
++    const ctx = await harness()
++    const token = {}
++    const requireProof = (_subject: object, proof?: object): void => {
++      if (proof !== token) throw new Error('missing factory proof')
++    }
++    ctx.sessions.setPublicationGuard(requireProof)
++    ctx.agents.setPublicationGuard(requireProof)
++    const sessionId = SessionId('proof-retry')
++    const options = { sessionId, agentOptions: { provider: 'mock', model: 'm' }, publicationProof: () => token }
++    try {
++      await expect(ctx.agents.create({ ...options, setup: (_scope, agent) => {
++        expect(ctx.sessions.get(sessionId)).toBe(agent.session)
++        expect(() => ctx.agents.enter(agent)).toThrow('missing factory proof')
++        throw new Error('setup failed')
++      } })).rejects.toThrow('setup failed')
++      expect(ctx.agents.get(sessionId)).toBeUndefined()
++      expect(ctx.sessions.get(sessionId)).toBeUndefined()
++      const handle = await ctx.agents.create(options)
++      expect(ctx.agents.get(sessionId)).toBe(handle.agent)
++      await handle.dispose()
++    } finally { await ctx.fiber.dispose() }
++  })
++
+   it('awaits serial creation before caller readiness', async () => {
+     const ctx = await harness()
+     const entered = Promise.withResolvers<undefined>()
 diff --git a/packages/core/agent/README.md b/packages/core/agent/README.md
-index 9da1f06f64004f8154ac424dd2aadc6c59c2647c..8752ab82946612d94f7995efefda0d3e940e15c6 100644
+index c7ff87b6d0aad7b047f9a82d83d2b9a609dc7f2b..0e51f1716936afda3823d8c243ea694e2ba5917c 100644
 --- a/packages/core/agent/README.md
 +++ b/packages/core/agent/README.md
-@@ -186,3 +186,5 @@ These limits define when this package needs special care. They are current packa
+@@ -217,3 +217,5 @@ These limits define when this package needs special care. They are current packa
  This Dev Note is working context for maintainers; it is explicitly non-authoritative. Open, undecided directions: inter-agent channels beyond delegation — shared state, streaming child output, and background or poll semantics remain outside the current delegation seam; and the `SessionStartSource` values `'clear'`/`'compact'` are reserved with no emitter yet, pending the driving subsystems.
  
  </details>
 +
 +A deployment may install one effect-scoped synchronous publication guard before registry mutation. Its exception rejects visibility; disposal restores ordinary admission. `wakePending` wakes an existing Inbox identity without changing FIFO.
 diff --git a/packages/core/agent/src/index.ts b/packages/core/agent/src/index.ts
-index dd8d09e6b7a32827e84a12f968cc2e900099b7ab..7e11ad1fc2b1975a24f495a71761a82c8c160ed7 100644
+index 374be301803f7100b3c349ddd857178817d6eb68..d7944580a10eb67d009a6cf18adeaecd5d72966b 100644
 --- a/packages/core/agent/src/index.ts
 +++ b/packages/core/agent/src/index.ts
-@@ -225,6 +225,9 @@ interface InitiatorRun {
+@@ -118,6 +118,8 @@ export interface CreateAgentOptions {
+    * than a runtime restriction. Drive the agent only after creation resolves.
+    */
+   readonly setup?: AgentSetup
++  /** Obtain a Host proof for the two store insertions of this exact factory invocation. */
++  readonly publicationProof?: (agent: Agent) => object | undefined
+ }
+ 
+ /**
+@@ -141,6 +143,8 @@ export interface ResumeAgentOptions {
+    * or owner disposal unwinds the transaction while preserving pending inbox input.
+    */
+   readonly setup?: AgentSetup
++  /** Obtain a Host proof for the two store insertions of this exact factory invocation. */
++  readonly publicationProof?: (agent: Agent) => object | undefined
+ }
+ 
+ /**
+@@ -226,6 +230,9 @@ interface InitiatorRun {
    readonly parent: InitiatorRun | undefined
  }
  
 +/** Deployment policy checked synchronously before registry publication. */
-+export type AgentPublicationGuard = (agent: Agent, owner: Agent | undefined) => void
++export type AgentPublicationGuard = (agent: Agent, proof?: object) => void
 +
  /** Plain holder prevents Cordis from tracing the factory field before the caller context is known. */
  interface FactorySlot {
    readonly target: AgentFactory
-@@ -245,6 +248,7 @@ interface FactorySlot {
- export class AgentRegistry extends Service {
+@@ -249,6 +256,7 @@ export class AgentRegistry extends Service {
+   private turnBoundaryProjectionHandle!: ProjectionHandle<TurnBoundaryProjection>
    private store = new Map<SessionId, AgentEntry>()
    private factory: FactorySlot | undefined
 +  private publicationGuard: AgentPublicationGuard | undefined
    private readonly initiators = new AsyncLocalStorage<Agent | undefined>()
    private readonly initiatorRuns = new AsyncLocalStorage<InitiatorRun>()
    private initiatorState: 'active' | 'closing' | 'disposed' = 'active'
-@@ -375,6 +379,28 @@ export class AgentRegistry extends Service {
+@@ -392,6 +400,28 @@ export class AgentRegistry extends Service {
      return dispose
    }
  
@@ -402,29 +504,38 @@ index dd8d09e6b7a32827e84a12f968cc2e900099b7ab..7e11ad1fc2b1975a24f495a71761a82c
    /** Return the active creation factory. */
    private requireFactory(): FactorySlot {
      if (this.factory === undefined) throw new Error(NO_FACTORY_MESSAGE)
-@@ -467,6 +493,7 @@ export class AgentRegistry extends Service {
+@@ -471,7 +501,7 @@ export class AgentRegistry extends Service {
+    *   `agent/created` listener, removal and disposal wait until the serial
+    *   creation dispatch settles.
+    */
+-  enter(agent: Agent): () => void {
++  enter(agent: Agent, proof?: object): () => void {
+     const id = agent.id
+     if (id !== agent.session.id) {
+       throw new Error(`agent id "${id}" does not match session id "${agent.session.id}"`)
+@@ -480,6 +510,7 @@ export class AgentRegistry extends Service {
      // This is the authoritative collision boundary. Concurrent create/resume
      // operations may both prepare, but only one exact entry can publish.
      if (this.store.has(id)) throw new Error(`agent "${id}" is already registered`)
-+    this.publicationGuard?.(agent, owner)
++    this.publicationGuard?.(agent, proof)
      const entry: AgentEntry = {
        id,
        agent,
 diff --git a/packages/core/session/README.md b/packages/core/session/README.md
-index 178dc708b878d8648942c7b6124c59f69db71a8a..e55dd0b9aa9322c10b835c2883108d65df580829 100644
+index 3b55b1fcced8dd7625e17d034e87b515f69af4d5..56ef00bc15d573f13d1ca91ba98089451b74277e 100644
 --- a/packages/core/session/README.md
 +++ b/packages/core/session/README.md
-@@ -213,3 +213,5 @@ These limits define when the session store needs special care. They are current
+@@ -217,3 +217,5 @@ These limits define when the session store needs special care. They are current
  None.
  
  </details>
 +
 +A deployment may install one effect-scoped synchronous publication guard before store or attachment mutation. Its exception rejects visibility; disposal restores ordinary admission. Persistence ownership remains separate.
 diff --git a/packages/core/session/src/index.ts b/packages/core/session/src/index.ts
-index e1ecb920bd197aa9648b41c9a2d307ed14ac6edc..ea13632dba46d4ca14539fbd40e08fdb11465e41 100644
+index ea6c337f553c0a5bd0836a47301d59cc16bafa26..07af2c37fce7d77896c2a4de7cd218a562b767f7 100644
 --- a/packages/core/session/src/index.ts
 +++ b/packages/core/session/src/index.ts
-@@ -1018,6 +1018,14 @@ export class Session {
+@@ -1113,6 +1113,14 @@ export class Session {
  /** A fork source: either the live session object or its live store id. */
  export type SessionForkSource = Session | SessionId
  
@@ -434,12 +545,12 @@ index e1ecb920bd197aa9648b41c9a2d307ed14ac6edc..ea13632dba46d4ca14539fbd40e08fdb
 + * install one through {@link SessionStore.setPublicationGuard}; stock DSH
 + * behavior is unchanged when no guard is installed.
 + */
-+export type SessionPublicationGuard = (session: Session) => void
++export type SessionPublicationGuard = (session: Session, proof?: object) => void
 +
  /**
   * Rejection codes for session forking: the fork source id is unknown to the
   * live store (`SESSION_NOT_FOUND`) or names a session object that is not the
-@@ -1072,6 +1080,7 @@ export class SessionStore extends Service {
+@@ -1167,6 +1175,7 @@ export class SessionStore extends Service {
        return () => { this.projections.splice(this.projections.indexOf(projection), 1) }
      }, 'sessions.registerMessageProjection()')
    }
@@ -447,7 +558,7 @@ index e1ecb920bd197aa9648b41c9a2d307ed14ac6edc..ea13632dba46d4ca14539fbd40e08fdb
  
    constructor(ctx: Context) {
      super(ctx, 'sessions')
-@@ -1087,6 +1096,28 @@ export class SessionStore extends Service {
+@@ -1182,6 +1191,28 @@ export class SessionStore extends Service {
      })
    }
  
@@ -476,19 +587,27 @@ index e1ecb920bd197aa9648b41c9a2d307ed14ac6edc..ea13632dba46d4ca14539fbd40e08fdb
    /**
     * Create a session owned by the calling fiber: disposing that fiber stops
     * event notification and removes the session from the store. `options.seed`
-@@ -1214,6 +1245,7 @@ export class SessionStore extends Service {
+@@ -1308,13 +1339,14 @@ export class SessionStore extends Service {
+    *   that creation dispatch unwinds.
+    * @throws if a session with this id is already in the store.
+    */
+-  enter(session: Session): () => void {
++  enter(session: Session, proof?: object): () => void {
+     const id = session.id
+     const carrier = scopeTarget(session, scopeOf(this.ctx))
+     // This is the authoritative collision boundary after arbitrary unpublished
      // preparation. Only one exact same-id transaction can publish.
      if (this.store.has(id)) throw new Error(`session "${id}" already exists`)
-     if (attachments.has(session)) throw new Error(`session "${id}" is already attached to a store`)
-+    this.publicationGuard?.(session)
+     if (attachments.get(session) != null) throw new Error(`session "${id}" is already attached to a store`)
++    this.publicationGuard?.(session, proof)
      const entry: SessionEntry = {
        id,
        session,
 diff --git a/packages/extensions/tool-cordis/src/api-catalog.ts b/packages/extensions/tool-cordis/src/api-catalog.ts
-index be3e31626359ec9607789b83000f7e3128a425ea..261170fcd0e397b2d28ebfdfe207c2f455c78313 100644
+index 919025faa0af37f937c92d34d345dfc443eae296..9885def4d57fd2dfccc8b355b142f6999ae6ecbb 100644
 --- a/packages/extensions/tool-cordis/src/api-catalog.ts
 +++ b/packages/extensions/tool-cordis/src/api-catalog.ts
-@@ -260,6 +260,12 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
+@@ -304,6 +304,12 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
          parameters: [{ name: 'factory', description: 'the loop-owned factory {@link create}/{@link resume} delegate to.' }],
          returns: 'the disposer that clears the factory slot. The exact Cordis effect disposer (single-shot): composite (generator) effects may yield it directly — exact identity nests the teardown in order.',
        },
@@ -501,7 +620,7 @@ index be3e31626359ec9607789b83000f7e3128a425ea..261170fcd0e397b2d28ebfdfe207c2f4
        {
          signature: 'async create(options: CreateAgentOptions): Promise<AgentHandle>',
          description: 'Create and publish a new agent through the registered factory. Distinct from register (which records an already-constructed agent): this constructs the agent and its session. Rejects if no factory is registered or creation/setup fails. The resolved AgentHandle lets the owner tear down exactly this agent.',
-@@ -2513,6 +2519,12 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
+@@ -3399,6 +3405,12 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
          returns: 'the fiber-owned disposer.',
          throws: ['when another definition already owns this event type.'],
        },
@@ -514,7 +633,7 @@ index be3e31626359ec9607789b83000f7e3128a425ea..261170fcd0e397b2d28ebfdfe207c2f4
        {
          signature: 'create(id?: SessionId, options?: CreateSessionOptions): Session',
          description: 'Create a session owned by the calling fiber: disposing that fiber stops event notification and removes the session from the store. `options.seed` populates the session with a copy of those events (replay/fork); `options.meta` attaches creation metadata (validated absolute `cwd`, seed and parent lineage, and delegation depth) as the immutable SessionHeader (the store fills `version`/`id`/`createdAt`).\n\nFor an agent whose session must be torn down IN ORDER with its loop (so the loop\'s final events are published before the store attachment ends), do NOT use this — fold the session lifecycle into the agent\'s own effect via prepare + enter + announce (see `dsh-agent-loop`\'s creation transaction).',
-@@ -4069,6 +4081,14 @@ export const EVENT_API: readonly EventApiEntry[] = [
+@@ -5048,6 +5060,14 @@ export const EVENT_API: readonly EventApiEntry[] = [
      description: 'One message entered the live inbox.',
      parameters: [{ name: 'payload', description: '.message - the inserted message. Scope-filtered dispatch (`@deepseek-ai/dsh-scope`): agent-scoped listeners receive only that agent.' }],
    },
@@ -529,18 +648,18 @@ index be3e31626359ec9607789b83000f7e3128a425ea..261170fcd0e397b2d28ebfdfe207c2f4
    {
      name: 'agent/pre-step',
      mode: 'waterfall',
-@@ -4753,6 +4773,10 @@ export const TYPE_API: readonly TypeApiEntry[] = [
+@@ -5876,6 +5896,10 @@ export const TYPE_API: readonly TypeApiEntry[] = [
      name: 'AgentPresetRow',
      declaration: 'export interface AgentPresetRow {\n    readonly id: string;\n    readonly isDefault: boolean;\n    readonly name?: string;\n    readonly description?: string;\n    readonly broken?: string;\n}',
    },
 +  {
 +    name: 'AgentPublicationGuard',
-+    declaration: 'export type AgentPublicationGuard = (agent: Agent, owner: Agent | undefined) => void;',
++    declaration: 'export type AgentPublicationGuard = (agent: Agent, proof?: object) => void;',
 +  },
    {
      name: 'AgentResolver',
      declaration: 'export type AgentResolver = (sessionId: SessionId) => Promise<Agent>;',
-@@ -6453,6 +6477,14 @@ export const TYPE_API: readonly TypeApiEntry[] = [
+@@ -8132,6 +8156,14 @@ export const TYPE_API: readonly TypeApiEntry[] = [
      name: 'PreparedAdapterCall',
      declaration: 'export interface PreparedAdapterCall {\n    readonly model: LlmResolvedModelInfo;\n    stream(options: GenerateOptions): AsyncIterable<StreamChunk>;\n}',
    },
@@ -555,25 +674,82 @@ index be3e31626359ec9607789b83000f7e3128a425ea..261170fcd0e397b2d28ebfdfe207c2f4
    {
      name: 'PreparedDeepSeekLlmApiExtension',
      declaration: 'export interface PreparedDeepSeekLlmApiExtension<T extends DeepSeekLlmApiJson> {\n    readonly value: T;\n    accept?(): void | Promise<void>;\n}',
-@@ -7365,6 +7397,10 @@ export const TYPE_API: readonly TypeApiEntry[] = [
+@@ -9196,6 +9228,10 @@ export const TYPE_API: readonly TypeApiEntry[] = [
      name: 'SessionPromptValue',
      declaration: 'export interface SessionPromptValue {\n    readonly accepted: true;\n}',
    },
 +  {
 +    name: 'SessionPublicationGuard',
-+    declaration: 'export type SessionPublicationGuard = (session: Session) => void;',
++    declaration: 'export type SessionPublicationGuard = (session: Session, proof?: object) => void;',
 +  },
    {
-     name: 'SessionRecord',
-     declaration: 'export interface SessionRecord {\n    header: SessionHeader;\n    live: boolean;\n    persisted: boolean;\n    formatStatus?: \'current\' | \'migration-required\';\n}',
+     name: 'SessionQueuedItem',
+     declaration: 'export interface SessionQueuedItem {\n    readonly id: MessageId;\n    readonly placement: \'queued\' | \'steering\' | \'context\';\n    readonly rpcId?: SessionRequestId;\n    readonly content: readonly JsonValue[];\n}',
+diff --git a/packages/subagent/subagent/src/index.ts b/packages/subagent/subagent/src/index.ts
+index bb89264e918a64cdca6719500010e9dad28fc014..44b0397e9d1e9af975d6d8280f83a279ff93e066 100644
+--- a/packages/subagent/subagent/src/index.ts
++++ b/packages/subagent/subagent/src/index.ts
+@@ -206,7 +206,9 @@ export class SubagentRuntime extends TypertRemoteService {
+    */
+   private readonly emitLifecycle: LifecycleEmitter
+ 
+-  constructor(ctx: Context, private config: Config) {
++  constructor(ctx: Context, private config: Config,
++    private readonly publicationProof?: (root: Agent, child: Agent) => object | undefined,
++  ) {
+     super(ctx, 'subagents')
+     this.emitLifecycle = createLifecycleEmitter(this.ctx, parent => scopeTarget(this, parent))
+   }
+@@ -222,6 +224,7 @@ export class SubagentRuntime extends TypertRemoteService {
+         identityOf: session => identityProjection.stateOf(session).identity,
+         catalogOf: session => subagentCatalogProjectionDefinition.wire.view(catalogProjection.stateOf(session)),
+         emitLifecycle: this.emitLifecycle,
++        publicationProof: this.publicationProof,
+       }, () => this.config.maxActiveSubagents.get())
+       this.manager = manager
+       childCtx.effect(() => () => {
+diff --git a/packages/subagent/subagent/src/manager.ts b/packages/subagent/subagent/src/manager.ts
+index 59639cef703a70930aef7b900569aea1389343a5..7d622b777aa30368a53b12246a9c62367138b394 100644
+--- a/packages/subagent/subagent/src/manager.ts
++++ b/packages/subagent/subagent/src/manager.ts
+@@ -66,6 +66,7 @@ interface SubagentHost {
+   /** Read a live Session's direct-child catalog through the service-owned projection. */
+   catalogOf(session: Session): readonly SubagentCatalogEntry[]
+   /** Publish lifecycle events through the owning service's scoped dispatcher. */
++  readonly publicationProof?: ((root: Agent, child: Agent) => object | undefined) | undefined
+   readonly emitLifecycle: LifecycleEmitter
+ }
+ 
+@@ -847,11 +848,13 @@ export class SubagentManager {
+           )
+         }
+       }
++      const publicationProof = (child: Agent) => this.host.publicationProof?.(root, child)
+       const handle = create === undefined
+         ? await this.ownerCtx.agents.resume({
+           resumeSessionId: childId,
+           agentOptions: inputs.agentOptions,
+           signal: inputs.signal,
++          publicationProof,
+           setup,
+         })
+         : await this.ownerCtx.agents.create({
+@@ -861,6 +864,7 @@ export class SubagentManager {
+           inheritedEventCount: create.inheritedEventCount,
+           agentOptions: inputs.agentOptions,
+           signal: inputs.signal,
++          publicationProof,
+           setup,
+         })
+ 
 diff --git a/scripts/gen-cordis-catalog.ts b/scripts/gen-cordis-catalog.ts
-index ebd752714286dd59491439c88a697bfa84f3b6f2..aaf432ee53da3ca09d00954afe35f67eb0b56141 100644
+index 92ae05967ed355dad01a9e35e1e4fb836011b475..306b08679145ebbc51af3c7f78e92d90bd0a0f93 100644
 --- a/scripts/gen-cordis-catalog.ts
 +++ b/scripts/gen-cordis-catalog.ts
-@@ -336,6 +336,10 @@ export const LINK_MAP: Readonly<Record<string, string>> = {
-   AllowedModelRoute: 'subagent.md',
+@@ -405,6 +405,10 @@ export const LINK_MAP: Readonly<Record<string, string>> = {
    SubagentModelSelectionSettings: 'subagent.md',
    AgentOptions: 'core.md',
+   TurnBoundaryProjection: 'core.md',
 +  PreparedAssistantCommit: 'core.md',
 +  PreparedAssistantToolCall: 'core.md',
 +  AgentPublicationGuard: 'core.md',

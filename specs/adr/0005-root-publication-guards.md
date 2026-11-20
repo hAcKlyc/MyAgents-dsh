@@ -1,10 +1,14 @@
 # ADR 0005 — Guard root Agent and Session publication before visibility
 
-Current DSH `0.2.1-rc.2` disposition: retained as patch 0004; publication admission still precedes exposure. The [seam registry](../dsh/seam-decisions-v1.json) owns exact current patch identity; dated evidence below is historical.
+Current DSH `0.2.2-rc.5` disposition: retained as patch 0004; publication admission still precedes exposure. The [seam registry](../dsh/seam-decisions-v1.json) owns exact current patch identity; dated evidence below is historical.
 
 Status: accepted on 2026-08-16 for the fixed DSH source baseline
 
 Historical disposition (2026-08-29): retained and rebased as `DSH-SEAM-005` / patch 0004 for official DSH `0.1.1-rc.2`. The current seam registry and upstream refresh records supersede the original rc.5 patch identity below.
+
+## RC.5 lifecycle
+
+The factory enters the Session before asynchronous setup and publishes the Agent after setup commits. The factory obtains one opaque proof for the exact Agent and Session. Only its two native store insertions carry this proof. The native subagent manager supplies its verified tree root for both fresh and restored children, including when a creator is offline. The Product admission fence checks the actual Session and Agent independently at their native insertion points. A Session observer during setup sees the Session and zero published root Agents. Native detach controls visibility during rollback. The Host keeps no parallel publication or disposal registry.
 
 ## Context
 
@@ -21,8 +25,8 @@ Patch `specs/dsh/patches/0004-publication-guards.patch` is the fourth pinned pat
 Add two optional deployment seams:
 
 ```ts
-AgentRegistry.setPublicationGuard((agent, owner) => void): () => void
-SessionStore.setPublicationGuard((session) => void): () => void
+AgentRegistry.setPublicationGuard((agent, proof?) => void): () => void
+SessionStore.setPublicationGuard((session, proof?) => void): () => void
 ```
 
 Each registry permits at most one effect-scoped guard. The guard runs synchronously at the authoritative `enter` boundary after built-in identity/collision checks and immediately before any registry, attachment, or publication-hook mutation. A throw rejects without visibility. With no guard installed, stock DSH behavior is byte-for-byte equivalent.

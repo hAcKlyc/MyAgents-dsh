@@ -517,7 +517,7 @@ describe("durable product-operation fold", () => {
       ownsRootContextMessage(agent.session, source, id, agent.ctx);
     const fixture = await mountService(undefined, undefined, undefined, undefined, undefined, true, undefined, undefined, owner);
     await fixture.context.plugin(SessionProjectionRegistry);
-    installProductContextProjection(fixture.context);
+    await installProductContextProjection(fixture.context);
     await fixture.service.start(params());
     fixture.agent.session.append("turn/start", { turn: 1 });
     fixture.inbox.claim("next-turn", 1);
@@ -543,7 +543,7 @@ describe("durable product-operation fold", () => {
     const events = [...fixture.events];
     const recovered = await mountService(undefined, events, undefined, undefined, undefined, true, undefined, undefined, owner);
     await recovered.context.plugin(SessionProjectionRegistry);
-    installProductContextProjection(recovered.context);
+    await installProductContextProjection(recovered.context);
     expect(() => recovered.service.validatePersisted(recovered.agent)).not.toThrow();
     expect(recovered.service.snapshot().operations).toHaveLength(1);
     expect(recovered.service.snapshot().recoveryRequired).toBe(false);
@@ -656,7 +656,7 @@ describe("durable product-operation fold", () => {
     const fixture = await mountService({ capture: () => ({ ...birth(), limits: {} }) }, undefined, undefined, undefined, undefined, true, undefined, undefined,
       (agent, source, id) => ownsRootContextMessage(agent.session, source, id, agent.ctx));
     await fixture.context.plugin(SessionProjectionRegistry);
-    const stopProjection = installProductContextProjection(fixture.context);
+    const stopProjection = await installProductContextProjection(fixture.context);
     Object.assign(fixture.context.productSession, {
       snapshot: () => ({ state: "ready" }), requireAgent: () => fixture.agent,
       requireOperationConfigRevision: () => "config-1",
@@ -677,11 +677,11 @@ describe("durable product-operation fold", () => {
     const stopConsumer = fixture.context.on("agent/pre-step", (_payload, next) => { consumer(); return next(); });
     const stopAdmission = installNativeRootContext(fixture.context);
     try {
-      await fixture.context.waterfall("agent/pre-step", { agent: fixture.agent, messages, turn: 1, step: 1, signal: new AbortController().signal },
+      await fixture.context.waterfall("agent/pre-step", { agent: fixture.agent, messages, turn: 1, step: 1, modelSelection: { provider: "fixture", model: "fixture" }, signal: new AbortController().signal },
         () => Promise.resolve({ kind: "enter" as const, messages }));
       expect(consumer).toHaveBeenCalledOnce();
       expect(fixture.service.resolveActiveToolOperation(fixture.agent).operation.origin).toBe("collaboration");
-    } finally { stopAdmission(); stopConsumer(); stopProjection(); }
+    } finally { stopAdmission(); stopConsumer(); await stopProjection(); }
   });
 
   it.each(["idle", "active"])("admits a DSH child message already claimed before pre-step (%s)", async (mode) => {

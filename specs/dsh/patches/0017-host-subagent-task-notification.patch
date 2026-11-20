@@ -1,0 +1,25 @@
+diff --git a/packages/subagent/subagent/src/index.ts b/packages/subagent/subagent/src/index.ts
+index 44b0397e9d1e9af975d6d8280f83a279ff93e066..8f95ee240e5f21140588e713928484548f10f3a6 100644
+--- a/packages/subagent/subagent/src/index.ts
++++ b/packages/subagent/subagent/src/index.ts
+@@ -37,7 +37,7 @@ import { brandString } from '@deepseek-ai/dsh-brand'
+ import { scopeTarget } from '@deepseek-ai/dsh-scope'
+ import type { Scoped } from '@deepseek-ai/dsh-scope'
+ import { assertObjectJsonSchema } from '@deepseek-ai/dsh-tools'
+-import type { ContentBlock, MessageId } from '@deepseek-ai/dsh-llm'
++import type { ContentBlock, MessageId, MessageSource } from '@deepseek-ai/dsh-llm'
+ import type { Agent } from '@deepseek-ai/dsh-agent'
+ import type { SessionId } from '@deepseek-ai/dsh-session'
+ import { canonicalClientTimeZone } from '@deepseek-ai/dsh-util-time'
+@@ -355,6 +355,11 @@ export class SubagentRuntime extends TypertRemoteService {
+     return this.manager?.waitForTreeWork(root) ?? false
+   }
+ 
++  /** Queue a trusted Host notification through the native tree. The caller authorizes its recipient. */
++  queueHostPrompt(childId: SessionId, content: ContentBlock[], source: MessageSource, signal: AbortSignal): Promise<MessageId> {
++    return this.requireManager().deliverPrompt(childId, content, { source, signal, delivery: 'queue' })
++  }
++
+   /**
+    * Steer one model-authored message to another member of the same subagent tree.
+    * A running target receives it at its next step; an idle target starts a turn.

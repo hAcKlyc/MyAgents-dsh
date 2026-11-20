@@ -1,3 +1,5 @@
+import type {} from "@deepseek-ai/dsh-tool-jobs";
+import * as NativeToolExecutor from "@deepseek-ai/dsh-tool-executor-native";
 import type { ExtensionSnapshot } from "@myagents-dsh/protocol";
 import { modelToolNames } from "@myagents-dsh/protocol";
 import type {} from "@deepseek-ai/dsh-subagent";
@@ -62,7 +64,6 @@ import {
   type StreamChunk,
 } from "@deepseek-ai/dsh-llm";
 import { Session, SessionId, SessionSeq, SessionStore, type SessionEvent } from "@deepseek-ai/dsh-session";
-import { materializeAppendBatch } from "@deepseek-ai/dsh-session-persistence";
 import { resolveRgPath } from "@deepseek-ai/dsh-tool-fs-search";
 import {
   HostPortService,
@@ -591,7 +592,8 @@ const lifecycleMcpSnapshot = (revision: string): ExtensionSnapshot => {
 };
 const lifecycleRoot = new Context();
 await lifecycleRoot.plugin(SystemPrompt);
-await lifecycleRoot.plugin(ToolRuntime, { mode: "native" });
+await lifecycleRoot.plugin(ToolRuntime);
+  await lifecycleRoot.plugin(NativeToolExecutor);
 const lifecycleOldCall = Promise.withResolvers<Readonly<{
   content: readonly Readonly<{ type: "text"; text: string }>[];
   isError: false;
@@ -664,12 +666,16 @@ const lifecycleToolName = "mcp__artifact_lifecycle__echo";
 const lifecycleOldDefinition = lifecycleRoot.tools.get(lifecycleToolName);
 assert.ok(lifecycleOldDefinition !== undefined);
 const lifecycleInitialCatalog = JSON.stringify(lifecycleRoot.productComponents.catalog());
-const lifecycleOldExecution = lifecycleRoot.tools.execute({
-  arguments: Object.freeze({ value: "hold" }),
-  callId: ToolCallId("artifact-lifecycle-old-call"),
-  name: lifecycleToolName,
-  signal: new AbortController().signal,
-});
+const executeLifecycleTool = async (id: string, value: string) => {
+  const batch = await lifecycleRoot.tools.execute({
+    calls: [{ type: "tool-call", id: ToolCallId(id), name: lifecycleToolName, arguments: JSON.stringify({ value }) }],
+    signal: new AbortController().signal,
+  });
+  const outcome = batch.results[0];
+  assert.ok(outcome);
+  return outcome.result;
+};
+const lifecycleOldExecution = executeLifecycleTool("artifact-lifecycle-old-call", "hold");
 await lifecycleOldCallStarted.promise;
 const lifecycleDegraded = await lifecycleController.replace(
   lifecycleMcpSnapshot("artifact-lifecycle-reconnect-failed-v1"),
@@ -715,12 +721,7 @@ assert.deepEqual(lifecycleRetainedOutcome, {
 });
 lifecycleOldGenerationUnused.resolve(undefined);
 await waitUntil(() => lifecycleCloseHits.get(1) === 1, "retired MCP generation cleanup");
-const lifecycleReplacementOutcome = await lifecycleRoot.tools.execute({
-  arguments: Object.freeze({ value: "replacement" }),
-  callId: ToolCallId("artifact-lifecycle-replacement-call"),
-  name: lifecycleToolName,
-  signal: new AbortController().signal,
-});
+const lifecycleReplacementOutcome = await executeLifecycleTool("artifact-lifecycle-replacement-call", "replacement");
 assert.deepEqual(lifecycleReplacementOutcome, {
   isError: false,
   content: [{ type: "text", text: "lifecycle result 3" }],
@@ -1316,13 +1317,13 @@ const advancedRogueAgent = {
   id: advancedRogueSession.id,
   session: advancedRogueSession,
 } as Agent;
-assert.throws(() => composition.context.agents.enter(advancedRogueAgent, undefined),
+assert.throws(() => composition.context.agents.enter(advancedRogueAgent),
   /root Agent publication lacks the primary Session admission authority/u);
 await assert.rejects(composition.context.agents.create({
   sessionId: SessionId("rogue-before-admission"),
   agentOptions: { provider: "fixture", model: "fixture-model" },
 }), /lacks the primary Session admission authority/u);
-assert.equal(composition.context.agents.roots().length, 0);
+assert.equal(composition.context.agents.list().filter((agent) => agent.session.header.origin !== "subagent").length, 0);
 
 const bareInput = new PassThrough();
 const bareOutput = new PassThrough();
@@ -2018,10 +2019,10 @@ try {
   const heldOperation = hostModelComposition.context.sdkOperations.lookup("artifact-host-model-operation");
   assert.equal(heldOperation?.state, "settling");
   assert.equal(heldOperation.terminal, undefined);
-  const runningChildren = await hostModelComposition.context.subagents.listChildren(hostModelAgent.id);
+  const runningChildren = await hostModelComposition.context.subagents.listDescendants(hostModelAgent.id, new AbortController().signal);
   assert.equal(runningChildren.length, 1);
   const childRow = runningChildren[0];
-  assert.ok(childRow?.mode === "continuable");
+  assert.ok(childRow?.kind === "child" && childRow.mode === "continuable");
   const hostModelChild = hostModelComposition.context.agents.get(childRow.id);
   assert.ok(hostModelChild !== undefined && hostModelChild !== hostModelAgent);
   assert.equal(hostModelChild.session.header.parentSession, hostModelAgent.id);
@@ -2473,7 +2474,7 @@ await assert.rejects(
   /configuration differs from the installed Runtime authorities/u,
 );
 assert.equal(configurationMismatchComposition.context.productSession.snapshot().state, "recovery_required");
-assert.deepEqual(configurationMismatchComposition.context.agents.roots(), []);
+assert.deepEqual(configurationMismatchComposition.context.agents.list().filter((agent) => agent.session.header.origin !== "subagent"), []);
 assert.deepEqual(configurationMismatchComposition.context.sessions.list(), []);
 await configurationMismatchComposition.dispose();
 assert.throws(() => configurationMismatchComposition.snapshot(), /disposing or disposed/u);
@@ -2485,26 +2486,21 @@ composition.context.on("session/created", (session) => {
   if (session.id === primarySessionParams.runtimeSessionId) {
     const transient = composition.context.productSession.snapshot();
     assert.equal(transient.state, primaryPublicationCount === 0 ? "creating" : "resuming");
-    assert.equal(transient.liveRootAgents, 1);
+    assert.equal(transient.liveRootAgents, 0);
     assert.deepEqual(composition.context.sessions.list(), [session]);
-    assert.deepEqual(composition.context.agents.roots().map(({ id }) => id), [session.id]);
+    assert.deepEqual(composition.context.agents.list(), []);
     primaryPublicationSnapshotVerified = true;
     primaryPublicationCount += 1;
   } else if (session.id.startsWith("rogue-")) {
     roguePublicationObserved = true;
   }
 });
-const rogueSetupStarted = Promise.withResolvers<undefined>();
-const rogueSetupRelease = Promise.withResolvers<undefined>();
-const concurrentRogue = composition.context.agents.create({
+let rogueSetupStarted = false;
+const concurrentRogue = assert.rejects(composition.context.agents.create({
   sessionId: SessionId("rogue-concurrent-admission"),
   agentOptions: { provider: "fixture", model: "fixture-model" },
-  setup: async () => {
-    rogueSetupStarted.resolve(undefined);
-    await rogueSetupRelease.promise;
-  },
-});
-await rogueSetupStarted.promise;
+  setup: () => { rogueSetupStarted = true; },
+}), /lacks the primary Session admission authority/u);
 const [createdPrimary, exactCreatedPrimary] = await Promise.all([
   hostClient.sessionCreate(primarySessionParams),
   hostClient.sessionCreate(primarySessionParams),
@@ -2514,8 +2510,8 @@ const firstPrimaryAdmission = composition.context.productSession.bindCreate(prim
 const exactPrimaryRetry = composition.context.productSession.bindCreate(primarySessionParams);
 assert.equal(exactPrimaryRetry, firstPrimaryAdmission);
 const primaryBinding = await firstPrimaryAdmission;
-rogueSetupRelease.resolve(undefined);
-await assert.rejects(concurrentRogue, /lacks the primary Session admission authority/u);
+await concurrentRogue;
+assert.equal(rogueSetupStarted, false);
 assert.equal(primaryPublicationSnapshotVerified, true);
 assert.equal(roguePublicationObserved, false);
 assert.equal(createdPrimary.state, "ready");
@@ -2722,9 +2718,8 @@ await waitUntil(
 );
 
 // Check the context's authority facts, not an exact copy of all prompt prose.
-const runtimeContexts = primaryAgent.session.deriveMessages().filter(({ content }) => content.some(
-  (block) => block.type === "text" && block.text.startsWith("Current runtime context."),
-));
+const runtimeContexts = primaryAgent.session.deriveMessages().filter(({ content }) => content.some((block) =>
+  block.type === "text" && block.text.startsWith("<system-reminder>\nThe following information describes your current session")));
 assert.equal(runtimeContexts.length, 1, "unchanged runtime context must not be duplicated on each turn");
 const runtimeContext = runtimeContexts[0];
 assert.ok(runtimeContext);
@@ -2732,7 +2727,7 @@ const contextText = runtimeContext.content.flatMap((block) => block.type === "te
 assert.ok(contextText.includes(fixtureWorkspace));
 assert.ok(!contextText.includes(String(primaryAgent.id)), "internal root Session identity stays out of generic context");
 assert.ok(contextText.includes("fixture-audit") && contextText.includes("release-audit"));
-assert.ok(contextText.includes("Approval policy: ask."));
+assert.ok(contextText.includes("Approval prompts are enabled"));
 const approvalContextMessage = { role: runtimeContext.role, content: runtimeContext.content };
 const primarySystemMessage = {
   role: "system" as const,
@@ -3637,7 +3632,9 @@ const unrelatedRuntimeRead = retainedOutputResults.find((event) => event.type ==
   && String(event.data.message.source.callId) === "artifact-runtime-private-read-call");
 assert.ok(retainedOutputRead?.type === "tool/result");
 assert.equal(retainedOutputRead.data.message.isError, false);
-assert.match(JSON.stringify(retainedOutputRead.data.message.content), /artifact-background/u);
+const jobNotices = primaryAgent.session.deriveMessages().filter(({ source }) => source.kind === "tool-jobs");
+assert.match(JSON.stringify([retainedOutputRead.data.message.content, ...jobNotices.map(({ content }) => content)]), /artifact-background/u);
+assert.match(JSON.stringify(retainedOutputRead.data.message.content), /status: completed/u);
 assert.ok(unrelatedRuntimeRead?.type === "tool/result");
 assert.equal(unrelatedRuntimeRead.data.message.isError, false);
 assert.match(JSON.stringify(unrelatedRuntimeRead.data.message.content), /outside workspace fixture/u);
@@ -4168,7 +4165,7 @@ assert.deepEqual(await failedResumeHostClient.runtimeStatus({}), {
   },
 });
 assert.equal(failedResumeComposition.context.productSession.snapshot().state, "recovery_required");
-assert.deepEqual(failedResumeComposition.context.agents.roots(), []);
+assert.deepEqual(failedResumeComposition.context.agents.list().filter((agent) => agent.session.header.origin !== "subagent"), []);
 assert.deepEqual(failedResumeComposition.context.sessions.list(), []);
 await failedResumeHostClient.runtimeShutdown({ reason: "artifact-failed-resume-proof-complete" });
 const failedResumeStopped = await failedResumeLifecycle.whenStopped();
@@ -4809,9 +4806,6 @@ runtimeOutput.destroy();
 // A Task may use a different per-operation permission than its Host Session
 // baseline. Recreate the entire Runtime between turns, using only native RPC
 // and the existing durable Session, so a warm config/apply cannot hide a fault.
-declare module "@deepseek-ai/dsh-session-projection/types" {
-  interface SessionProjectionStateMap { coldPermissionFixture: { events: SessionEvent[] } }
-}
 const coldPermissionModes = [
   "full-autonomous", "approval-required", "approval-required", "approval-required",
   "full-autonomous", "approval-required", "full-autonomous",
@@ -4836,17 +4830,13 @@ for (const [index, mode] of coldPermissionModes.entries()) {
       originRevision: "artifact-origin-v1", limits: value.limits,
     }) },
   });
-  cold.context.sessionProjections.register({
+  const coldProjection = await cold.context.sessionProjections.register({
     key: "coldPermissionFixture", stateVersion: 1,
     stateSchema: z.object({ events: z.array(z.custom<SessionEvent>()) }),
     init: () => ({ events: [] }),
     apply: (state, event) => ({ events: [...state.events, event] }),
   });
-  const coldEvents = (session: Session): readonly SessionEvent[] => {
-    const state = cold.context.sessionProjections.stateOf(session, "coldPermissionFixture");
-    assert.ok(state);
-    return state.events;
-  };
+  const coldEvents = (session: Session): readonly SessionEvent[] => coldProjection.stateOf(session).events;
   await installCanonicalToolPlane(cold, bindCanonicalToolPlaneConfig(cold));
   await installProductComponentPlane(cold, Object.freeze({
     catalog: validatedArtifactToolCatalog,
@@ -4892,26 +4882,19 @@ for (const [index, mode] of coldPermissionModes.entries()) {
     continue;
   }
   if (index === 1) {
-    const persistence = cold.context.sessionPersistence;
-    const open = persistence.open.bind(persistence);
-    let rejectedAppends = 0;
-    persistence.open = async (...args) => {
-      const handle = await open(...args);
-      return { ...handle, append: async (events, options) => {
-        const batch = materializeAppendBatch(events);
-        if (batch.some(({ type }) => type === "myagents/permission/config")) {
-          rejectedAppends += 1;
-          throw new Error("injected unpublished policy persistence failure");
-        }
-        await handle.append(batch, options);
-      } };
-    };
+    let failedCheckpoints = 0;
+    const stopFailure = cold.context.on("session/flush", (session) => {
+      if (failedCheckpoints === 0 && session.id === params.runtimeSessionId && coldEvents(session).some(({ type }) => type === "myagents/permission/config")) {
+        failedCheckpoints += 1;
+        throw new Error("injected primary policy flush failure");
+      }
+    });
     try {
       assert.equal((await client.sessionResume(params)).state, "recovery_required");
-      assert.equal(rejectedAppends, 1, "the factory must persist setup before publication");
+      assert.equal(failedCheckpoints, 1, "setup must await the live Session durability checkpoint before Agent publication");
       assert.throws(() => cold.context.productSession.requireAgent(), /not ready/u);
     } finally {
-      persistence.open = open;
+      stopFailure();
     }
     await closeColdFixture();
     continue;

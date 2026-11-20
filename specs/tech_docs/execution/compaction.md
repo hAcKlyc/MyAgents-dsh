@@ -271,7 +271,7 @@ credential-backed evidence.
 
 ## 12. Verification
 
-The [current DSH source baseline](../../dsh/dsh-baseline-v1.json) and [seam registry](../../dsh/seam-decisions-v1.json) own the 0.2.1-rc.2 source and patch 0007 identity. Exact accepted Runtime, native campaign, dynamic campaign and Host handoff identities belong to their generated manifests and trusted delivery record. Old-byte evidence cannot be copied into a new release.
+The [current DSH source baseline](../../dsh/dsh-baseline-v1.json) and [seam registry](../../dsh/seam-decisions-v1.json) own the 0.2.2-rc.5 source and patch 0007 identity. Exact accepted Runtime, native campaign, dynamic campaign and Host handoff identities belong to their generated manifests and trusted delivery record. Old-byte evidence cannot be copied into a new release.
 
 Current executable coverage includes:
 

@@ -1,31 +1,31 @@
 diff --git a/packages/llm/llm-pi-ai/README.md b/packages/llm/llm-pi-ai/README.md
-index 29948120ab07779a1b6b1580e6cc96c22cb9395a..90f138387954d4338d4c907e7c1ce28ca54413c1 100644
+index ba4ea2904a1f7b5fe065e182d7ec2e36966409fa..338dea71974ada8648eeb682b8c991429b784a77 100644
 --- a/packages/llm/llm-pi-ai/README.md
 +++ b/packages/llm/llm-pi-ai/README.md
-@@ -255,7 +255,7 @@ These limits define where the adapter stops and future work begins. They are cur
- - **A modality declaration is not verified** — a model declaring `image` its gateway does not serve is refused by the provider after prompt admission. The durable image remains in history and the same misdeclared model can fail again; switching to a text-only model remains possible because the shared LLM runtime projects image references into stable text for that request.
- - **An unauthenticated route depends on its protocol** — a route naming no credential resolves as configured-but-keyless, but pi-ai's OpenAI-compatible implementation still requires an API key or an `Authorization` header, so a keyless local server needs a placeholder credential referenced by `apiKeyEnv` or an `Authorization` entry in `headers`.
+@@ -271,7 +271,7 @@ These limits define where the adapter stops and future work begins. They are cur
+ - **An unauthenticated route depends on its protocol** — a route naming no credential resolves as configured-but-keyless, but pi-ai's OpenAI-compatible implementation still requires an API key or an `Authorization` header, so a keyless local server needs a placeholder credential referenced by `apiKeyEnv` or an `Authorization` entry in `headers`. pi-ai's Gemini implementation refuses a request without an API key, so a `google-generative-ai` route always needs `apiKeyEnv`, whose value it sends as `x-goog-api-key`.
+ - **Gemini accepts four reasoning levels** — on `google-generative-ai`, pi-ai's Gemini implementation sends only `minimal`, `low`, `medium`, or `high`, compared without case, and fails a request whose `reasoningEfforts` value names anything else; the [Models page](../../client/ui-settings-models/README.md) offers only these levels for such a route. A request without a level, including `off`, sends pi-ai's disabled-thinking configuration, which models that cannot disable thinking, such as Gemini 2.5 Pro, may reject.
  - **`GenerateOptions.stop` is unsupported** — pi-ai's common stream options cannot guarantee stop-sequence behavior across providers.
--- **Conversation update support comes only from the installed pi-ai catalog** — a route receives in-history prompt and tool updates only when its catalog model declares the mid-conversation compat flags, and profiles cannot set them; hand-declared routes and unflagged models receive the concatenated system messages and the complete current tool list at the start of each request.
-+- **Conversation updates require exact-model facts** — the installed catalog or a `models[].compat` / `modelOverrides[id].compat` declaration must enable them. Route-level declarations are rejected. `supportsMidConvoSystemMessages` applies to Anthropic, Chat Completions and Responses; tools additionally require `supportsMidConvoToolChanges` (Anthropic), `supportsMidConvoToolAdditions` (Completions), or independently `supportsAdditionalTools` / `supportsToolSearch` (Responses). Explicit `false` overrides catalog support; omission preserves existing catalog facts and enables nothing on an uncatalogued model. Models without support receive concatenated system messages and the complete current tool list.
+-- **Conversation update support comes only from the installed pi-ai catalog** — native system and tool updates require the catalog model’s mid-conversation compat flags, which profiles cannot set. Hand-declared routes and unflagged models receive later system text as user-role reminders and the complete current tool list at the start of each request.
++- **Conversation updates require exact-model facts** — the installed catalog or a `models[].compat` / `modelOverrides[id].compat` declaration must enable them. Route-level declarations are rejected. `supportsMidConvoSystemMessages` applies to Anthropic, Chat Completions and Responses; tools additionally require `supportsMidConvoToolChanges` (Anthropic), `supportsMidConvoToolAdditions` (Completions), or independently `supportsAdditionalTools` / `supportsToolSearch` (Responses). Explicit `false` overrides catalog support; omission preserves existing catalog facts and enables nothing on an uncatalogued model. Models without support receive later system text as user-role reminders and the complete current tool list at request start.
  - **Images are accepted only in user and tool-result messages** — images in system, developer, or assistant history fail with `UNSUPPORTED_CONTENT` on both conversion paths.
- - **Provider HTTP status is unavailable** — pi-ai error events do not expose a stable HTTP status across providers.
+ - **Provider HTTP status is unavailable** — pi-ai error events do not expose a stable HTTP status across providers, so failures are classified from the error text. When a message leads with a 4xx or 5xx status, as Anthropic and OpenAI SDK errors do, the status rules read only that status. Other formats, such as `Mistral API error (<status>): <body>`, still match a status quoted anywhere in the message, and the quota, rate-limit, and invalid-request wording rules read the whole message, so a gateway 5xx that relays an upstream `insufficient_quota` or `invalid_request_error` becomes a non-retryable `QUOTA` or `INVALID_REQUEST` failure.
  - **Retry policy is provider-owned, not an SDK retry** — pi-ai SDK retries stay disabled so durable agent steps and `llm/retry` events own every visible attempt, and direct `ctx.llm.stream()` calls remain single-attempt.
 diff --git a/packages/llm/llm-pi-ai/README.zh.md b/packages/llm/llm-pi-ai/README.zh.md
-index b813dae2bfd65b65bf08f54d63483bda5c840246..172d042ee60bafa790520f5ffed1d5295d2c33c8 100644
+index c28f089355116ec0c6a63869c82e17ac1e5aafe5..2c3aff3e7dd16aa453d5c8b75f9945fc6007cb97 100644
 --- a/packages/llm/llm-pi-ai/README.zh.md
 +++ b/packages/llm/llm-pi-ai/README.zh.md
-@@ -255,7 +255,7 @@ pi-ai 事件变成 harness 的推理、文本、工具调用、用量与 finish
- - **模态声明不受校验**——声明 `image` 而其网关不支持的模型会在提示词准入后被提供方拒绝。持久图片仍留在历史中，同一误声明模型可能再次失败；切换到纯文本模型仍然可行，因为共享 LLM 运行时会针对该请求把图片引用投影为稳定文本。
- - **未认证路由取决于其协议**——不点名凭据的路由解析为已配置但无密钥，但 pi-ai 的 OpenAI 兼容实现仍要求 API 密钥或 `Authorization` 标头，因此无密钥本地服务器需要由 `apiKeyEnv` 引用或 `headers` 中的 `Authorization` 条目提供的占位凭据。
+@@ -271,7 +271,7 @@ pi-ai 事件变成 harness 的推理、文本、工具调用、用量与 finish
+ - **未认证路由取决于其协议**——不点名凭据的路由解析为已配置但无密钥，但 pi-ai 的 OpenAI 兼容实现仍要求 API 密钥或 `Authorization` 标头，因此无密钥本地服务器需要由 `apiKeyEnv` 引用或 `headers` 中的 `Authorization` 条目提供的占位凭据。pi-ai 的 Gemini 实现会拒绝没有 API 密钥的请求，因此 `google-generative-ai` 路由始终需要 `apiKeyEnv`，其值以 `x-goog-api-key` 发送。
+ - **Gemini 只接受四个推理等级**——在 `google-generative-ai` 上，pi-ai 的 Gemini 实现只发送 `minimal`、`low`、`medium` 或 `high`（不区分大小写），`reasoningEfforts` 的值为其他名称时请求失败；[模型页](../../client/ui-settings-models/README.zh.md)只为此类路由提供这些档位。不带等级的请求（包括 `off`）会发送 pi-ai 的关闭思考配置，无法关闭思考的模型（例如 Gemini 2.5 Pro）可能拒绝该请求。
  - **不支持 `GenerateOptions.stop`**——pi-ai 的通用流式选项无法跨提供方保证停止序列行为。
--- **对话更新支持只来自已安装的 pi-ai 目录**——只有当路由的目录模型声明了对话中 compat 标志时，该路由才会在历史中接收提示词与工具更新，且 profile 不能设置这些标志；手工声明的路由与未标记的模型会在每次请求开头接收拼接后的系统消息与完整的当前工具列表。
-+- **对话更新需要精确模型事实**——由已安装目录或 `models[].compat` / `modelOverrides[id].compat` 声明启用，路由级声明会被拒绝。`supportsMidConvoSystemMessages` 适用于 Anthropic、Chat Completions 与 Responses；工具还分别需要 `supportsMidConvoToolChanges`（Anthropic）、`supportsMidConvoToolAdditions`（Completions）或相互独立的 `supportsAdditionalTools` / `supportsToolSearch`（Responses）。显式 `false` 覆盖目录支持；省略保留既有目录事实，不会为目录外模型启用能力。不支持的模型仍接收拼接后的系统消息和完整的当前工具列表。
+-- **对话更新支持只来自已安装的 pi-ai 目录**——原生系统与工具更新需要目录模型的对话中 compat 标志，profile 不能设置这些标志。手工声明的路由与未标记的模型会以用户角色提醒接收后续系统文本，并在每次请求开头接收完整的当前工具列表。
++- **对话更新需要精确模型事实**——由已安装目录或 `models[].compat` / `modelOverrides[id].compat` 声明启用，路由级声明会被拒绝。`supportsMidConvoSystemMessages` 适用于 Anthropic、Chat Completions 与 Responses；工具还分别需要 `supportsMidConvoToolChanges`（Anthropic）、`supportsMidConvoToolAdditions`（Completions）或相互独立的 `supportsAdditionalTools` / `supportsToolSearch`（Responses）。显式 `false` 覆盖目录支持；省略保留既有目录事实，不会为目录外模型启用能力。不支持的模型会以用户角色提醒接收后续系统文本，并在请求开头接收完整的当前工具列表。
  - **图片只在 user 与工具结果消息中被接受**——system、developer 或 assistant 历史中的图片在两条转换路径上都会以 `UNSUPPORTED_CONTENT` 失败。
- - **提供方 HTTP 状态不可用**——pi-ai 错误事件不跨提供方暴露稳定 HTTP 状态。
+ - **提供方 HTTP 状态不可用**——pi-ai 错误事件不跨提供方暴露稳定 HTTP 状态，失败按错误文本分类。信息以 4xx 或 5xx 状态码开头时（Anthropic 与 OpenAI SDK 的错误即如此），状态码规则只读取该状态码。其他格式（如 `Mistral API error (<status>): <body>`）仍会匹配信息中任意位置引用的状态码；配额、限流与无效请求的措辞规则读取整条信息，因此网关在 5xx 响应体中转述上游的 `insufficient_quota` 或 `invalid_request_error` 时，会分类为不重试的 `QUOTA` 或 `INVALID_REQUEST`。
  - **重试策略由提供方自有，而非 SDK 重试**——pi-ai SDK 重试保持禁用，因此持久 agent（智能体）步骤与 `llm/retry` 事件拥有每个可见尝试，直接 `ctx.llm.stream()` 调用仍是单次尝试。
 diff --git a/packages/llm/llm-pi-ai/src/catalog.ts b/packages/llm/llm-pi-ai/src/catalog.ts
-index 6ccd0cae052594ae2a8b475aa4d37d089de39e01..0b3aad9ce750a2a9ab6eb6c47805f86156fb74cd 100644
+index b2103095743bae6408d2359d3a886f749f63a950..5898499eab9e7e6b1299d95b2e1d2033ff92e8fa 100644
 --- a/packages/llm/llm-pi-ai/src/catalog.ts
 +++ b/packages/llm/llm-pi-ai/src/catalog.ts
 @@ -233,12 +233,13 @@ export type PiAiReasoningEfforts = Partial<Record<ModelThinkingLevel, string | n
@@ -65,10 +65,10 @@ index 6ccd0cae052594ae2a8b475aa4d37d089de39e01..0b3aad9ce750a2a9ab6eb6c47805f861
    supportsExplicitPromptCacheMode: 'withhold',
 -  supportsMidConvoSystemMessages: 'withhold',
 +  supportsMidConvoSystemMessages: 'model-only',
+   supportsMidConvoEffort: 'withhold',
  } as const satisfies Record<keyof OpenAIResponsesCompat, CompatDisposition>
  
- /** Disposition of every `AnthropicMessagesCompat` field; a drift gate like the one above. */
-@@ -300,8 +301,8 @@ const ANTHROPIC_COMPAT_GATE = {
+@@ -301,8 +302,8 @@ const ANTHROPIC_COMPAT_GATE = {
    supportsStrictTools: 'offer',
    sendSessionAffinityHeaders: 'withhold',
    sessionAffinityFormat: 'withhold',
@@ -79,7 +79,7 @@ index 6ccd0cae052594ae2a8b475aa4d37d089de39e01..0b3aad9ce750a2a9ab6eb6c47805f861
    supportsMidConvoEffort: 'withhold',
    allowedFallbackModels: 'withhold',
  } as const satisfies Record<keyof AnthropicMessagesCompat, CompatDisposition>
-@@ -356,7 +357,7 @@ function compatGate(api: string): Readonly<Record<string, CompatDisposition>> |
+@@ -357,7 +358,7 @@ function compatGate(api: string): Readonly<Record<string, CompatDisposition>> |
  }
  
  /** The field names one gate offers. */
@@ -88,7 +88,7 @@ index 6ccd0cae052594ae2a8b475aa4d37d089de39e01..0b3aad9ce750a2a9ab6eb6c47805f861
  
  /** Every compat field name a profile may set, on whichever protocol takes it. */
  type OfferedCompatField =
-@@ -459,6 +460,24 @@ export interface PiAiCompatProfile {
+@@ -460,6 +461,24 @@ export interface PiAiCompatProfile {
    supportsStrictTools?: boolean
  }
  
@@ -113,7 +113,7 @@ index 6ccd0cae052594ae2a8b475aa4d37d089de39e01..0b3aad9ce750a2a9ab6eb6c47805f861
  /** Compile-time constraint that `T` is `never`. */
  type AssertNever<T extends never> = T
  
-@@ -466,14 +485,14 @@ type AssertNever<T extends never> = T
+@@ -467,14 +486,14 @@ type AssertNever<T extends never> = T
   * Proof that every documented field is one a gate offers. A field the profile
   * declares past the gates fails compilation with its own name in the error.
   */
@@ -130,7 +130,7 @@ index 6ccd0cae052594ae2a8b475aa4d37d089de39e01..0b3aad9ce750a2a9ab6eb6c47805f861
  
  /** Compile-time constraint that `T` is `true`. */
  type AssertTrue<T extends true> = T
-@@ -491,8 +510,8 @@ type UpstreamCompat = OpenAICompletionsCompat & OpenAIResponsesCompat & Anthropi
+@@ -492,8 +511,8 @@ type UpstreamCompat = OpenAICompletionsCompat & OpenAIResponsesCompat & Anthropi
   * union would otherwise leave configuration silently behind.
   */
  export type EveryProfileFieldMatchesUpstream = AssertTrue<
@@ -141,7 +141,7 @@ index 6ccd0cae052594ae2a8b475aa4d37d089de39e01..0b3aad9ce750a2a9ab6eb6c47805f861
      : false
  >
  
-@@ -510,7 +529,7 @@ export type EveryProfileFieldMatchesUpstream = AssertTrue<
+@@ -511,7 +530,7 @@ export type EveryProfileFieldMatchesUpstream = AssertTrue<
   * @param compat - the configured switches, when any.
   * @returns the entries carrying a value, in declaration order.
   */
@@ -150,7 +150,7 @@ index 6ccd0cae052594ae2a8b475aa4d37d089de39e01..0b3aad9ce750a2a9ab6eb6c47805f861
    return Object.entries(compat ?? {}).flatMap(([field, value]) => {
      const empty = typeof value === 'object' && value !== null && !Array.isArray(value)
        && Object.keys(value as object).length === 0
-@@ -525,7 +544,7 @@ function configuredCompatEntries(compat: PiAiCompatProfile | undefined): readonl
+@@ -526,7 +545,7 @@ function configuredCompatEntries(compat: PiAiCompatProfile | undefined): readonl
   *   is either a withheld field or a name no upstream compat type declares.
   */
  function compatProtocols(field: string): readonly string[] {
@@ -159,7 +159,7 @@ index 6ccd0cae052594ae2a8b475aa4d37d089de39e01..0b3aad9ce750a2a9ab6eb6c47805f861
  }
  
  /**
-@@ -535,7 +554,7 @@ function compatProtocols(field: string): readonly string[] {
+@@ -536,7 +555,7 @@ function compatProtocols(field: string): readonly string[] {
   * @returns the offered field names, or an empty list for a protocol taking no compat.
   */
  function offeredCompatFields(api: string): readonly string[] {
@@ -168,7 +168,7 @@ index 6ccd0cae052594ae2a8b475aa4d37d089de39e01..0b3aad9ce750a2a9ab6eb6c47805f861
  }
  
  /**
-@@ -561,12 +580,14 @@ function allOfferedCompatFields(): readonly string[] {
+@@ -562,12 +581,14 @@ function allOfferedCompatFields(): readonly string[] {
   * @param provider - provider route key, for diagnostics.
   * @param site - the configuration site, for diagnostics.
   * @param compat - the configured switches, when any.
@@ -184,7 +184,7 @@ index 6ccd0cae052594ae2a8b475aa4d37d089de39e01..0b3aad9ce750a2a9ab6eb6c47805f861
  ): void {
    // Every key, not only the ones carrying a value: a withheld or undeclared
    // name is never in the schema, so schemastery cannot have materialized it —
-@@ -576,6 +597,14 @@ function assertOfferedCompatFields(
+@@ -577,6 +598,14 @@ function assertOfferedCompatFields(
      // written bare is refused for being that name rather than for being empty:
      // the other order sends someone to supply a value the key would be refused
      // with anyway.
@@ -199,7 +199,7 @@ index 6ccd0cae052594ae2a8b475aa4d37d089de39e01..0b3aad9ce750a2a9ab6eb6c47805f861
      if (compatProtocols(field).length === 0) {
        const declared = Object.values(COMPAT_GATES).some(gate => gate[field] !== undefined)
        if (declared) {
-@@ -635,7 +664,7 @@ export interface PiAiModelProfile {
+@@ -636,7 +665,7 @@ export interface PiAiModelProfile {
     */
    reasoningEfforts?: false | PiAiReasoningEfforts
    /** pi-ai wire-compatibility switches for this model, winning over the route's per field; one its protocol does not declare is refused. */
@@ -208,7 +208,7 @@ index 6ccd0cae052594ae2a8b475aa4d37d089de39e01..0b3aad9ce750a2a9ab6eb6c47805f861
  }
  
  /**
-@@ -807,7 +836,7 @@ function resolveModelCompat(
+@@ -808,7 +837,7 @@ function resolveModelCompat(
      configured[field] = value
    }
    for (const [field, value] of configuredCompatEntries(entry.compat)) {
@@ -217,7 +217,7 @@ index 6ccd0cae052594ae2a8b475aa4d37d089de39e01..0b3aad9ce750a2a9ab6eb6c47805f861
        const offered = offeredCompatFields(api)
        invalid(provider, `model "${entry.id}" sets compat "${field}", but its api is "${api}", which does not`
          + ` take it; that switch exists on ${compatProtocols(field).join(', ')}, and "${api}" offers`
-@@ -905,11 +934,11 @@ export function resolveRouteModels(
+@@ -906,11 +935,11 @@ export function resolveRouteModels(
    // Vocabulary before protocols: a withheld or undeclared switch is refused
    // wherever it is written, so it cannot look applied on a route whose models
    // never reach the protocol that would have taken it.
@@ -232,7 +232,7 @@ index 6ccd0cae052594ae2a8b475aa4d37d089de39e01..0b3aad9ce750a2a9ab6eb6c47805f861
      if (seen.has(entry.id)) invalid(provider, `lists model "${entry.id}" more than once`)
      seen.add(entry.id)
 diff --git a/packages/llm/llm-pi-ai/src/config.ts b/packages/llm/llm-pi-ai/src/config.ts
-index b07cd57bfb3b1a56ae131b5b5bc5f144c387da05..570e4b527f2185e85fec2d7da9d4337aeee09acc 100644
+index 9de6c4416eb61d2a95139c4530488148266ed29a..f087f5ffbe73ec2126b525d9eb3c53a9dcd884b9 100644
 --- a/packages/llm/llm-pi-ai/src/config.ts
 +++ b/packages/llm/llm-pi-ai/src/config.ts
 @@ -35,6 +35,7 @@ import {
@@ -243,7 +243,7 @@ index b07cd57bfb3b1a56ae131b5b5bc5f144c387da05..570e4b527f2185e85fec2d7da9d4337a
    PiAiModality,
    PiAiModelOverride,
    PiAiModelProfile,
-@@ -81,6 +82,7 @@ export const DEFAULT_INPUT: readonly PiAiModality[] = ['text']
+@@ -94,6 +95,7 @@ export const DEFAULT_INPUT: readonly PiAiModality[] = ['text']
  
  export type {
    PiAiCompatProfile,
@@ -251,7 +251,7 @@ index b07cd57bfb3b1a56ae131b5b5bc5f144c387da05..570e4b527f2185e85fec2d7da9d4337a
    PiAiModality,
    PiAiModelOverride,
    PiAiModelProfile,
-@@ -255,7 +257,7 @@ const chatTemplateKwarg: z<ChatTemplateKwargValue> = z.union([
+@@ -284,7 +286,7 @@ const chatTemplateKwarg: z<ChatTemplateKwargValue> = z.union([
    }),
  ])
  
@@ -260,7 +260,7 @@ index b07cd57bfb3b1a56ae131b5b5bc5f144c387da05..570e4b527f2185e85fec2d7da9d4337a
    supportsStore: z.boolean(),
    supportsDeveloperRole: z.boolean(),
    supportsReasoningEffort: z.boolean(),
-@@ -282,6 +284,15 @@ const compatProfile: z<PiAiCompatProfile> = z.object({
+@@ -311,6 +313,15 @@ const compatProfile: z<PiAiCompatProfile> = z.object({
    forceAdaptiveThinking: z.boolean(),
    allowEmptySignature: z.boolean(),
    supportsStrictTools: z.boolean(),
@@ -276,7 +276,7 @@ index b07cd57bfb3b1a56ae131b5b5bc5f144c387da05..570e4b527f2185e85fec2d7da9d4337a
  })
  
  /**
-@@ -312,7 +323,7 @@ const modelFields = {
+@@ -341,7 +352,7 @@ const modelFields = {
    // `{}`, and absent must stay distinguishable — it means "inherit the
    // installed catalog's capability", while `false` disables reasoning.
    reasoningEfforts: z.union([z.const(false), reasoningEfforts]),
@@ -286,10 +286,10 @@ index b07cd57bfb3b1a56ae131b5b5bc5f144c387da05..570e4b527f2185e85fec2d7da9d4337a
  
  const modelProfile: z<PiAiModelProfile> = z.object({
 diff --git a/packages/llm/llm-pi-ai/src/index.ts b/packages/llm/llm-pi-ai/src/index.ts
-index a7b00faa79d433ea2c090b78ff1c36b5604d1a44..612308ccbbadb8246bc4fcff7eb5e79f7545449a 100644
+index a671b7229ae72a64a660668adaccc3d32e53947c..48e2958acd5ec9509df03607a8fe6eeec4212527 100644
 --- a/packages/llm/llm-pi-ai/src/index.ts
 +++ b/packages/llm/llm-pi-ai/src/index.ts
-@@ -80,6 +80,7 @@ export { Config } from './config.ts'
+@@ -82,6 +82,7 @@ export { Config } from './config.ts'
  export type {
    Options,
    PiAiCompatProfile,
@@ -298,7 +298,7 @@ index a7b00faa79d433ea2c090b78ff1c36b5604d1a44..612308ccbbadb8246bc4fcff7eb5e79f
    PiAiModelOverride,
    PiAiModelProfile,
 diff --git a/packages/llm/llm-pi-ai/tests/catalog.spec.ts b/packages/llm/llm-pi-ai/tests/catalog.spec.ts
-index e142027ae669565ceebf5843b617027b65d9fd1e..054a61555977f6cb9a25a19a5c3b7af1c4c2e5c0 100644
+index 32bb8f39933cd905163eea6e8870575656e0b5d8..ecf329a7ccc780577359241c4c375e78d55bcac1 100644
 --- a/packages/llm/llm-pi-ai/tests/catalog.spec.ts
 +++ b/packages/llm/llm-pi-ai/tests/catalog.spec.ts
 @@ -1150,7 +1150,7 @@ describe('compat switches', () => {
@@ -312,10 +312,10 @@ index e142027ae669565ceebf5843b617027b65d9fd1e..054a61555977f6cb9a25a19a5c3b7af1
            api: 'openai-completions',
 diff --git a/packages/llm/llm-pi-ai/tests/model-conversation-config.spec.ts b/packages/llm/llm-pi-ai/tests/model-conversation-config.spec.ts
 new file mode 100644
-index 0000000000000000000000000000000000000000..68728eaa33a0817dd22843ffe500dba071093dc2
+index 0000000000000000000000000000000000000000..e03b66c1fecc004524a4645a77f07ae9669a26ab
 --- /dev/null
 +++ b/packages/llm/llm-pi-ai/tests/model-conversation-config.spec.ts
-@@ -0,0 +1,140 @@
+@@ -0,0 +1,141 @@
 +/** Exact-model declarations must reach metadata and the same real wire serializer. */
 +import { afterEach, describe, expect, it } from 'vitest'
 +import { Context } from '@deepseek-ai/cordis'
@@ -409,7 +409,8 @@ index 0000000000000000000000000000000000000000..68728eaa33a0817dd22843ffe500dba0
 +      expect(JSON.stringify(unchanged)).not.toContain('additional_tools')
 +      expect(JSON.stringify(unchanged)).not.toContain('tool_search_output')
 +      expect(JSON.stringify(unchanged)).not.toContain('tool_addition')
-+      expect(JSON.stringify(unchanged)).toContain('initial\\n\\nupdated')
++      expect(JSON.stringify(unchanged)).toContain('initial')
++      expect(JSON.stringify(unchanged)).toContain('<system-reminder>\\nupdated\\n</system-reminder>')
 +      expect(unchanged).toHaveProperty('tools', expect.arrayContaining([
 +        expect.objectContaining(api === 'openai-completions'
 +          ? { function: expect.objectContaining({ name: 'search' }) as unknown } : { name: 'search' }),

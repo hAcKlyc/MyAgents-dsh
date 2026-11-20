@@ -1,3 +1,5 @@
+import * as NativeToolExecutor from "@deepseek-ai/dsh-tool-executor-native";
+import { executeToolFixture } from "@deepseek-ai/dsh-tool-testkit";
 import { Context } from "@deepseek-ai/cordis";
 import type { Agent } from "@deepseek-ai/dsh-agent";
 import { ToolCallId, MessageId, freezeMessage, type ContentBlock } from "@deepseek-ai/dsh-llm";
@@ -78,7 +80,8 @@ const mount = async (
   const root = new Context();
   contexts.push(root);
   await root.plugin(SystemPrompt);
-  await root.plugin(ToolRuntime, { mode: "native" });
+  await root.plugin(ToolRuntime);
+  await root.plugin(NativeToolExecutor);
   const operationCancellations: unknown[] = [];
   const agent = Object.freeze({
     cancel: (reason: unknown) => { operationCancellations.push(reason); },
@@ -272,7 +275,7 @@ describe("generation-owned Host Hook components", () => {
       });
     });
     const callId = ToolCallId("post-call");
-    const result = await state.root.tools.execute({
+    const result = await executeToolFixture(state.root, {
       agent: state.agent,
       arguments: Object.freeze({ value: "before" }),
       callId,
@@ -354,7 +357,7 @@ describe("generation-owned Host Hook components", () => {
       }));
     }, () => [imageBlock]);
     const callId = ToolCallId("post-image-call");
-    const result = await state.root.tools.execute({
+    const result = await executeToolFixture(state.root, {
       agent: state.agent,
       arguments: Object.freeze({ value: "before" }),
       callId,
@@ -455,7 +458,7 @@ describe("generation-owned Host Hook components", () => {
     const transformed = await invoke();
     const invalidCall = transformed.toolCalls[0];
     expect(invalidCall?.parsedArguments).toEqual({});
-    expect(await state.root.tools.execute({
+    expect(await executeToolFixture(state.root, {
       agent: state.agent, arguments: invalidCall?.parsedArguments,
       callId: ToolCallId("invalid-hook-call"), name: "Fixture", signal: new AbortController().signal,
     })).toMatchObject({ isError: true });

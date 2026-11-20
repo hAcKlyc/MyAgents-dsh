@@ -2,7 +2,7 @@ import { createHash } from "node:crypto";
 import { isDeepStrictEqual, types as utilTypes } from "node:util";
 
 import { z } from "zod";
-import type { ProjectionDefinition } from "@deepseek-ai/dsh-session-projection";
+import type { ProjectionDefinition, ProjectionHandle } from "@deepseek-ai/dsh-session-projection";
 
 import { Service, type Context } from "@deepseek-ai/cordis";
 import type { Agent } from "@deepseek-ai/dsh-agent";
@@ -64,7 +64,7 @@ export interface ProductTaskGraphSnapshot {
 export interface ProductTaskGraphServiceConfig {
   readonly durability: Readonly<{ flush(session: Session): Promise<unknown> }>;
   readonly requireAgent: () => Agent;
-  readonly isKnownCollaborator?: (root: Agent, agentId: string) => boolean;
+  readonly resolveCollaborator?: (root: Agent, address: string) => string | undefined;
   readonly notifySharedTask?: (root: Agent, childId: string, taskId: string, signal: AbortSignal) => Promise<void>;
 }
 
@@ -863,7 +863,7 @@ export const foldProductTaskGraph = (
 };
 
 const validateConfig = (value: unknown): ProductTaskGraphServiceConfig => {
-  const config = exactDataObject(value, ["durability", "requireAgent"], ["isKnownCollaborator", "notifySharedTask"], "ProductTaskGraphService config");
+  const config = exactDataObject(value, ["durability", "requireAgent"], ["resolveCollaborator", "notifySharedTask"], "ProductTaskGraphService config");
   const durability = exactDataObject(config.durability, ["flush"], [], "TaskGraph durability authority");
   const flushDescriptor = Object.getOwnPropertyDescriptor(durability, "flush");
   const agentDescriptor = Object.getOwnPropertyDescriptor(config, "requireAgent");
@@ -875,10 +875,10 @@ const validateConfig = (value: unknown): ProductTaskGraphServiceConfig => {
   }
   const flush = flushDescriptor.value as (session: Session) => Promise<unknown>;
   const requireAgent = agentDescriptor.value as () => Agent;
-  if (config.isKnownCollaborator !== undefined && (typeof config.isKnownCollaborator !== "function" || utilTypes.isProxy(config.isKnownCollaborator))) {
+  if (config.resolveCollaborator !== undefined && (typeof config.resolveCollaborator !== "function" || utilTypes.isProxy(config.resolveCollaborator))) {
     throw new TypeError("TaskGraph collaborator authority must be a non-Proxy function");
   }
-  const isKnownCollaborator = config.isKnownCollaborator as ProductTaskGraphServiceConfig["isKnownCollaborator"];
+  const resolveCollaborator = config.resolveCollaborator as ProductTaskGraphServiceConfig["resolveCollaborator"];
   if (config.notifySharedTask !== undefined && (typeof config.notifySharedTask !== "function" || utilTypes.isProxy(config.notifySharedTask))) {
     throw new TypeError("TaskGraph notification authority must be a non-Proxy function");
   }
@@ -886,7 +886,7 @@ const validateConfig = (value: unknown): ProductTaskGraphServiceConfig => {
   return Object.freeze({
     durability: Object.freeze({ flush: (session: Session) => Reflect.apply(flush, durability, [session]) }),
     requireAgent: () => Reflect.apply(requireAgent, config, []),
-    ...(isKnownCollaborator === undefined ? {} : { isKnownCollaborator: (root: Agent, agentId: string) => Reflect.apply(isKnownCollaborator, config, [root, agentId]) }),
+    ...(resolveCollaborator === undefined ? {} : { resolveCollaborator: (root: Agent, agentId: string) => Reflect.apply(resolveCollaborator, config, [root, agentId]) }),
     ...(notifySharedTask === undefined ? {} : { notifySharedTask: (root: Agent, childId: string, taskId: string, signal: AbortSignal) => Reflect.apply(notifySharedTask, config, [root, childId, taskId, signal]) }),
   });
 };
@@ -911,14 +911,9 @@ interface TaskEventProjectionState {
   events: SessionEvent[];
 }
 
-declare module "@deepseek-ai/dsh-session-projection/types" {
-  interface SessionProjectionStateMap {
-    myagentsTaskEvents: TaskEventProjectionState;
-  }
-}
 
 // Only task facts are retained; the native registry owns replay and live watermarks.
-const taskEventProjection: ProjectionDefinition<"myagentsTaskEvents"> = {
+const taskEventProjection: ProjectionDefinition<"myagentsTaskEvents", TaskEventProjectionState> = {
   key: "myagentsTaskEvents",
   stateVersion: 1,
   stateSchema: z.object({
@@ -941,6 +936,7 @@ const taskEventProjection: ProjectionDefinition<"myagentsTaskEvents"> = {
 
 export class ProductTaskGraphService extends Service {
   static inject = ["agents", "productTools", "sessions", "tools", "sessionProjections"];
+  private projection!: ProjectionHandle<TaskEventProjectionState>;
   private readonly configValue: ProductTaskGraphServiceConfig;
   private readonly settlements = new Set<Promise<unknown>>();
   private readonly committedListeners = new Set<(agent: Agent, list: ProductTaskList, snapshot: ProductTaskGraphSnapshot) => void>();
@@ -953,7 +949,6 @@ export class ProductTaskGraphService extends Service {
   constructor(ctx: Context, config: ProductTaskGraphServiceConfig) {
     super(ctx, "productTaskGraph");
     this.configValue = validateConfig(config);
-    ctx.sessionProjections.register(taskEventProjection);
     ctx.effect(() => {
       const stopEvent = ctx.on("session/event", (session, event) => {
         if (!isProductTaskEventType(event.type)) return;
@@ -994,10 +989,12 @@ export class ProductTaskGraphService extends Service {
     });
   }
 
+  protected async [Service.init](): Promise<void> {
+    this.projection = await this.ctx.sessionProjections.register(taskEventProjection);
+  }
+
   private taskEvents(session: Session): readonly SessionEvent[] {
-    const state = this.ctx.sessionProjections.stateOf(session, "myagentsTaskEvents");
-    if (!state) throw new ProductTaskGraphFoldError("native task projection is unavailable");
-    return state.events;
+    return this.projection.stateOf(session).events;
   }
 
   snapshot(agent: Agent, list: ProductTaskList = "shared"): ProductTaskGraphSnapshot {
@@ -1218,8 +1215,8 @@ export class ProductTaskGraphService extends Service {
         if (this.ctx.agents.get(context.agent.id) !== context.agent
           || ((context.origin === "root") !== (context.agent === rootAgent))
           || (context.agent !== rootAgent && (context.agent.session.header.origin !== "subagent"
-            || (list === "shared" && !(this.configValue.isKnownCollaborator?.(rootAgent, context.agent.id)
-              ?? context.agent.session.header.parentSession === rootAgent.id))))) {
+            || (list === "shared" && !(this.configValue.resolveCollaborator === undefined ? context.agent.session.header.parentSession === rootAgent.id
+              : this.configValue.resolveCollaborator(rootAgent, context.agent.id) === context.agent.id))))) {
           throw new ProductToolError("task_graph_conflict", "TaskUpdate caller lacks its registered collaboration identity");
         }
         const task = before.tasks.find((candidate) => candidate.id === taskId);
@@ -1245,13 +1242,16 @@ export class ProductTaskGraphService extends Service {
         if (list === "shared" && context.agent === rootAgent && patch.owner !== undefined) {
           patch.offerTo = [];
         }
-        if (patch.owner !== undefined && patch.owner !== "root") {
-          const owner = this.ctx.agents.get(SessionId(patch.owner as string));
-          const known = this.configValue.isKnownCollaborator?.(rootAgent, patch.owner as string)
-            ?? (owner?.session.header.origin === "subagent" && owner.session.header.parentSession === rootAgent.id);
-          if (!known) {
-            throw new ProductToolError("task_graph_conflict", "Task owner is outside the current collaboration domain");
-          }
+        const resolveRecipient = (address: string): string | undefined => {
+          if (this.configValue.resolveCollaborator !== undefined) return this.configValue.resolveCollaborator(rootAgent, address);
+          const agent = this.ctx.agents.get(SessionId(address));
+          return agent?.session.header.origin === "subagent" && agent.session.header.parentSession === rootAgent.id ? address : undefined;
+        };
+        if (typeof patch.owner === "string") {
+          const address = patch.owner;
+          const owner = address === "lead" ? "root" : resolveRecipient(address) ?? (address === "root" ? "root" : undefined);
+          if (owner === undefined) throw new ProductToolError("task_graph_conflict", "Task owner is outside the current collaboration domain");
+          patch.owner = owner;
         }
         if (patch.offerTo !== undefined) {
           const claimingOffer = context.agent !== rootAgent && patch.status === "in_progress"
@@ -1261,12 +1261,11 @@ export class ProductTaskGraphService extends Service {
             || patch.owner !== undefined && (patch.offerTo as readonly string[]).length > 0) {
             throw new ProductToolError("task_graph_conflict", "task offer targets conflict with its assignment");
           }
-          for (const id of patch.offerTo as readonly string[]) {
-            if (!(this.configValue.isKnownCollaborator?.(rootAgent, id)
-              ?? this.ctx.agents.get(SessionId(id))?.session.header.parentSession === rootAgent.id)) {
-              throw new ProductToolError("task_graph_conflict", "task offer target is outside the collaboration domain");
-            }
-          }
+          patch.offerTo = [...new Set((patch.offerTo as readonly string[]).map((address) => {
+            const id = resolveRecipient(address);
+            if (id === undefined) throw new ProductToolError("task_graph_conflict", "task offer target is outside the collaboration domain");
+            return id;
+          }))];
         }
         if (list === "shared" && context.agent === rootAgent) {
           const recipients = new Set<string>();

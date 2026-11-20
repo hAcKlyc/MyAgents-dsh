@@ -3,7 +3,7 @@ import { AsyncLocalStorage } from "node:async_hooks";
 import { isProxy } from "node:util/types";
 
 import { Service, type Context } from "@deepseek-ai/cordis";
-import { applyWebFetchTool, applyWebSearchTool, DEFAULT_FETCH_MAX_OUTPUT_CHARS, DEFAULT_WEB_TOOL_TIMEOUT_MS, WEB_SEARCH_MAX_QUERIES, WEB_SEARCH_MAX_RESULTS } from "@deepseek-ai/dsh-tool-web";
+import { apply as applyNativeWebTools, Config as nativeWebConfig, WEB_SEARCH_MAX_QUERIES } from "@deepseek-ai/dsh-tool-web";
 import type {
   WebFetchProvider,
   WebFetchRequest,
@@ -535,8 +535,7 @@ export class CanonicalWebTools extends Service {
       }
     }
 
-      if (fetch !== undefined) applyWebFetchTool(ctx, DEFAULT_WEB_TOOL_TIMEOUT_MS, DEFAULT_FETCH_MAX_OUTPUT_CHARS);
-      if (searchProvider !== undefined) applyWebSearchTool(ctx, WEB_SEARCH_MAX_RESULTS, WEB_SEARCH_MAX_QUERIES, DEFAULT_WEB_TOOL_TIMEOUT_MS, fetch !== undefined);
+      applyNativeWebTools(ctx, nativeWebConfig({ fetch: fetch !== undefined, search: searchProvider !== undefined }));
       ctx.on("tools/execute", async (exec, next) => {
         if (exec.name !== "web_fetch" && exec.name !== "web_search") return next();
         const product = ctx.productTools.resolve(exec);

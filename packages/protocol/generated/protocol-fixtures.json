@@ -291,13 +291,13 @@
         },
         "runtimeEngine": {
           "distribution": "myagents-dsh",
-          "distributionVersion": "0.1.23",
+          "distributionVersion": "0.1.24",
           "name": "deepseek-harness",
-          "version": "0.2.1-rc.2.myagents.687f282e8625.e5a10cf9cb87"
+          "version": "0.2.2-rc.5.myagents.9c2670d3bce5.87972f9c8ecd"
         },
         "runtimeGeneration": "generation-1",
-        "runtimeVersion": "0.1.23",
-        "schemaSha256": "f9b2bf4274cc73ca739cf5133322fab61d17249cb4576a6a27c0fa84a2f303f6",
+        "runtimeVersion": "0.1.24",
+        "schemaSha256": "4696f9d6af6a7f948dc5eb860342700e42489f69ebd8473af5e7b8b6432f9157",
         "sessionFormat": "dsh-session-events-v2"
       }
     },
@@ -326,7 +326,7 @@
         "runtimeSessionId": "runtime-session-1",
         "state": "ready",
         "toolCatalog": {
-          "contractSha256": "2c94637da82a6f839b51fdc62eaade4538d562abea104776c6377702ab4a92dd",
+          "contractSha256": "e44f610ee1e9f569393b9f2fb18f7cec1098b32c680af24eb761bfd6301cb20e",
           "diagnostics": [
             {
               "available": true,
@@ -422,6 +422,10 @@
             },
             {
               "available": true,
+              "tool": "wait_agent"
+            },
+            {
+              "available": true,
               "tool": "TaskCreate"
             },
             {
@@ -437,7 +441,7 @@
               "tool": "TaskUpdate"
             }
           ],
-          "digest": "f4ce36e26fc4341afc9d5290f63cef8eaeafdb55c1733369cc145338db3ff714",
+          "digest": "433dae7d6b4d1f62515d720917450d5b5616073051fc1c4e4bd675fee1035880",
           "effectiveTools": [
             "read",
             "read_image",
@@ -462,6 +466,7 @@
             "interrupt_agent",
             "send_message",
             "list_agents",
+            "wait_agent",
             "TaskCreate",
             "TaskGet",
             "TaskList",
@@ -492,6 +497,7 @@
             "interrupt_agent",
             "send_message",
             "list_agents",
+            "wait_agent",
             "TaskCreate",
             "TaskGet",
             "TaskList",
@@ -1229,7 +1235,7 @@
     }
   ],
   "protocolVersion": "6.2.0",
-  "schemaSha256": "f9b2bf4274cc73ca739cf5133322fab61d17249cb4576a6a27c0fa84a2f303f6",
+  "schemaSha256": "4696f9d6af6a7f948dc5eb860342700e42489f69ebd8473af5e7b8b6432f9157",
   "valid": [
     {
       "frame": {
@@ -1432,13 +1438,13 @@
           },
           "runtimeEngine": {
             "distribution": "myagents-dsh",
-            "distributionVersion": "0.1.23",
+            "distributionVersion": "0.1.24",
             "name": "deepseek-harness",
-            "version": "0.2.1-rc.2.myagents.687f282e8625.e5a10cf9cb87"
+            "version": "0.2.2-rc.5.myagents.9c2670d3bce5.87972f9c8ecd"
           },
           "runtimeGeneration": "generation-1",
-          "runtimeVersion": "0.1.23",
-          "schemaSha256": "f9b2bf4274cc73ca739cf5133322fab61d17249cb4576a6a27c0fa84a2f303f6",
+          "runtimeVersion": "0.1.24",
+          "schemaSha256": "4696f9d6af6a7f948dc5eb860342700e42489f69ebd8473af5e7b8b6432f9157",
           "sessionFormat": "dsh-session-events-v2"
         }
       },

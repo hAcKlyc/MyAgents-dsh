@@ -98,7 +98,6 @@ import type {
   SkillSummary,
 } from "@deepseek-ai/dsh-skill";
 import { finalAssistantOutput, SubagentRuntime } from "@deepseek-ai/dsh-subagent";
-import { queueHostSubagentPrompt } from "@deepseek-ai/dsh-subagent/internal";
 import type { SubagentInterruptAuthority, SubagentProvider, SubagentResult } from "@deepseek-ai/dsh-subagent";
 import { apply as applySubagentSpawnInProcess } from "@deepseek-ai/dsh-subagent-spawn-in-process";
 import type { Config as SubagentSpawnInProcessConfig } from "@deepseek-ai/dsh-subagent-spawn-in-process";
@@ -119,6 +118,8 @@ import { deriveTurnTokenUsage } from "@deepseek-ai/dsh-token-meter/client";
 import type { ContextPressureProjection, TokenUsageProjection } from "@deepseek-ai/dsh-token-meter/client";
 import { TokenMeter } from "@deepseek-ai/dsh-token-meter";
 import type { TokenMeasurement, TokenMeterConfig } from "@deepseek-ai/dsh-token-meter";
+import { NativeToolExecutor } from "@deepseek-ai/dsh-tool-executor-native";
+import { PtcExecutor } from "@deepseek-ai/dsh-tool-executor-ptc";
 import { ToolRuntime, defineTool } from "@deepseek-ai/dsh-tools";
 import type { ToolDefinition, ToolExecution, ToolExecutionResult, ToolRunContext } from "@deepseek-ai/dsh-tools";
 import { buildGlobCommand, buildGrepCommand, parseGlobArgs, parseGrepArgs } from "@deepseek-ai/dsh-tool-fs-search";
@@ -192,6 +193,8 @@ export const dshPublicSurfaceValues = Object.freeze({
   TOOL_TIMEOUT,
   TokenMeter,
   deriveTurnTokenUsage,
+  NativeToolExecutor,
+  PtcExecutor,
   ToolRuntime,
   SettingsForms,
   UserQuestionService,
@@ -203,7 +206,6 @@ export const dshPublicSurfaceValues = Object.freeze({
   applySubagentForkInProcess,
   applyToolSubagent,
   applyToolSubagentControl,
-  queueHostSubagentPrompt,
   applyToolCallTimeoutPolicy,
   assertUsableApiKey,
   buildGlobCommand,

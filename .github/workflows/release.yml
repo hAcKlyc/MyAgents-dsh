@@ -70,7 +70,7 @@ jobs:
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
           repository: deepseek-ai/deepseek-harness
-          ref: 687f282e8625c6b8d11ff58211a90524be2e4317
+          ref: 9c2670d3bce5275e0d1610272958121af87787bb
           path: deepseek-harness
           fetch-depth: 0
           persist-credentials: false
@@ -78,7 +78,7 @@ jobs:
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
           repository: earendil-works/pi
-          ref: abe508e1b89912adde45528136c3221eb69acdd7
+          ref: 71023aec1546d6d677a65669c5665c0927ce0dd0
           path: pi
           persist-credentials: false
       - name: Install artifact toolchain
@@ -96,7 +96,7 @@ jobs:
           npm install --global npm@11.19.0
           npm ci --prefix myagents-dsh
           npm ci --engine-strict=false --prefix pi --ignore-scripts --no-audit --no-fund --workspace @earendil-works/pi-ai --include-workspace-root
-          npm cache add @earendil-works/pi-ai@1.1.0
+          npm cache add @earendil-works/pi-ai@1.3.0
           corepack enable
           corepack prepare pnpm@11.28.5 --activate
       - name: Prime historical patched-source dependency store

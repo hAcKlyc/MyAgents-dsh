@@ -1,7 +1,7 @@
 import { Service, symbols, type Context } from "@deepseek-ai/cordis";
-import type { Agent, AgentHandle, AgentSetup } from "@deepseek-ai/dsh-agent";
+import type { Agent, AgentHandle } from "@deepseek-ai/dsh-agent";
 import { isCompactCheckpointSource, type CompactionResult } from "@deepseek-ai/dsh-compaction";
-import { SessionId, type Session, type SessionEvent } from "@deepseek-ai/dsh-session";
+import { SessionId, type SessionEvent } from "@deepseek-ai/dsh-session";
 import { selectPlatformAdapter, type PlatformTarget } from "@myagents-dsh/product-profile";
 import type { SettlementDeadlineAuthority } from "@myagents-dsh/operation-runtime";
 import {
@@ -709,69 +709,28 @@ const validateBackendResult = (
 };
 
 class PrimaryRootPublicationFence {
-  #permit: Readonly<{ agent: Agent; session: Session }> | undefined;
-  #owned: Agent | undefined;
-  readonly #childPermits = new Map<Session, Readonly<{ agent: Agent; parent: Agent }>>();
-  readonly #ownedChildren = new Map<Session, Agent>();
+  // Only the native factory receives the proof. Merely holding a Session or Agent
+  // during setup cannot authorize an independent registry insertion.
+  readonly #proofs = new WeakMap<object, Agent>();
 
-  #nativeParent(session: Session): Agent | undefined {
-    if (session.header.origin !== "subagent" || session.header.parentSession === undefined) return undefined;
-    const parent = this.context.agents.get(session.header.parentSession);
-    return parent !== undefined && (parent === this.#owned || this.#ownedChildren.get(parent.session) === parent)
-      ? parent : undefined;
-  }
+  constructor(private readonly context: Context) {}
 
-  constructor(private readonly context: Context) {
-    context.on("agent/created", ({ agent }) => {
-      const permit = this.#childPermits.get(agent.session);
-      if (permit?.agent === agent) {
-        if (context.agents.get(permit.parent.id) !== permit.parent) {
-          throw new Error("child Agent publication lost its exact primary lineage");
-        }
-        this.#childPermits.delete(agent.session);
-        this.#ownedChildren.set(agent.session, agent);
-        return undefined;
-      }
-      if (this.#nativeParent(agent.session) !== undefined) {
-        this.#ownedChildren.set(agent.session, agent);
-        return undefined;
-      }
-      if (this.#permit?.agent !== agent || this.#owned !== undefined) {
-        throw new Error("root Agent publication lacks the primary Session admission authority");
-      }
-      this.#permit = undefined;
-      this.#owned = agent;
-      return undefined;
-    });
-    context.on("session/disposed", (session) => {
-      if (this.#owned?.session === session) this.#owned = undefined;
-      this.#childPermits.delete(session);
-      this.#ownedChildren.delete(session);
-    });
+  issue(agent: Agent): object {
+    const proof = Object.freeze({});
+    this.#proofs.set(proof, agent);
+    return proof;
   }
 
   install(): readonly [() => void, () => void] {
-    const agents = this.context.agents;
-    const sessions = this.context.sessions;
-    if (typeof agents.setPublicationGuard !== "function"
-      || typeof sessions.setPublicationGuard !== "function") {
-      throw new Error("accepted DSH root-publication guard seams are unavailable");
-    }
-    const disposeSessionGuard = sessions.setPublicationGuard((session) => {
-      if (this.#permit?.session !== session && !this.#childPermits.has(session)
-        && this.#nativeParent(session) === undefined) {
+    const { agents, sessions } = this.context;
+    const disposeSessionGuard = sessions.setPublicationGuard((session, proof) => {
+      if (proof === undefined || this.#proofs.get(proof)?.session !== session) {
         throw new Error("Session publication lacks the primary Session admission authority");
       }
     });
     try {
-      const disposeAgentGuard = agents.setPublicationGuard((agent, owner) => {
-        const rootPermitted = owner === undefined
-          && this.#permit?.agent === agent
-          && this.#permit.session === agent.session;
-        const childPermit = this.#childPermits.get(agent.session);
-        const childPermitted = childPermit?.agent === agent && owner === childPermit.parent;
-        const nativeChildPermitted = owner !== undefined && owner === this.#nativeParent(agent.session);
-        if (!rootPermitted && !childPermitted && !nativeChildPermitted) {
+      const disposeAgentGuard = agents.setPublicationGuard((agent, proof) => {
+        if (proof === undefined || this.#proofs.get(proof) !== agent) {
           throw new Error("root Agent publication lacks the primary Session admission authority");
         }
       });
@@ -782,81 +741,17 @@ class PrimaryRootPublicationFence {
     }
   }
 
-  prepare(runtimeSessionId: string): Readonly<{ setup: AgentSetup; cancel: () => void }> {
-    let expected: Agent | undefined;
-    const setup: AgentSetup = (_agentContext, agent) => {
-      if (agent.id !== runtimeSessionId) {
-        throw new Error("unpublished root Agent identity differs from the primary Session admission");
-      }
-      expected = agent;
-      return {
-        commit: () => {
-          if (this.#permit !== undefined || this.#owned !== undefined
-            || this.context.agents.roots().length !== 0) {
-            throw new Error("Runtime generation already contains a root Agent");
-          }
-          this.#permit = Object.freeze({ agent, session: agent.session });
-        },
-      };
-    };
-    return Object.freeze({
-      setup,
-      cancel: () => {
-        if (this.#permit?.agent === expected) this.#permit = undefined;
-      },
-    });
-  }
-
-  prepareChild(agent: Agent, parent: Agent): () => void {
-    if (this.#owned === undefined || (this.#owned !== parent && this.#ownedChildren.get(parent.session) !== parent)
-      || this.context.agents.get(parent.id) !== parent
-      || agent.session.header.origin !== "subagent"
-      || agent.session.header.parentSession !== parent.id
-      || agent.id === parent.id || this.#childPermits.has(agent.session)
-      || this.#ownedChildren.has(agent.session)) {
-      throw new Error("child publication request lacks exact primary Session lineage");
-    }
-    const permit = Object.freeze({ agent, parent });
-    this.#childPermits.set(agent.session, permit);
-    return () => {
-      if (this.#childPermits.get(agent.session) === permit) this.#childPermits.delete(agent.session);
-    };
-  }
-
-  assertAuthority(state: PrimarySessionState): number {
-    const roots = this.context.agents.roots();
+  assertAuthority(admission: PrimarySessionAdmissionSnapshot, readyAgent: Agent | undefined): number {
+    const agents = this.context.agents.list();
     const sessions = this.context.sessions.list();
-    const permitted = this.#permit;
-    const authorized = this.#owned ?? permitted?.agent;
-    const authorizedSession = this.#owned?.session ?? permitted?.session;
-    const permittedChildren = new Map<Agent, Session>([...this.#childPermits]
-      .map(([session, permit]) => [permit.agent, session]));
-    const ownedChildren = new Map<Agent, Session>([...this.#ownedChildren]
-      .map(([session, agent]) => [agent, session]));
-    const unauthorizedRoots = roots.filter((agent) => agent !== authorized
-      && !permittedChildren.has(agent) && !ownedChildren.has(agent));
-    const allowedSessions = new Set<Session>([
-      ...this.#childPermits.keys(),
-      ...this.#ownedChildren.keys(),
-      ...(authorizedSession === undefined ? [] : [authorizedSession]),
-    ]);
-    if (authorized === undefined || authorizedSession === undefined) {
-      if (roots.length !== 0 || sessions.length !== 0) {
-        throw new Error("DSH registries bypassed primary Session admission");
-      }
-    } else if (unauthorizedRoots.length !== 0 || !roots.includes(authorized)
-      || sessions.some((session) => !allowedSessions.has(session))
-      || !sessions.includes(authorizedSession)
-      || [...this.#ownedChildren].some(([session, agent]) =>
-        !sessions.includes(session) || this.context.agents.get(agent.id) !== agent)) {
-      throw new Error("DSH root registry differs from primary Session ownership");
+    if (admission.runtimeSessionId === undefined && (agents.length !== 0 || sessions.length !== 0)) {
+      throw new Error("DSH registries bypassed primary Session admission");
     }
-    const owned = this.#owned;
-    if (state === "ready" && (owned === undefined || !roots.includes(owned)
-      || !sessions.includes(owned.session))) {
+    const root = agents.find((agent) => agent.id === admission.runtimeSessionId);
+    if (admission.state === "ready" && (readyAgent === undefined || root !== readyAgent || !sessions.includes(readyAgent.session))) {
       throw new Error("ready primary Session is not fully published in the DSH registries");
     }
-    return authorized === undefined ? 0 : 1;
+    return root === undefined ? 0 : 1;
   }
 }
 
@@ -1577,7 +1472,6 @@ class DshPrimarySessionBackend implements PrimarySessionBackend {
   async create(request: PrimarySessionBackendRequest): Promise<PrimarySessionBackendResult> {
     this.ensureWorkspaceContext(request.workspace.path);
     const globalContext = this.globalSystemContext.prepare(request.systemContext);
-    const publication = this.publicationFence.prepare(request.runtimeSessionId);
     let rawHandle: AgentHandle | undefined;
     try {
       rawHandle = await this.context.agents.create({
@@ -1588,6 +1482,11 @@ class DshPrimarySessionBackend implements PrimarySessionBackend {
         },
         meta: { cwd: request.workspace.path },
         sessionId: SessionId(request.runtimeSessionId),
+        publicationProof: (agent) => {
+          request.signal.throwIfAborted();
+          if (agent.id !== request.runtimeSessionId) throw new Error("primary Session identity differs from admission");
+          return this.publicationFence.issue(agent);
+        },
         setup: async (agentContext, agent) => {
           if (agent.id !== request.runtimeSessionId) {
             throw new Error("unpublished root Agent differs from the admitted primary Session");
@@ -1596,15 +1495,11 @@ class DshPrimarySessionBackend implements PrimarySessionBackend {
           request.signal.throwIfAborted();
           this.assertPublicationCurrent?.(agent, request);
           await this.initializeCreate?.(agent, request);
-          const preparedPublication = await publication.setup(agentContext, agent);
-          if (preparedPublication === undefined) {
-            throw new Error("primary Session publication guard did not prepare a commit boundary");
-          }
+          if (!await this.context.sessions.flush(agent.session)) throw new Error("primary Session setup has no durability provider");
           return Object.freeze({
             commit: () => {
               request.signal.throwIfAborted();
               this.assertPublicationCurrent?.(agent, request);
-              preparedPublication.commit();
             },
           });
         },
@@ -1639,8 +1534,6 @@ class DshPrimarySessionBackend implements PrimarySessionBackend {
       }
       if (failures.length === 1) throw error;
       throw new AggregateError(failures, "primary Session create and rollback failed", { cause: error });
-    } finally {
-      publication.cancel();
     }
   }
 
@@ -1651,7 +1544,6 @@ class DshPrimarySessionBackend implements PrimarySessionBackend {
       return Object.freeze({ state: "recovery_required", recovery: inspection });
     }
     const globalContext = this.globalSystemContext.prepare(request.systemContext);
-    const publication = this.publicationFence.prepare(request.runtimeSessionId);
     let rawHandle: AgentHandle | undefined;
     try {
       rawHandle = await this.context.agents.resume({
@@ -1661,6 +1553,11 @@ class DshPrimarySessionBackend implements PrimarySessionBackend {
           provider: request.params.provider.providerRouteId,
         },
         resumeSessionId: SessionId(request.runtimeSessionId),
+        publicationProof: (agent) => {
+          request.signal.throwIfAborted();
+          if (agent.id !== request.runtimeSessionId) throw new Error("primary Session identity differs from admission");
+          return this.publicationFence.issue(agent);
+        },
         setup: async (agentContext, agent) => {
           if (agent.id !== request.runtimeSessionId) {
             throw new Error("unpublished resumed Agent differs from the admitted primary Session");
@@ -1668,17 +1565,13 @@ class DshPrimarySessionBackend implements PrimarySessionBackend {
           registerRootSystemContext(agentContext, request.systemContext);
           request.signal.throwIfAborted();
           await this.validateResume?.(agent, request);
+          if (!await this.context.sessions.flush(agent.session)) throw new Error("primary Session setup has no durability provider");
           request.signal.throwIfAborted();
           this.assertPublicationCurrent?.(agent, request);
-          const preparedPublication = await publication.setup(agentContext, agent);
-          if (preparedPublication === undefined) {
-            throw new Error("primary Session publication guard did not prepare a commit boundary");
-          }
           return Object.freeze({
             commit: () => {
               request.signal.throwIfAborted();
               this.assertPublicationCurrent?.(agent, request);
-              preparedPublication.commit();
             },
           });
         },
@@ -1732,8 +1625,6 @@ class DshPrimarySessionBackend implements PrimarySessionBackend {
       }
       if (failures.length === 1) throw error;
       throw new AggregateError(failures, "primary Session resume and rollback failed", { cause: error });
-    } finally {
-      publication.cancel();
     }
   }
 }
@@ -2112,7 +2003,7 @@ export class ProductSessionService extends Service {
 
   snapshot(): Readonly<ProductSessionSnapshot> {
     const admission = this.admissionValue?.snapshot() ?? Object.freeze({ state: "unbound" as const });
-    const liveRootAgents = this.publicationFenceValue.assertAuthority(admission.state);
+    const liveRootAgents = this.publicationFenceValue.assertAuthority(admission, admission.state === "ready" ? this.requireAgent() : undefined);
     return Object.freeze({
       ...admission,
       activeCompactions: this.compactionPromises.size,
@@ -2471,12 +2362,12 @@ export class ProductSessionService extends Service {
     });
   }
 
-  prepareChildPublication(authority: object, child: Agent, parent: Agent): () => void {
+  prepareChildPublication(authority: object, child: Agent, root: Agent): object {
     if (this.childPublicationAuthorityValue === undefined
-      || authority !== this.childPublicationAuthorityValue) {
+      || authority !== this.childPublicationAuthorityValue || root !== this.requireAgent()) {
       throw new Error("child publication requires the composition-owned authority");
     }
-    return this.publicationFenceValue.prepareChild(child, parent);
+    return this.publicationFenceValue.issue(child);
   }
 
   close(value: unknown): Promise<MethodResult<"session/close">> {

@@ -1,3 +1,5 @@
+import * as NativeToolExecutor from "@deepseek-ai/dsh-tool-executor-native";
+import { executeToolFixture } from "@deepseek-ai/dsh-tool-testkit";
 import type { ExtensionSnapshot } from "@myagents-dsh/protocol";
 import { CallToolResultSchema } from "@modelcontextprotocol/sdk/types.js";
 import { modelToolNames } from "@myagents-dsh/protocol";
@@ -430,7 +432,8 @@ describe("generation-owned MCP component compiler", () => {
     const root = new Context();
     contexts.push(root);
     await root.plugin(SystemPrompt);
-    await root.plugin(ToolRuntime, { mode: "native" });
+    await root.plugin(ToolRuntime);
+  await root.plugin(NativeToolExecutor);
     const effects: string[] = [];
     let closeHits = 0;
     let connectHits = 0;
@@ -500,7 +503,7 @@ describe("generation-owned MCP component compiler", () => {
     const definition = root.tools.get("mcp__fixture__echo");
     expect(definition).toBeDefined();
     expect(effects.slice(0, 2)).toEqual(["connect:1", "list:1"]);
-    const outcome = await root.tools.execute({
+    const outcome = await executeToolFixture(root, {
       arguments: Object.freeze({ value: "hello" }),
       callId: ToolCallId("call-one"),
       name: "mcp__fixture__echo",
@@ -539,7 +542,7 @@ describe("generation-owned MCP component compiler", () => {
     await controller.replace(snapshot("mcp-v2"));
     expect(root.tools.get("mcp__fixture__echo")).toBeDefined();
     expect(root.tools.get("mcp__fixture__echo")).not.toBe(definition);
-    const replacement = await root.tools.execute({
+    const replacement = await executeToolFixture(root, {
       arguments: Object.freeze({ value: "replacement" }),
       callId: ToolCallId("call-two"),
       name: "mcp__fixture__echo",
@@ -568,7 +571,8 @@ describe("generation-owned MCP component compiler", () => {
     const root = new Context();
     contexts.push(root);
     await root.plugin(SystemPrompt);
-    await root.plugin(ToolRuntime, { mode: "native" });
+    await root.plugin(ToolRuntime);
+  await root.plugin(NativeToolExecutor);
     let closeHits = 0;
     const connection: McpConnection = Object.freeze({
       callTool: () => Promise.resolve({ content: [] }),
@@ -611,7 +615,8 @@ describe("generation-owned MCP component compiler", () => {
     const root = new Context();
     contexts.push(root);
     await root.plugin(SystemPrompt);
-    await root.plugin(ToolRuntime, { mode: "native" });
+    await root.plugin(ToolRuntime);
+  await root.plugin(NativeToolExecutor);
     const base = snapshot("credential-v1");
     if (base.mcpLaunchPolicy === undefined) throw new Error("fixture MCP launch policy is missing");
     const authority = {
@@ -673,7 +678,7 @@ describe("generation-owned MCP component compiler", () => {
       })],
       initialSnapshot: credentialSnapshot,
     });
-    const outcome = await root.tools.execute({
+    const outcome = await executeToolFixture(root, {
       arguments: Object.freeze({}),
       callId: ToolCallId("credential-call"),
       name: "mcp__fixture__echo",
@@ -693,7 +698,8 @@ describe("generation-owned MCP component compiler", () => {
     const root = new Context();
     contexts.push(root);
     await root.plugin(SystemPrompt);
-    await root.plugin(ToolRuntime, { mode: "native" });
+    await root.plugin(ToolRuntime);
+  await root.plugin(NativeToolExecutor);
     let callAborted = false;
     let closeHits = 0;
     const connection: McpConnection = Object.freeze({
@@ -727,7 +733,7 @@ describe("generation-owned MCP component compiler", () => {
       })],
       initialSnapshot: snapshot("quiescence-v1"),
     });
-    const call = root.tools.execute({
+    const call = executeToolFixture(root, {
       arguments: Object.freeze({}),
       callId: ToolCallId("wait-call"),
       name: "mcp__fixture__wait",
@@ -744,7 +750,8 @@ describe("generation-owned MCP component compiler", () => {
     const root = new Context();
     contexts.push(root);
     await root.plugin(SystemPrompt);
-    await root.plugin(ToolRuntime, { mode: "native" });
+    await root.plugin(ToolRuntime);
+  await root.plugin(NativeToolExecutor);
     let traps = 0;
     let closeHits = 0;
     const entry = new Proxy({ name: "forged", inputSchema: { type: "object" } }, {
@@ -792,7 +799,8 @@ describe("generation-owned MCP component compiler", () => {
     const root = new Context();
     contexts.push(root);
     await root.plugin(SystemPrompt);
-    await root.plugin(ToolRuntime, { mode: "native" });
+    await root.plugin(ToolRuntime);
+  await root.plugin(NativeToolExecutor);
     let controller: ProductComponentServiceController | undefined;
     await root.plugin(ProductComponentService, {
       authorizeToolExecution: () => Promise.resolve(), assertToolExecution: () => undefined,
@@ -823,7 +831,7 @@ describe("generation-owned MCP component compiler", () => {
   ])("preserves usable text in SDK-valid decorated or mixed results %#", async (result) => {
     expect(CallToolResultSchema.safeParse(result).success).toBe(true);
     const root = await resultFixture(result);
-    const outcome = await root.tools.execute({ arguments: {}, name: "mcp__fixture__echo", callId: ToolCallId("compatible-call"), signal: new AbortController().signal });
+    const outcome = await executeToolFixture(root, { arguments: {}, name: "mcp__fixture__echo", callId: ToolCallId("compatible-call"), signal: new AbortController().signal });
     expect(outcome.isError).toBe(false);
     expect(outcome.content.some((part) => part.type === "text" && part.text.includes("usable result"))).toBe(true);
     if ("structuredContent" in result) expect(outcome.content.some((part) => part.type === "text" && part.text.includes('{"ok":true}'))).toBe(true);
@@ -832,9 +840,9 @@ describe("generation-owned MCP component compiler", () => {
   it("renders structured-only results and retains explicit remote failures", async () => {
     const structured = await resultFixture({ content: [], structuredContent: { answer: 42 } });
     const call = { arguments: {}, name: "mcp__fixture__echo", callId: ToolCallId("structured-call"), signal: new AbortController().signal };
-    expect(await structured.tools.execute(call)).toMatchObject({ isError: false, value: { content: ['{"answer":42}'] } });
+    expect(await executeToolFixture(structured, call)).toMatchObject({ isError: false, value: { content: ['{"answer":42}'] } });
     const failed = await resultFixture({ content: [{ type: "text", text: "remote failed", annotations: { priority: 1 } }], isError: true });
-    expect(await failed.tools.execute(call)).toMatchObject({ isError: true });
+    expect(await executeToolFixture(failed, call)).toMatchObject({ isError: true });
   });
 
   it.each([
@@ -852,7 +860,7 @@ describe("generation-owned MCP component compiler", () => {
       { type: "text", text: "command completed" },
       { type: "image", data: "iVBORw0KGgo=", mimeType: "image/png" },
     ] }, undefined, () => Promise.reject(new Error("synthetic image decoder failure")));
-    const outcome = await root.tools.execute({ arguments: {}, name: "mcp__fixture__echo", callId: ToolCallId("image-failure-call"), signal: new AbortController().signal });
+    const outcome = await executeToolFixture(root, { arguments: {}, name: "mcp__fixture__echo", callId: ToolCallId("image-failure-call"), signal: new AbortController().signal });
     expect(outcome).toMatchObject({ isError: false, value: { content: ["command completed", "MCP image omitted: image publication failed."], truncated: true } });
   });
 

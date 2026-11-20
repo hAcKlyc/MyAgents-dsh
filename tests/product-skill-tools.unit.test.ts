@@ -1,3 +1,6 @@
+import SessionProjectionRegistry from "@deepseek-ai/dsh-session-projection";
+import * as NativeToolExecutor from "@deepseek-ai/dsh-tool-executor-native";
+import { executeToolFixture } from "@deepseek-ai/dsh-tool-testkit";
 import { createHash } from "node:crypto";
 import { link, mkdtemp, mkdir, realpath, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -107,9 +110,11 @@ const mounted = async (fixtures: readonly SkillFixture[] = [{ id: "winner", name
   const context = new Context();
   contexts.push(context);
   await context.plugin(SessionStore);
+  await context.plugin(SessionProjectionRegistry);
   await context.plugin(AgentRegistry);
   await context.plugin(SystemPrompt);
-  await context.plugin(ToolRuntime, { mode: "native" });
+  await context.plugin(ToolRuntime);
+  await context.plugin(NativeToolExecutor);
   await context.plugin(ToolCallTimeoutPolicy);
   context.provide("sandboxPolicy", { defaultMode: "danger-full-access", resolve: () => ({ mode: "danger-full-access", workspaceRoot: process.cwd() }) } as never);
   await context.plugin(LocalWorkspaceFileSystem, {
@@ -118,7 +123,7 @@ const mounted = async (fixtures: readonly SkillFixture[] = [{ id: "winner", name
   await context.plugin(SkillRegistry);
   const session = context.sessions.create(SessionId("skill-session"));
   const agent = Object.freeze({ ctx: context, id: "skill-session", session }) as unknown as Agent;
-  context.agents.enter(agent, undefined);
+  context.agents.enter(agent);
   const permissions: unknown[] = [];
   let current = true;
   context.provide("productTools", Object.freeze({
@@ -167,7 +172,7 @@ const mounted = async (fixtures: readonly SkillFixture[] = [{ id: "winner", name
   const execute = (input: unknown, signal = new AbortController().signal) => {
     callNumber += 1;
     const callId = ToolCallId(`skill-call-${String(callNumber)}`);
-    return context.tools.execute({
+    return executeToolFixture(context, {
       agent,
       arguments: input,
       callId,

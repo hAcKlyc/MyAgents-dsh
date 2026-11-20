@@ -884,10 +884,12 @@ describe("Runtime event projection", () => {
     };
 
     const leaveFirst = context.sessions.enter(first);
+    context.sessions.announce(first);
     appendAndObserve(first, "generation one");
     await projector.whenIdle();
     leaveFirst();
     const leaveSecond = context.sessions.enter(second);
+    context.sessions.announce(second);
     appendAndObserve(second, "generation two");
     await projector.whenIdle();
 
