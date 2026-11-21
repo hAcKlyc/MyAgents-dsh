@@ -120,7 +120,7 @@ const backendWith = (
 describe("one-primary-session admission", () => {
   it("reserves storage deletion without creating an Agent and fences foreign identities", async () => {
     const context = new Context();
-    context.provide("agents", { roots: () => [], setPublicationGuard: () => () => undefined } as never);
+    context.provide("agents", { list: () => [], setPublicationGuard: () => () => undefined } as never);
     context.provide("sessions", { list: () => [], setPublicationGuard: () => () => undefined } as never);
     const create = vi.fn(() => Promise.reject(new Error("create must not run")));
     const resume = vi.fn(() => Promise.reject(new Error("resume must not run")));
@@ -901,7 +901,7 @@ describe("one-primary-session admission", () => {
   it("keeps workspace and execution-environment authority symmetric in either bind order", async () => {
     const context = new Context();
     context.provide("agents", {
-      roots: () => [],
+      list: () => [],
       setPublicationGuard: () => () => undefined,
     } as never);
     context.provide("sessions", {
@@ -936,7 +936,7 @@ describe("one-primary-session admission", () => {
     const replacement = fakeHandle("runtime-primary");
     const flush = vi.fn(() => Promise.resolve(true));
     context.provide("agents", {
-      roots: () => [],
+      list: () => [],
       setPublicationGuard: () => () => undefined,
     } as never);
     context.provide("sessions", {
@@ -998,7 +998,7 @@ describe("one-primary-session admission", () => {
   it("replays the exact prepared mutation while resume is recovery-required", async () => {
     const context = new Context();
     context.provide("agents", {
-      roots: () => [],
+      list: () => [],
       setPublicationGuard: () => () => undefined,
     } as never);
     context.provide("sessions", {
@@ -1076,7 +1076,7 @@ describe("one-primary-session admission", () => {
     });
     const rewindOnlyContext = new Context();
     rewindOnlyContext.provide("agents", {
-      roots: () => [],
+      list: () => [],
       setPublicationGuard: () => () => undefined,
     } as never);
     rewindOnlyContext.provide("sessions", {

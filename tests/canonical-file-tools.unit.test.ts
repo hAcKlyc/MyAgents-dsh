@@ -1,3 +1,5 @@
+import * as NativeToolExecutor from "@deepseek-ai/dsh-tool-executor-native";
+import { executeToolFixture } from "@deepseek-ai/dsh-tool-testkit";
 import { prepareImageFile, DEFAULT_MAX_IMAGE_BYTES, DEFAULT_MAX_IMAGE_PIXELS, DEFAULT_MAX_IMAGES_PER_MESSAGE, DEFAULT_MAX_MESSAGE_IMAGE_BYTES } from "@deepseek-ai/dsh-attachment-local";
 import type { SaveImageAttachment } from "@deepseek-ai/dsh-attachment";
 import { Session, SessionId, SessionSeq, SESSION_FORMAT_VERSION } from "@deepseek-ai/dsh-session";
@@ -183,7 +185,8 @@ const harness = async (options: Readonly<{ additionalReadRoot?: boolean; imageIn
     defaultMode: "workspace-write",
     resolve: () => ({ mode: "workspace-write", workspaceRoot: workspace }),
   } as never);
-  await context.plugin(ToolRuntime, { mode: "native" });
+  await context.plugin(ToolRuntime);
+  await context.plugin(NativeToolExecutor);
   await context.plugin(LocalSubprocessRuntime);
   await context.plugin(LocalWorkspaceFileSystem, {
     platform: selectPlatformAdapter(environment.platformTarget),
@@ -262,7 +265,7 @@ const harness = async (options: Readonly<{ additionalReadRoot?: boolean; imageIn
   ) => {
     call += 1;
     const callId = ToolCallId(`call-${call}`);
-    const result = await context.tools.execute({
+    const result = await executeToolFixture(context, {
       agent,
       arguments: args,
       callId,
@@ -305,7 +308,7 @@ const harness = async (options: Readonly<{ additionalReadRoot?: boolean; imageIn
   ) => {
     call += 1;
     const callId = ToolCallId(`child-call-${call}`);
-    const result = await context.tools.execute({
+    const result = await executeToolFixture(context, {
       agent: childAgent,
       arguments: args,
       callId,

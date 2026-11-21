@@ -1310,7 +1310,7 @@ export class ProductPermissionService extends Service {
     agent: Agent,
     candidate: ProductPermissionPlaneConfig,
     previous: ProductPermissionFold,
-    durability: "live-session" | "unpublished-session",
+    durability: "live-session" | "primary-setup",
   ): Promise<void> {
     const nextBase = permissionBaseRevision(candidate, String(agent.session.id));
     if (nextBase !== previous.baseRevision) {
@@ -1384,9 +1384,9 @@ export class ProductPermissionService extends Service {
         "resumed operations require their persisted permission configuration before recovery",
       );
     }
-    // DSH Agent setup owns this unpublished suffix and durably appends it
-    // before registry publication. A live SessionStore flush is invalid here.
-    await this.commitConfiguration(agent, candidate, previous, "unpublished-session");
+    // Primary setup flushes this transition and the native policy setters
+    // together before the Agent is published.
+    await this.commitConfiguration(agent, candidate, previous, "primary-setup");
   }
 
   private restoreConfiguration(
@@ -1682,8 +1682,10 @@ export class ProductPermissionService extends Service {
       pending.effect?.apply({ effectivePolicyRevision: (await this.readOperationPolicy(context)).fold.latestRevision });
       return "deny";
     } catch (error) {
-      pending.effect?.rejectEffect(error instanceof Error ? error : new Error(String(error)));
-      throw error;
+      // Root disposal can detach the native Session before approval writes its final audit event.
+      const failure = this.closingValue && controller.signal.reason instanceof Error ? controller.signal.reason : error;
+      pending.effect?.rejectEffect(failure instanceof Error ? failure : new Error(String(failure)));
+      throw failure;
     } finally {
       context.signal.removeEventListener("abort", onAbort);
       this.pending.delete(key);

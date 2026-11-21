@@ -1,8 +1,8 @@
 diff --git a/packages/context/agent-instructions/README.md b/packages/context/agent-instructions/README.md
-index 25c48ba1acef3c8bf49e867d753bcdd3037fea2e..e51ff460f365231dbec8cb66787d9e666f2bef8b 100644
+index 49a66930d69cc8b67492d00e320d2f3d3aa17d90..5bae69fbfafbde964ab36ddc9700420ea64602fb 100644
 --- a/packages/context/agent-instructions/README.md
 +++ b/packages/context/agent-instructions/README.md
-@@ -106,6 +106,8 @@ At the first eligible `agent/pre-step` of a session, the plugin composes the bas
+@@ -108,6 +108,8 @@ At the first eligible `agent/pre-step` of a session, the plugin composes the bas
  
  Every injected message carries a typed source with its change list; a complete baseline also carries an identity derived from normalized discovery, precedence, project-root, and budget configuration, and a matching durable message confirms a queued baseline. Model-visible text contains no hidden state markers, and literal `</system-reminder>` text anywhere in instruction content or model-visible metadata is escaped so repository-controlled text cannot close the plugin-owned frame.
  
@@ -12,10 +12,10 @@ index 25c48ba1acef3c8bf49e867d753bcdd3037fea2e..e51ff460f365231dbec8cb66787d9e66
  
  -----
 diff --git a/packages/context/agent-instructions/README.zh.md b/packages/context/agent-instructions/README.zh.md
-index a87cfae53aae714c46ef06b59876156b866b4d3c..c9cf2ee0508062fc4bc7e12db22e386f464f1e55 100644
+index b584ccac1fe2e9bd5a53b92345ec9844122ec6ba..91c03e010436861c6f9e76aaca9291eb6d01ed13 100644
 --- a/packages/context/agent-instructions/README.zh.md
 +++ b/packages/context/agent-instructions/README.zh.md
-@@ -106,6 +106,8 @@ export interface Config {
+@@ -108,6 +108,8 @@ export interface Config {
  
  每条注入消息都携带带类型的来源及其变更列表；完整基线还携带从规范化发现、优先级、项目根与预算配置派生的标识，匹配的持久消息会确认已排队的基线。模型可见文本不含隐藏状态标记，指令内容或模型可见元数据中的字面 `</system-reminder>` 文本都会被转义，因此仓库控制的文本无法关闭插件控制的框架。
  
@@ -25,7 +25,7 @@ index a87cfae53aae714c46ef06b59876156b866b4d3c..c9cf2ee0508062fc4bc7e12db22e386f
  
  -----
 diff --git a/packages/context/agent-instructions/src/config.ts b/packages/context/agent-instructions/src/config.ts
-index 1c9cea89924f6a16272c9976c195dcab36eb9961..946d5535508684a6fcd5f1246105d67f3808d678 100644
+index 5ae3c3454c7f42dedf229467aed5d2df0da1b93e..3d8e6e60c825f4b4b5267ce0ae10d1554dba185a 100644
 --- a/packages/context/agent-instructions/src/config.ts
 +++ b/packages/context/agent-instructions/src/config.ts
 @@ -11,6 +11,8 @@ import { resolveAgentsHome, resolveDshHome } from '@deepseek-ai/dsh-home-paths'
@@ -37,7 +37,7 @@ index 1c9cea89924f6a16272c9976c195dcab36eb9961..946d5535508684a6fcd5f1246105d67f
  const DEFAULT_MAX_SOURCE_BYTES = 1_048_576
  const RESERVED_PATH_SEGMENTS = new Set(['', '.', '..'])
  
-@@ -32,6 +34,12 @@ export interface Config {
+@@ -36,6 +38,12 @@ export interface Config {
     * under the same per-directory trimmed-content dedup; empty disables the overlay.
     */
    localInstructionFileCandidates?: string[]
@@ -50,7 +50,7 @@ index 1c9cea89924f6a16272c9976c195dcab36eb9961..946d5535508684a6fcd5f1246105d67f
  }
  
  export const Config: z<Config> = z.object({
-@@ -40,6 +48,9 @@ export const Config: z<Config> = z.object({
+@@ -44,6 +52,9 @@ export const Config: z<Config> = z.object({
    maxSourceBytes: z.number().step(1).min(1).default(DEFAULT_MAX_SOURCE_BYTES),
    instructionFileCandidates: z.array(z.string()).default([...DEFAULT_INSTRUCTION_FILE_CANDIDATES]),
    localInstructionFileCandidates: z.array(z.string()).default([...DEFAULT_LOCAL_INSTRUCTION_FILE_CANDIDATES]),
@@ -60,7 +60,7 @@ index 1c9cea89924f6a16272c9976c195dcab36eb9961..946d5535508684a6fcd5f1246105d67f
  })
  
  /** Normalized instruction discovery configuration. */
-@@ -49,12 +60,15 @@ export interface ResolvedDiscoveryConfig {
+@@ -53,12 +64,15 @@ export interface ResolvedDiscoveryConfig {
    projectRootMarkers: string[]
    instructionFileCandidates: string[]
    localInstructionFileCandidates: string[]
@@ -76,7 +76,7 @@ index 1c9cea89924f6a16272c9976c195dcab36eb9961..946d5535508684a6fcd5f1246105d67f
  }
  
  /**
-@@ -76,6 +90,9 @@ export function workspaceBaselineIdentity(
+@@ -80,6 +94,9 @@ export function workspaceBaselineIdentity(
      maxSourceBytes: config.maxSourceBytes,
      instructionFileCandidates: config.instructionFileCandidates,
      localInstructionFileCandidates: config.localInstructionFileCandidates,
@@ -86,7 +86,7 @@ index 1c9cea89924f6a16272c9976c195dcab36eb9961..946d5535508684a6fcd5f1246105d67f
    })
  }
  
-@@ -88,6 +105,8 @@ export function workspaceBaselineIdentity(
+@@ -92,6 +109,8 @@ export function workspaceBaselineIdentity(
  export function resolveConfig(config: Config): ResolvedConfig {
    return {
      ...resolveDiscoveryConfig({
@@ -95,7 +95,7 @@ index 1c9cea89924f6a16272c9976c195dcab36eb9961..946d5535508684a6fcd5f1246105d67f
        ...config.projectRootMarkers === undefined ? {} : { projectRootMarkers: config.projectRootMarkers },
        ...config.instructionFileCandidates === undefined ? {} : { instructionFileCandidates: config.instructionFileCandidates },
        ...config.localInstructionFileCandidates === undefined
-@@ -96,6 +115,7 @@ export function resolveConfig(config: Config): ResolvedConfig {
+@@ -100,6 +119,7 @@ export function resolveConfig(config: Config): ResolvedConfig {
      }),
      maxBytes: config.maxBytes,
      maxSourceBytes: config.maxSourceBytes ?? DEFAULT_MAX_SOURCE_BYTES,
@@ -103,7 +103,7 @@ index 1c9cea89924f6a16272c9976c195dcab36eb9961..946d5535508684a6fcd5f1246105d67f
    }
  }
  
-@@ -111,12 +131,14 @@ export function resolveConfig(config: Config): ResolvedConfig {
+@@ -115,12 +135,14 @@ export function resolveConfig(config: Config): ResolvedConfig {
   * @returns normalized home, root markers, and instruction candidates.
   */
  export function resolveDiscoveryConfig(
@@ -244,10 +244,10 @@ index de3650d05cd462a32eca22ccd2397a6f387668e0..3dcac9286655fafa4e7df89bbf515606
    }
    const kept = dedupInstructionFilesByCandidateGroup(loaded)
 diff --git a/packages/context/agent-instructions/src/index.ts b/packages/context/agent-instructions/src/index.ts
-index 74d6e5fa22a2c323ff97510f5f08fb2f6961fac6..665a65f34a82dcfa4fa15049f90a5a77cbe5ec1b 100644
+index ec752e07150ff3da38e7d7264cee825f7d3f881b..a148f5f973e364f8098a9268b67b82ade920ef64 100644
 --- a/packages/context/agent-instructions/src/index.ts
 +++ b/packages/context/agent-instructions/src/index.ts
-@@ -73,10 +73,8 @@ function sameContextPayload(left: UserMessage, right: UserMessage): boolean {
+@@ -72,10 +72,8 @@ function sameContextPayload(left: UserMessage, right: UserMessage): boolean {
      && isDeepStrictEqual(left.source, right.source)
  }
  
@@ -260,7 +260,7 @@ index 74d6e5fa22a2c323ff97510f5f08fb2f6961fac6..665a65f34a82dcfa4fa15049f90a5a77
    if (typeof exec.arguments !== 'object' || exec.arguments === null) return undefined
    if (!('file_path' in exec.arguments) || typeof exec.arguments.file_path !== 'string') return undefined
    const filePath = exec.arguments.file_path.trim()
-@@ -85,6 +83,7 @@ function filePathFromExecution(exec: ToolExecution): string | undefined {
+@@ -84,6 +82,7 @@ function filePathFromExecution(exec: ToolExecution): string | undefined {
  
  export function apply(ctx: Context, config: Config): void {
    const resolved: ResolvedConfig = resolveConfig(config)
@@ -268,7 +268,7 @@ index 74d6e5fa22a2c323ff97510f5f08fb2f6961fac6..665a65f34a82dcfa4fa15049f90a5a77
    const instructionVersions: InstructionVersionCache = new WeakMap()
    const baselinePreparations = new WeakMap<Session, {
      identity: string
-@@ -143,6 +142,8 @@ export function apply(ctx: Context, config: Config): void {
+@@ -142,6 +141,8 @@ export function apply(ctx: Context, config: Config): void {
          cwd,
          dshHome: resolved.dshHome,
          agentsHome: resolved.agentsHome,
@@ -277,7 +277,7 @@ index 74d6e5fa22a2c323ff97510f5f08fb2f6961fac6..665a65f34a82dcfa4fa15049f90a5a77
          projectRootMarkers: resolved.projectRootMarkers,
          maxBytes: resolved.maxBytes,
          maxSourceBytes: resolved.maxSourceBytes,
-@@ -363,7 +364,7 @@ export function apply(ctx: Context, config: Config): void {
+@@ -359,7 +360,7 @@ export function apply(ctx: Context, config: Config): void {
      const touches = executionTouches.get(exec.token) ?? []
      executionTouches.delete(exec.token)
      if (!result.isError && exec.agent !== undefined && !exec.signal.aborted) {
@@ -433,10 +433,10 @@ index 9727d7acf482d9488ac1bf4ddc26147518e62f76..3cb28e0cae226eac81912b7515a0e65f
        const previous = effective.get(scope)
        const probe = await probeScopeInstruction(scope, projectRoot, resolved, fileSystem, options.signal)
 diff --git a/packages/context/agent-instructions/tests/agent-instructions.spec.ts b/packages/context/agent-instructions/tests/agent-instructions.spec.ts
-index 721866df73993deba4614b316bd5b10e54ee2f27..b512c66c89a4044f48f3e600772ed68e7ba5ee5a 100644
+index 5393fda5d1f3d85f88799b100bd06b8206c04fb5..eb333754a872eade1a06e5ceb03bb5f0330c18e5 100644
 --- a/packages/context/agent-instructions/tests/agent-instructions.spec.ts
 +++ b/packages/context/agent-instructions/tests/agent-instructions.spec.ts
-@@ -664,6 +664,42 @@ describe('workspace context instruction discovery', () => {
+@@ -716,6 +716,42 @@ describe('workspace context instruction discovery', () => {
      }
    })
  
@@ -479,7 +479,7 @@ index 721866df73993deba4614b316bd5b10e54ee2f27..b512c66c89a4044f48f3e600772ed68e
    it('ignores configured instruction candidates that are not same-directory file names', async () => {
      const root = await tempRepo()
      const home = await tempRepo()
-@@ -1192,6 +1228,29 @@ describe('workspace context rendering', () => {
+@@ -1804,6 +1840,29 @@ describe('workspace context rendering', () => {
  })
  
  describe('workspace context request injection', () => {
@@ -509,7 +509,7 @@ index 721866df73993deba4614b316bd5b10e54ee2f27..b512c66c89a4044f48f3e600772ed68e
    it('ignores a stale row home in both baseline loading and refresh', async () => {
      const root = await tempRepo()
      const ctx = new Context()
-@@ -2182,7 +2241,7 @@ describe('workspace context request injection', () => {
+@@ -2836,7 +2895,7 @@ describe('workspace context request injection', () => {
      },
    )
  
@@ -518,7 +518,7 @@ index 721866df73993deba4614b316bd5b10e54ee2f27..b512c66c89a4044f48f3e600772ed68e
      const root = await tempRepo()
      const agents = await tempRepo()
      const ctx = new Context()
-@@ -2196,7 +2255,7 @@ describe('workspace context request injection', () => {
+@@ -2850,7 +2909,7 @@ describe('workspace context request injection', () => {
        fs.entries.set(sharedPath, { type: 'file', content: 'global rule A', version: FsVersion('shared-v1') })
        pinHarnessHome(root)
        pinAgentsHome(agents)
@@ -527,7 +527,7 @@ index 721866df73993deba4614b316bd5b10e54ee2f27..b512c66c89a4044f48f3e600772ed68e
        const agent = await stubAgent(root)
        await composeBaselinePrefix(ctx, agent)
        const baseline = baselineEvents(agent)[0]
-@@ -3610,6 +3669,56 @@ describe('workspace context request injection', () => {
+@@ -4264,6 +4323,56 @@ describe('workspace context request injection', () => {
  })
  
  describe('dynamic nested workspace context injection', () => {
@@ -584,7 +584,7 @@ index 721866df73993deba4614b316bd5b10e54ee2f27..b512c66c89a4044f48f3e600772ed68e
    it('projects a successful file result even when a later sibling aborts the step', async () => {
      const root = await tempRepo()
      const home = await tempRepo()
-@@ -5921,3 +6030,65 @@ describe('workspace context plugin export shape', () => {
+@@ -6584,3 +6693,65 @@ describe('workspace context plugin export shape', () => {
      expect(typeof unwrapped.apply).toBe('function')
    })
  })

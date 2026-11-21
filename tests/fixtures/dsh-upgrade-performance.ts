@@ -13,7 +13,8 @@ import { LlmAdapter, LlmRuntime, ToolCallId, createUserMessage,
 import { SessionId, SessionStore } from "@deepseek-ai/dsh-session";
 import SessionProjectionRegistry from "@deepseek-ai/dsh-session-projection";
 import { SystemPrompt } from "@deepseek-ai/dsh-system-prompt";
-import { ToolRuntime, defineContentToolFixture } from "@deepseek-ai/dsh-tools";
+import { defineTool, ToolRuntime } from "@deepseek-ai/dsh-tools";
+import * as NativeToolExecutor from "@deepseek-ai/dsh-tool-executor-native";
 import { TokenMeter } from "@deepseek-ai/dsh-token-meter";
 import { ProductJsonlSessionPersistence, productCoordinationDatabasePath } from "@myagents-dsh/persistence-product";
 import { ACCEPTED_PATCHED_DSH_ARTIFACT, assertAcceptedDshRuntimeGraph, selectPlatformAdapter } from "@myagents-dsh/product-profile";
@@ -84,6 +85,7 @@ try {
   await context.plugin(SessionProjectionRegistry);
   await context.plugin(SystemPrompt, { personaPrefix: "Synthetic performance workload." });
   await context.plugin(ToolRuntime);
+  await context.plugin(NativeToolExecutor);
   await context.plugin(AgentRegistry);
   await context.plugin(TokenMeter);
   await context.plugin(ProductJsonlSessionPersistence, {
@@ -91,10 +93,11 @@ try {
   });
   await context.plugin(AgentLoop, { agents: [] });
   context.llm.registerAdapter(["synthetic"], adapter);
-  context.tools.register(defineContentToolFixture({
+  context.tools.register(defineTool({
     name: "SyntheticRead", description: "Return synthetic data without filesystem effects.",
     parameters: {},
-    execute: () => { adapter.toolExecutions += 1; return Promise.resolve([{ type: "text", text }]); },
+    output: { schema: { type: "string" }, render: (_args, value) => [{ type: "text", text: value }] },
+    execute: () => { adapter.toolExecutions += 1; return Promise.resolve(text); },
   }));
   context.on("agent/error", ({ error }) => { errors.push(error); });
   const persistence = context.sessionPersistence as ProductJsonlSessionPersistence;

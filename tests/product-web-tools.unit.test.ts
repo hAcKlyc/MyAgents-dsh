@@ -1,3 +1,6 @@
+import * as NativeToolExecutor from "@deepseek-ai/dsh-tool-executor-native";
+import { Session, SessionId } from "@deepseek-ai/dsh-session";
+import { executeToolFixture } from "@deepseek-ai/dsh-tool-testkit";
 import { Context } from "@deepseek-ai/cordis";
 import type { Agent } from "@deepseek-ai/dsh-agent";
 import { ToolCallId } from "@deepseek-ai/dsh-llm";
@@ -34,7 +37,7 @@ const policy = Object.freeze({
 }) satisfies ProductNetworkPolicy;
 
 const productContext = (signal = new AbortController().signal): ProductToolContext => Object.freeze({
-  agent: Object.freeze({ id: "agent-v1" }) as unknown as Agent,
+  agent: Object.freeze({ id: SessionId("agent-v1"), session: Session.create(SessionId("agent-v1")) }) as unknown as Agent,
   birth: Object.freeze({
     componentDigest: "b".repeat(64),
     componentRevision: "components-v1",
@@ -150,7 +153,8 @@ const createWebHarness = async (options: Readonly<{
     resolve: () => currentProduct,
   } as never);
   await context.plugin(SystemPrompt);
-  await context.plugin(ToolRuntime, { mode: "native" });
+  await context.plugin(ToolRuntime);
+  await context.plugin(NativeToolExecutor);
   await context.plugin(WebRuntime, {
     fetchProvider: "myagents-safe-fetch",
     ...(options.search === undefined ? {} : { searchProvider: options.search.providerId }),
@@ -170,15 +174,14 @@ const createWebHarness = async (options: Readonly<{
   let call = 0;
   return Object.freeze({
     context,
-    execute: (name: "web_fetch" | "web_search", args: unknown, signal = currentProduct.signal) => {
+    execute: async (name: "web_fetch" | "web_search", args: unknown, signal = currentProduct.signal) => {
       call += 1;
-      return context.tools.execute({
-        agent: currentProduct.agent,
-        arguments: args,
-        callId: ToolCallId(`web-call-${call}`),
-        name,
-        signal,
-      });
+      const agent = currentProduct.agent;
+      const callId = ToolCallId(`web-call-${call}`);
+      const toolSet = await context.tools.resolve({ agent, modelSelection: { provider: "fixture", model: "web" }, signal });
+      try {
+        return await executeToolFixture(context, { agent, arguments: args, callId, name, signal, toolSet });
+      } finally { toolSet.dispose(); }
     },
     setProduct: (next: ProductToolContext) => { currentProduct = next; },
   });
@@ -335,7 +338,7 @@ describe("safe Web Providers and canonical Web tools", () => {
         })),
       }),
     });
-    expect(harness.context.tools.schemas().map(({ name }) => name)).toEqual(["web_fetch", "web_search"]);
+    expect(harness.context.tools.schemas().map(({ name }) => name).sort()).toEqual(["web_fetch", "web_search"]);
     const fetch = await harness.execute("web_fetch", { url: "https://example.com/page" });
     expect(fetch).toMatchObject({ isError: false, value: { url: "https://example.com/page", statusCode: 200, body: { content: "fixture" } } });
     const search = await harness.execute("web_search", { queries: ["current topic"] });

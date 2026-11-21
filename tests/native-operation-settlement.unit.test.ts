@@ -36,6 +36,7 @@ async function mountService(wait: (agent: Agent) => Promise<boolean>, drain: (ag
     inserted: () => undefined,
   });
   const agent: Agent = { id: session.id, session, inbox, options: {}, ctx: context, status: "idle",
+    model: { current: () => undefined, select: () => undefined },
     whenIdle: () => Promise.resolve(), cancel: () => undefined,
     send: (message, target) => inbox.append(target, message),
     followup: message => inbox.append("next-turn", message),

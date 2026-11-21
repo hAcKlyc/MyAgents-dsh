@@ -856,7 +856,9 @@ describe("accepted DSH seam decision registry", () => {
       "forbidden-until-patched-DSH-artifact-and-batch-1-gate",
     );
     expect(evidence.decisions.map(({ status }) => status)).toEqual([
-      ...Array.from({ length: 7 }, () => "candidate_patch_pending_product_validation"),
+      ...Array.from({ length: 3 }, () => "candidate_patch_pending_product_validation"),
+      "candidate_retirement_pending_product_validation",
+      ...Array.from({ length: 4 }, () => "candidate_patch_pending_product_validation"),
       "candidate_public_composition_pending_product_validation",
       "candidate_patch_pending_product_validation",
       "candidate_patch_pending_product_validation",

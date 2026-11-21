@@ -4,7 +4,6 @@ import { rethrowNativeChildControlError } from "../packages/rpc-server/src/nativ
 it.each([
   ["subagent/not-resumable", "subagent_not_resumable", false],
   ["subagent/unauthorized", "subagent_unauthorized", false],
-  ["subagent/parent-unavailable", "subagent_unavailable", true],
   ["subagent/delivery-unavailable", "subagent_unavailable", true],
   ["gateway/cancelled", "request_cancelled", true],
 ] as const)("preserves native refusal %s with bounded Host-visible semantics", (native, code, retryable) => {

@@ -103,15 +103,13 @@ suffix for cold admission, excluding fork-inherited events and resetting the suf
 boundaries. This disposable derived view introduces no new persistence authority: the permission
 owner still validates the complete chain before applying the requested configuration.
 
-Primary Session admission validates the other durable owners before policy reconciliation. It then
-prepares the permission transition and native sandbox/approval settings in the unpublished Session.
-The existing DSH Agent factory appends that complete setup suffix through its acquired persistence
-handle before publication; the official JSONL append fsyncs or fails. A live `SessionStore.flush`
-is invalid during this setup phase. Live `config/apply` retains its existing flush boundary. This also completes
-the recoverable prefix in which the permission transition was persisted but its native setters had
-not yet completed. A failed suffix append prevents publication. Neither the composition's bootstrap policy
-nor the Host's next request is treated as proof of the previous effective base; doing so would reject
-a healthy Session after a per-operation permission override and ordinary process release.
+Primary Session admission validates the other durable owners before policy reconciliation. RC.5
+enters the Session in its registry before running Agent setup. The primary backend applies the
+permission transition and native sandbox/approval settings and awaits the live Session durability
+checkpoint before the factory publishes the Agent. A failed checkpoint refuses admission.
+Live configuration changes continue to flush through the permission controller. Cold resume
+can complete a persisted transition whose native settings were interrupted by a process exit.
+The permission owner derives the previous effective base from durable history.
 
 Native settings must represent one of the three Product modes. The intermediate
 `danger-full-access` / `ask` pair is admitted only when the owned suffix after the last operation

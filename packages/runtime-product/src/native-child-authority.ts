@@ -1,8 +1,7 @@
 import type { Context } from "@deepseek-ai/cordis";
 import type { Agent } from "@deepseek-ai/dsh-agent";
 import { z } from "zod";
-import type { ProjectionDefinition } from "@deepseek-ai/dsh-session-projection";
-import type { Session } from "@deepseek-ai/dsh-session";
+import type { ProjectionDefinition, ProjectionHandle } from "@deepseek-ai/dsh-session-projection";
 import { ProtocolError } from "@myagents-dsh/protocol";
 import type { ProductToolOperationAuthority } from "@myagents-dsh/tool-runtime-product";
 import type { ModelRequestOperationAuthority } from "@myagents-dsh/operation-runtime";
@@ -14,30 +13,28 @@ type OperationIdentity = Readonly<{ clientOperationId: string; productTurnId: st
 interface NativeChildState {
   inheritedEventCount: number;
   turn?: number | undefined;
+  turnInputClaimed: boolean;
   mode?: string | undefined;
   catalog: { id: string; turn?: number | undefined }[];
   pending: (OperationIdentity & { messageId: string })[];
   operation?: OperationIdentity | undefined;
 }
 
-declare module "@deepseek-ai/dsh-session-projection/types" {
-  interface SessionProjectionStateMap { myagentsNativeChildAuthority: NativeChildState }
-}
 
-const projection: ProjectionDefinition<"myagentsNativeChildAuthority"> = {
+const projection: ProjectionDefinition<"myagentsNativeChildAuthority", NativeChildState> = {
   key: "myagentsNativeChildAuthority",
-  stateVersion: 2,
+  stateVersion: 3,
   stateSchema: z.object({
     inheritedEventCount: z.number().int().nonnegative(),
-    turn: z.number().int().optional(), mode: z.string().optional(),
+    turn: z.number().int().optional(), turnInputClaimed: z.boolean(), mode: z.string().optional(),
     catalog: z.array(z.object({ id: z.string(), turn: z.number().int().optional() })),
     pending: z.array(z.object({ messageId: z.string(), clientOperationId: z.string(), productTurnId: z.string() })),
     operation: z.object({ clientOperationId: z.string(), productTurnId: z.string() }).optional(),
   }),
-  init: (_header, inheritedEventCount) => ({ inheritedEventCount, catalog: [], pending: [] }),
+  init: (_header, inheritedEventCount) => ({ inheritedEventCount, turnInputClaimed: false, catalog: [], pending: [] }),
   apply: (state, event) => {
     if (event.seq < state.inheritedEventCount) return state;
-    if (event.type === "turn/start") return { ...state, turn: event.data.turn };
+    if (event.type === "turn/start") return { ...state, turn: event.data.turn, turnInputClaimed: false };
     if (event.type === "turn/end" && event.data.turn === state.turn) {
       const next = { ...state };
       delete next.turn;
@@ -49,39 +46,52 @@ const projection: ProjectionDefinition<"myagentsNativeChildAuthority"> = {
     if (event.type === "myagents/native-child-message-operation") return { ...state, pending: [...state.pending, event.data] };
     if (event.type === "user/message") {
       const operation = state.pending.find((entry) => entry.messageId === event.data.id);
-      if (operation !== undefined) return { ...state,
-        operation: { clientOperationId: operation.clientOperationId, productTurnId: operation.productTurnId },
+      // Harness may claim multiple steers for one model step. The first input
+      // starts the turn; later messages inform it without replacing its owner.
+      if (operation !== undefined) return { ...state, turnInputClaimed: true,
+        ...state.turnInputClaimed ? {} : { operation: { clientOperationId: operation.clientOperationId, productTurnId: operation.productTurnId } },
         pending: state.pending.filter((entry) => entry.messageId !== event.data.id) };
+      if (state.turn !== undefined && !state.turnInputClaimed
+        && ["user", "myagents-task-assignment", "subagent-settled", "tool-jobs"].includes(event.data.source.kind)) {
+        return { ...state, turnInputClaimed: true };
+      }
     }
     return state;
   },
 };
 
-export const installNativeChildAuthorityProjection = (ctx: Context): (() => void) => {
-  const stopProjection = ctx.sessionProjections.register(projection);
+export const installNativeChildAuthorityProjection = async (ctx: Context): Promise<() => Promise<void>> => {
+  const handle = await ctx.sessionProjections.register(projection);
+  const authority = new NativeChildOperationAuthority(ctx, handle);
+  authorities.set(ctx, authority);
   // Capture the sender's authority when DSH admits the message, before it wakes
   // the child. A continuation belongs to that dispatch, not its creation turn.
   const stopMessages = ctx.on("agent/inbox/inserted", ({ agent, message }) => {
-    if (agent.session.header.origin !== "subagent") return;
     const source = message.source;
     if (!("senderSessionId" in source) || (source.kind !== "coordinator" && source.kind !== "agent-message")) return;
-    if (agent.session.header.parentSession !== source.senderSessionId) return;
     const sender = ctx.agents.get(source.senderSessionId);
     if (sender === undefined) return;
-    const binding = sender === ctx.productSession.requireAgent()
-      ? ctx.sdkOperations.resolveActiveToolOperation(sender) : nativeChildAuthority(ctx).resolve(sender);
+    const root = ctx.productSession.requireAgent();
+    if (source.kind === "coordinator") {
+      if (agent === root || agent.session.header.parentSession !== sender.id) return;
+    } else {
+      // DSH authorizes and delivers the message. Bind its actual tree members
+      // to a Product operation before the recipient can consume the input.
+      if (ctx.subagents.rootOf(sender) !== root || ctx.subagents.rootOf(agent) !== root) return;
+      if (agent === root && sender.session.header.parentSession === root.id) return;
+    }
+    const binding = sender === root
+      ? ctx.sdkOperations.resolveActiveToolOperation(sender) : authority.resolve(sender);
     agent.session.append("myagents/native-child-message-operation", {
       messageId: String(message.id), clientOperationId: binding.operation.clientOperationId,
       productTurnId: binding.operation.productTurnId,
     });
   });
-  return () => { stopMessages(); stopProjection(); };
-};
-
-const childState = (ctx: Context, session: Session): NativeChildState => {
-  const state = ctx.sessionProjections.stateOf(session, "myagentsNativeChildAuthority");
-  if (!state) throw new ProtocolError("turn_operation_conflict", "native child operation projection is unavailable");
-  return state;
+  return async () => {
+    stopMessages();
+    if (authorities.get(ctx) === authority) authorities.delete(ctx);
+    await handle.dispose();
+  };
 };
 
 /** Derives the Product operation from DSH's parent-owned child catalog. */
@@ -89,11 +99,9 @@ export class NativeChildOperationAuthority {
   readonly #initial = new WeakMap<Agent, OperationIdentity>();
   #nextModelRequest = 0;
 
-  constructor(private readonly ctx: Context) {}
+  constructor(private readonly ctx: Context, private readonly projection: ProjectionHandle<NativeChildState>) {}
 
-  // DSH creates the child before appending its catalog entry. Capture only the
-  // operation identity during that short gap; the catalog remains the durable
-  // parent/child authority on resume.
+  // A new child is announced before the native manager appends its catalog entry.
   captureAtCreation(child: Agent): void {
     if (child.session.header.origin !== "subagent" || child.session.header.parentSession === undefined) return;
     const parent = this.ctx.agents.get(child.session.header.parentSession);
@@ -107,20 +115,68 @@ export class NativeChildOperationAuthority {
     });
   }
 
+  async restoreCreationOperation(child: Agent): Promise<void> {
+    if (this.projection.stateOf(child.session).operation !== undefined) return;
+    const root = this.ctx.productSession.requireAgent();
+    let childId = child.id;
+    let parentId = child.session.header.parentSession;
+    // The native manager already authenticated this ancestry. Read the creation
+    // prefix without activating a parent or using a later dispatch to that parent.
+    const visited = new Set([childId]);
+    while (parentId !== undefined && !visited.has(parentId)) {
+      visited.add(parentId);
+      if (parentId === root.id) {
+        const entry = this.projection.stateOf(root.session).catalog.find(({ id }) => id === childId);
+        if (entry === undefined) break;
+        this.#initial.set(child, this.rootOperationAt(entry.turn));
+        return;
+      }
+      const history = await this.ctx.sessionQuery.readSession(parentId);
+      let state = projection.init(history.session, history.inheritedEventCount);
+      let matched = false;
+      for (const event of history.events) {
+        if (event.seq < history.inheritedEventCount) continue;
+        if (event.type === "subagent/catalog" && event.data.childId === childId) {
+          matched = true;
+          break;
+        }
+        state = projection.apply(state, event);
+      }
+      if (!matched) break;
+      const operation = state.operation;
+      if (operation !== undefined) {
+        this.#initial.set(child, operation);
+        return;
+      }
+      childId = parentId;
+      parentId = history.session.parentSession;
+    }
+    throw new ProtocolError("turn_operation_conflict", "native child has no attributable creation operation");
+  }
+
+  private rootOperationAt(turn: number | undefined): OperationIdentity {
+    const owners = this.ctx.sdkOperations.snapshot().operations.filter((entry) =>
+      turn !== undefined && entry.dshTurns.includes(turn));
+    if (owners.length !== 1 || owners[0] === undefined) {
+      throw new ProtocolError("turn_operation_conflict", "native child catalog has no unique root operation");
+    }
+    return { clientOperationId: owners[0].clientOperationId, productTurnId: owners[0].productTurnId };
+  }
+
   resolve(child: Agent): ProductToolOperationAuthority {
     const root = this.ctx.productSession.requireAgent();
     if (child === root || this.ctx.agents.get(child.id) !== child
       || child.session.header.origin !== "subagent") {
       throw new ProtocolError("turn_operation_conflict", "tool caller is not a live native child");
     }
-    const dshTurn = childState(this.ctx, child.session).turn;
+    const dshTurn = this.projection.stateOf(child.session).turn;
     if (dshTurn === undefined) throw new ProtocolError("turn_operation_conflict", "native child has no open turn");
     const identity = this.identity(child, new Set());
     const operation = this.ctx.sdkOperations.snapshot().operations.find((entry) =>
       entry.clientOperationId === identity.clientOperationId
       && entry.productTurnId === identity.productTurnId);
     if (operation === undefined) throw new ProtocolError("turn_operation_conflict", "native child has no root operation");
-    const mode = childState(this.ctx, child.session).mode;
+    const mode = this.projection.stateOf(child.session).mode;
     return Object.freeze({
       dshTurn,
       operation,
@@ -162,25 +218,17 @@ export class NativeChildOperationAuthority {
     const id = String(child.id);
     if (visited.has(id)) throw new ProtocolError("turn_operation_conflict", "native child lineage is cyclic");
     visited.add(id);
-    const current = childState(this.ctx, child.session).operation;
+    const current = this.projection.stateOf(child.session).operation ?? this.#initial.get(child);
     if (current !== undefined) return current;
     const parentId = child.session.header.parentSession;
     const parent = parentId === undefined ? undefined : this.ctx.agents.get(parentId);
     if (parent === undefined) throw new ProtocolError("turn_operation_conflict", "native child has no live parent");
-    const catalog = childState(this.ctx, parent.session).catalog.find((entry) => entry.id === String(child.id));
+    const catalog = this.projection.stateOf(parent.session).catalog.find((entry) => entry.id === String(child.id));
     if (catalog === undefined) {
-      const initial = this.#initial.get(child);
-      if (initial !== undefined) return initial;
       throw new ProtocolError("turn_operation_conflict", "native child has no durable parent catalog entry");
     }
     if (parent === this.ctx.productSession.requireAgent()) {
-      const turn = catalog.turn;
-      const owners = this.ctx.sdkOperations.snapshot().operations.filter((entry) =>
-        turn !== undefined && entry.dshTurns.includes(turn));
-      if (owners.length !== 1 || owners[0] === undefined) {
-        throw new ProtocolError("turn_operation_conflict", "native child catalog has no unique root operation");
-      }
-      return { clientOperationId: owners[0].clientOperationId, productTurnId: owners[0].productTurnId };
+      return this.rootOperationAt(catalog.turn);
     }
     return this.identity(parent, visited);
   }
@@ -188,10 +236,9 @@ export class NativeChildOperationAuthority {
 
 const authorities = new WeakMap<Context, NativeChildOperationAuthority>();
 export const nativeChildAuthority = (root: Context): NativeChildOperationAuthority => {
-  let authority = authorities.get(root);
+  const authority = authorities.get(root);
   if (authority === undefined) {
-    authority = new NativeChildOperationAuthority(root);
-    authorities.set(root, authority);
+    throw new ProtocolError("turn_operation_conflict", "native child operation projection is unavailable");
   }
   return authority;
 };

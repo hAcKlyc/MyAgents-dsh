@@ -1,3 +1,5 @@
+import * as NativeToolExecutor from "@deepseek-ai/dsh-tool-executor-native";
+import { executeToolFixture } from "@deepseek-ai/dsh-tool-testkit";
 import type { ExtensionSnapshot } from "@myagents-dsh/protocol";
 import { modelToolNames } from "@myagents-dsh/protocol";
 import { Context } from "@deepseek-ai/cordis";
@@ -128,7 +130,8 @@ const mount = async (
   const root = new Context();
   contexts.push(root);
   await root.plugin(SystemPrompt);
-  await root.plugin(ToolRuntime, { mode: "native" });
+  await root.plugin(ToolRuntime);
+  await root.plugin(NativeToolExecutor);
   let hostPortController: HostPortServiceController | undefined;
   await root.plugin(HostPortService, {
     registerController: (controller) => { hostPortController = controller; },
@@ -219,7 +222,7 @@ describe("generation-owned Host tool component compiler", () => {
     expect(definition).toMatchObject({ name: "mcp__fixture__echo" });
     expect(definition?.timeoutMs).toBeUndefined();
     expect(Object.isFrozen(definition?.parameters)).toBe(true);
-    const result = await harness.root.tools.execute({
+    const result = await executeToolFixture(harness.root, {
       arguments: Object.freeze({ value: "hello" }),
       callId: ToolCallId("call-1"),
       name: "mcp__fixture__echo",
@@ -266,7 +269,7 @@ describe("generation-owned Host tool component compiler", () => {
       compilers: [compiler(harness.root, harness.hostPortController, (execution) => toolContext(execution.signal))],
       initialSnapshot: snapshot("extension-v1"),
     });
-    const execute = (callId: string) => harness.root.tools.execute({
+    const execute = (callId: string) => executeToolFixture(harness.root, {
       arguments: Object.freeze({ value: callId }),
       callId: ToolCallId(callId),
       name: "mcp__fixture__echo",
@@ -316,7 +319,7 @@ describe("generation-owned Host tool component compiler", () => {
       initialSnapshot: snapshot("extension-image-v1"),
     });
     const definition = harness.root.tools.get("mcp__fixture__echo");
-    const outcome = await harness.root.tools.execute({
+    const outcome = await executeToolFixture(harness.root, {
       arguments: Object.freeze({ value: "image" }),
       callId: ToolCallId("call-image"),
       name: "mcp__fixture__echo",
@@ -346,7 +349,7 @@ describe("generation-owned Host tool component compiler", () => {
       })],
       initialSnapshot: snapshot("extension-v1"),
     });
-    const stale = harness.root.tools.execute({
+    const stale = executeToolFixture(harness.root, {
       arguments: Object.freeze({ value: "stale" }),
       callId: ToolCallId("call-stale"),
       name: "mcp__fixture__echo",

@@ -1,3 +1,4 @@
+import SessionProjectionRegistry from "@deepseek-ai/dsh-session-projection";
 import { Context } from "@deepseek-ai/cordis";
 import { AgentRegistry, type Agent } from "@deepseek-ai/dsh-agent";
 import { SessionId, SessionStore, type Session, type SessionEvent } from "@deepseek-ai/dsh-session";
@@ -101,6 +102,7 @@ const mounted = async (
   const context = new Context();
   contexts.push(context);
   await context.plugin(SessionStore);
+  await context.plugin(SessionProjectionRegistry);
   await context.plugin(AgentRegistry);
   await context.plugin(SystemPrompt);
   await context.plugin(ApprovalService, { policy: "ask" });
@@ -137,7 +139,7 @@ const mounted = async (
     id: "permission-session",
     session,
   }) as unknown as Agent;
-  context.agents.enter(agent, undefined);
+  context.agents.enter(agent);
   const product = (
     revision = context.productPermission.currentRevision(agent),
     signal = new AbortController().signal,
@@ -285,7 +287,7 @@ describe("product permission policy and local interaction provider", () => {
       const session = state.context.sessions.create(SessionId(id));
       session.append("turn/start", { turn: 1 });
       const agent = { ctx: state.context, id, session } as unknown as Agent;
-      state.context.agents.enter(agent, state.agent);
+      state.context.agents.enter(agent);
       return { ...root, agent, rootAgent: state.agent, origin: "foreground_child" as const };
     });
     await expect(Promise.all(children.map(child => state.context.productPermission.authorize(child, request())))).resolves.toEqual(["allow", "allow"]);
@@ -381,7 +383,7 @@ describe("product permission policy and local interaction provider", () => {
     const childSession = state.context.sessions.create(SessionId("proof-child"));
     childSession.append("turn/start", { turn: 1 });
     const child = { ...state.agent, id: "proof-child", session: childSession } as Agent;
-    state.context.agents.enter(child, state.agent);
+    state.context.agents.enter(child);
     await state.context.productPermission.authorize({ ...original, agent: child, origin: "background_child", rootAgent: state.agent }, request());
     expect(local.permissionRequests).toHaveLength(1);
     await state.context.productPermission.authorize({ ...original, agent: child, origin: "background_child", rootAgent: state.agent, callId: "other-directory" }, request("bash", "process.execute", "other-directory"));
@@ -826,7 +828,7 @@ describe("product permission policy and local interaction provider", () => {
       id: "permission-child",
       session: childSession,
     }) as unknown as Agent;
-    state.context.agents.enter(child, state.agent);
+    state.context.agents.enter(child);
     const root = state.product();
     const childProduct: ProductToolContext = Object.freeze({
       ...root,

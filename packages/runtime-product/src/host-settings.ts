@@ -43,10 +43,10 @@ export class HostSettingsProvider extends Service {
     const apply = async (): Promise<void> => {
       const previous = owner.#documents.get(namespace) ?? { providers: {} };
       try {
-        fiber.update(next, true);
+        await fiber.update(next, true);
         await fiber.await();
       } catch (error) {
-        fiber.update(previous, true);
+        await fiber.update(previous, true);
         await fiber.await();
         throw error;
       }

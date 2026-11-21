@@ -1,6 +1,6 @@
 import type { Context } from "@deepseek-ai/cordis";
-import type { Session, SessionEvent } from "@deepseek-ai/dsh-session";
-import type { ProjectionDefinition } from "@deepseek-ai/dsh-session-projection";
+import type { SessionEvent } from "@deepseek-ai/dsh-session";
+import type { ProjectionDefinition, ProjectionHandle } from "@deepseek-ai/dsh-session-projection";
 import { isProductPermissionEventType } from "@myagents-dsh/tool-runtime-product";
 import { z } from "zod";
 
@@ -10,11 +10,8 @@ interface ColdPermissionHistory {
   nativePolicyTail: SessionEvent[];
 }
 
-declare module "@deepseek-ai/dsh-session-projection/types" {
-  interface SessionProjectionStateMap { myagentsColdPermissionHistory: ColdPermissionHistory }
-}
 
-const projection: ProjectionDefinition<"myagentsColdPermissionHistory"> = {
+const projection: ProjectionDefinition<"myagentsColdPermissionHistory", ColdPermissionHistory> = {
   key: "myagentsColdPermissionHistory", stateVersion: 1,
   stateSchema: z.object({
     inheritedEventCount: z.number().int().nonnegative(),
@@ -39,10 +36,5 @@ const projection: ProjectionDefinition<"myagentsColdPermissionHistory"> = {
   },
 };
 
-export const installColdPermissionHistory = (ctx: Context): (() => void) => ctx.sessionProjections.register(projection);
-
-export const coldPermissionHistory = (ctx: Context, session: Session): Readonly<ColdPermissionHistory> => {
-  const state = ctx.sessionProjections.stateOf(session, "myagentsColdPermissionHistory");
-  if (state === undefined) throw new Error("cold permission history projection is unavailable");
-  return state;
-};
+export const installColdPermissionHistory = (ctx: Context): Promise<ProjectionHandle<ColdPermissionHistory>> =>
+  ctx.sessionProjections.register(projection);

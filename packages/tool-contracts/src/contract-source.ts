@@ -693,14 +693,11 @@ export const CANONICAL_TOOL_CONTRACTS = deepFreeze({
     description: "Policy for native subagent and fork_agent delegation. DSH owns fresh/forked Sessions, continuable conversations, result delivery and lifecycle. MyAgents applies the admitted Host model, workspace, permission and Plan policy.",
     inputSchema: strictObject({
       description: Type.String(), prompt: Type.String(),
-      background: Type.Optional(Type.Boolean()),
+      name: Type.Optional(Type.String()),
       provider: Type.Optional(Type.String()), model: Type.Optional(Type.String()),
       reasoning_effort: Type.Optional(Type.String()),
     }),
-    outputSchema: Type.Union([
-      strictObject({ kind: Type.Literal("continuable"), subagentId: Type.String() }),
-      strictObject({ kind: Type.Literal("foreground"), runId: Type.String(), output: Type.Array(Type.Unknown()) }),
-    ]),
+    outputSchema: strictObject({ kind: Type.Literal("activation"), name: Type.String() }),
     concurrency: "parallel", sideEffect: "delegation", timeoutMs: 600_000,
     outputLimits: outputLimits(262_144, 64), permissionClass: "agent.spawn", checkpoint: "none",
     behaviorFixtureIds: ["native_spawn_and_fork", "native_continuation", "host_child_policy"],
@@ -711,7 +708,7 @@ export const CANONICAL_TOOL_CONTRACTS = deepFreeze({
   TaskStop: contract({
     name: "TaskStop",
     description: "Policy for native interrupt_agent. Interrupt the addressed child turn without closing its conversation or descendants; DSH returns acceptance immediately.",
-    inputSchema: strictObject({ agent_id: Type.String() }),
+    inputSchema: strictObject({ agent: Type.String() }),
     outputSchema: strictObject({ accepted: Type.Boolean() }),
     concurrency: "parallel", sideEffect: "session_state", timeoutMs: 120_000,
     outputLimits: outputLimits(16_384, 16), permissionClass: "work.stop", checkpoint: "none",
@@ -722,8 +719,8 @@ export const CANONICAL_TOOL_CONTRACTS = deepFreeze({
   }),
   SendMessage: contract({
     name: "SendMessage",
-    description: "Policy for native send_message and list_agents. Native messaging addresses a direct continuable child or the resident child's direct parent by agent_id. Delivery confirmation is not the recipient's answer. DSH owns the catalog and Inbox.",
-    inputSchema: strictObject({ agent_id: Type.String(), message: Type.String() }),
+    description: "Policy for native send_message, list_agents and wait_agent. Native messaging addresses another member of the same tree by name or Session ID. Delivery confirmation is not the recipient's answer. DSH owns the catalog and Inbox.",
+    inputSchema: strictObject({ agent: Type.String(), message: Type.String() }),
     outputSchema: strictObject({ messageId: Type.String() }),
     concurrency: "parallel", sideEffect: "delegation", timeoutMs: 120_000,
     outputLimits: outputLimits(16_384, 16), permissionClass: "agent.message", checkpoint: "none",
@@ -802,7 +799,7 @@ export const CANONICAL_TOOL_CONTRACTS = deepFreeze({
   }),
   TaskUpdate: contract({
     name: "TaskUpdate",
-    description: "Update a task by ID in your personal list by default, or pass list: shared for collaborative work. Read its latest state with TaskGet first. Only the root agent may assign shared work to a continuable child or offer it to specific child IDs with offerTo. An offered child may claim an unassigned, unblocked task atomically. Do not claim someone else's task, change another agent's personal list, or mark unfinished work complete. Use the exact child runtime ID returned by subagent, fork_agent, or list_agents for owner/offerTo; owner: root names the root agent. Claim offered work with status: in_progress (owner is inferred). Normal statuses are pending, in_progress, completed; completed tasks may be corrected or reopened. Use status: deleted to remove obsolete work and clean all dependency references; deleted returns task: null. The legacy cancelled status is retained for compatibility and does not resolve blockers. An empty or unchanged update succeeds without changing the list revision. addBlocks/addBlockedBy add dependencies within the same list; cycles are rejected. metadata values of null remove keys. Results carry the list revision at the top level.",
+    description: "Update a task by ID in your personal list by default, or pass list: shared for collaborative work. Read its latest state with TaskGet first. Only the root agent may assign shared work to a continuable child or offer it to specific children with offerTo. An offered child may claim an unassigned, unblocked task atomically. Do not claim someone else's task, change another agent's personal list, or mark unfinished work complete. Use a direct child name from subagent, fork_agent or list_agents for owner/offerTo. Stored child Session IDs also work. Use owner: lead for the root agent. Claim offered work with status: in_progress (owner is inferred). Normal statuses are pending, in_progress, completed; completed tasks may be corrected or reopened. Use status: deleted to remove obsolete work and clean all dependency references; deleted returns task: null. The legacy cancelled status is retained for compatibility and does not resolve blockers. An empty or unchanged update succeeds without changing the list revision. addBlocks/addBlockedBy add dependencies within the same list; cycles are rejected. metadata values of null remove keys. Results carry the list revision at the top level.",
     inputSchema: strictObject({
       taskId: boundedIdentifier,
       list: Type.Optional(taskList),
@@ -956,9 +953,9 @@ export const CANONICAL_TOOL_SCHEMA_FIXTURES = deepFreeze({
   EnterPlanMode: { input: {}, output: { mode: "plan", planPath: "/fixture/plan.md", revision: "plan-1" } },
   ExitPlanMode: { input: {}, output: { disposition: "approved", plan: "fixture plan", revision: "plan-1", mode: "normal" } },
   Skill: { input: { skill: "fixture" }, output: { skill: "fixture", content: "instructions", source: "skills/fixture/SKILL.md", sourceSha256: "c".repeat(64), argumentsExpanded: false } },
-  Agent: { input: { description: "Review fixture changes", prompt: "Review the fixture" }, output: { kind: "continuable", subagentId: "agent-1" } },
-  TaskStop: { input: { agent_id: "agent-1" }, output: { accepted: true } },
-  SendMessage: { input: { agent_id: "agent-1", message: "done" }, output: { messageId: "message-1" } },
+  Agent: { input: { description: "Review fixture changes", prompt: "Review the fixture" }, output: { kind: "activation", name: "agent-1" } },
+  TaskStop: { input: { agent: "agent-1" }, output: { accepted: true } },
+  SendMessage: { input: { agent: "agent-1", message: "done" }, output: { messageId: "message-1" } },
   TaskCreate: { input: { subject: "Fixture task", description: "A deterministic fixture" }, output: { list: "personal", task: fixtureTask, revision: "task-graph-1" } },
   TaskGet: { input: { taskId: "task-1" }, output: { list: "personal", task: fixtureTask, revision: "task-graph-1" } },
   TaskList: { input: {}, output: { list: "personal", tasks: [fixtureTask], revision: "task-graph-1", truncated: false } },

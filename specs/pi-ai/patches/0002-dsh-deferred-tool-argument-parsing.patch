@@ -1,8 +1,8 @@
 diff --git a/packages/ai/src/api/anthropic-messages.ts b/packages/ai/src/api/anthropic-messages.ts
-index a7b8fa1c2a654353d2cae705ecbdac0aa54aa621..ff6959c7228fd2bd2b29e8566dd16d547198fc0f 100644
+index 69e1a9fed68224aede1a6832c394f3330020e5ee..87d7c76918f25c0e080befe6238a41020f779a62 100644
 --- a/packages/ai/src/api/anthropic-messages.ts
 +++ b/packages/ai/src/api/anthropic-messages.ts
-@@ -864,7 +864,6 @@ export const stream: StreamFunction<"anthropic-messages", AnthropicOptions> = (
+@@ -900,7 +900,6 @@ export const stream: StreamFunction<"anthropic-messages", AnthropicOptions> = (
  						const block = blocks[index];
  						if (block && block.type === "toolCall") {
  							block.partialJson += event.delta.partial_json;
@@ -11,7 +11,7 @@ index a7b8fa1c2a654353d2cae705ecbdac0aa54aa621..ff6959c7228fd2bd2b29e8566dd16d54
  								type: "toolcall_delta",
  								contentIndex: index,
 diff --git a/packages/ai/src/api/bedrock-converse-stream.ts b/packages/ai/src/api/bedrock-converse-stream.ts
-index 1bada0746e2728a3c533e9a4ff82bf028be6a5ff..db9f344ea7004f86413b3e73bdabdb32bbe2b39f 100644
+index 7434d81d2c8335bb419555c92c59458a427a80bf..e7067e9b580d7e5b719873fed1d90b891a0445f3 100644
 --- a/packages/ai/src/api/bedrock-converse-stream.ts
 +++ b/packages/ai/src/api/bedrock-converse-stream.ts
 @@ -628,7 +628,6 @@ function handleContentBlockDelta(
@@ -23,10 +23,10 @@ index 1bada0746e2728a3c533e9a4ff82bf028be6a5ff..db9f344ea7004f86413b3e73bdabdb32
  	} else if (delta?.reasoningContent) {
  		let thinkingBlock = block;
 diff --git a/packages/ai/src/api/mistral-conversations.ts b/packages/ai/src/api/mistral-conversations.ts
-index bf8626d1c3649475c98c29f897fdbc9951f65af8..f267d696456251387474c916488e4492b1cdb95d 100644
+index 1417917e9576d064e8994f5545d2d93e6dc53bb0..d18dd11606dab424d64cb43778462cf00c6fe1c9 100644
 --- a/packages/ai/src/api/mistral-conversations.ts
 +++ b/packages/ai/src/api/mistral-conversations.ts
-@@ -732,7 +732,6 @@ async function consumeChatStream(
+@@ -746,7 +746,6 @@ async function consumeChatStream(
  					? toolCall.function.arguments
  					: JSON.stringify(toolCall.function.arguments || {});
  			block.partialArgs = (block.partialArgs || "") + argsDelta;
@@ -35,10 +35,29 @@ index bf8626d1c3649475c98c29f897fdbc9951f65af8..f267d696456251387474c916488e4492
  				type: "toolcall_delta",
  				contentIndex: toolBlocksByKey.get(key)!,
 diff --git a/packages/ai/src/api/openai-completions.ts b/packages/ai/src/api/openai-completions.ts
-index 96cb23ab3e9983d1e71bde0fe28c4a64433a695c..24873823315ec72b9ee57e8fa01ba98d5daf9930 100644
+index 32cf42b45613d9308a1fce943a1628ddb397e44e..33844daf22a7c30df04e526dfc268eadbaf16b9f 100644
 --- a/packages/ai/src/api/openai-completions.ts
 +++ b/packages/ai/src/api/openai-completions.ts
-@@ -653,7 +653,6 @@ export const stream: StreamFunction<"openai-completions", OpenAICompletionsOptio
+@@ -393,6 +393,7 @@ export const stream: StreamFunction<"openai-completions", OpenAICompletionsOptio
+ 			}
+ 			type StreamingBlock = TextContent | ThinkingContent | StreamingToolCallBlock;
+ 			type StreamingToolCallDelta = {
++				extra_content?: { google?: { thought_signature?: unknown } };
+ 				index?: number;
+ 				id?: string;
+ 				type?: string;
+@@ -543,6 +544,10 @@ export const stream: StreamFunction<"openai-completions", OpenAICompletionsOptio
+ 				if (!block.name && name) {
+ 					block.name = name;
+ 				}
++				const signature = toolCall.extra_content?.google?.thought_signature;
++				if (typeof signature === "string" && signature.length > 0) {
++					block.thoughtSignature = signature;
++				}
+ 				if (toolCall.custom && !toolCall.function && !block.customInput) {
+ 					const customInputProperty = grammarToolInputProperties.get(block.name) ?? "input";
+ 					block.arguments = { [customInputProperty]: "" };
+@@ -668,7 +673,6 @@ export const stream: StreamFunction<"openai-completions", OpenAICompletionsOptio
  							if (toolCall.function?.arguments) {
  								delta = toolCall.function.arguments;
  								block.partialArgs = (block.partialArgs ?? "") + toolCall.function.arguments;
@@ -46,11 +65,24 @@ index 96cb23ab3e9983d1e71bde0fe28c4a64433a695c..24873823315ec72b9ee57e8fa01ba98d
  							} else if (toolCall.custom?.input) {
  								const nextInput = getCustomToolCallInput(block) + toolCall.custom.input;
  								delta = appendCustomToolCallInput(block, nextInput, false) ?? "";
+@@ -1372,9 +1376,12 @@ export function convertMessages(
+ 							},
+ 						};
+ 					}
++					const signature = tc.thoughtSignature && !parseLegacyEncryptedReasoningDetail(tc.thoughtSignature)
++						? tc.thoughtSignature : undefined;
+ 					return {
+ 						id: tc.id,
+ 						type: "function",
++						...(signature && { extra_content: { google: { thought_signature: signature } } }),
+ 						function: {
+ 							name: tc.name,
+ 							arguments: JSON.stringify(tc.arguments),
 diff --git a/packages/ai/src/api/openai-responses-shared.ts b/packages/ai/src/api/openai-responses-shared.ts
-index 59c9b5b428b9f8858ebc2a20ea243747b9f64c0b..4128d6ec5554938f4ece24b73e50a53d4cf1ab6a 100644
+index 001864d58b28ba9afd9961deb7d2f3ed5a356232..da58057366da48195d3863ec6e86787f4ab53b17 100644
 --- a/packages/ai/src/api/openai-responses-shared.ts
 +++ b/packages/ai/src/api/openai-responses-shared.ts
-@@ -656,7 +656,6 @@ export async function processResponsesStream<TApi extends Api>(
+@@ -681,7 +681,6 @@ export async function processResponsesStream<TApi extends Api>(
  			const slot = getSlot(event.output_index, "toolCall");
  			if (!slot || slot.block.partialJson === undefined) continue;
  			slot.block.partialJson += event.delta;

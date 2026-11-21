@@ -1,8 +1,8 @@
 diff --git a/packages/fs/fs-local/README.md b/packages/fs/fs-local/README.md
-index 92d853bf86a714fcfbf8f2040fc604f191270973..6dcbc0a6473cc67da029a396fa99325d45a07ef0 100644
+index f2846682d7029bb4928c8f6df8fd6b620a3a975a..d7f5a2edcb5ed07ce0c078ce364d90b45268c2f9 100644
 --- a/packages/fs/fs-local/README.md
 +++ b/packages/fs/fs-local/README.md
-@@ -94,6 +94,8 @@ Each edit probes, verifies the version guard before literal matching (so stale e
+@@ -96,6 +96,8 @@ Each edit probes, verifies the version guard before literal matching (so stale e
  
  Raw I/O is Cordis-free and independently unit-tested in `src/fsio.ts`; `src/index.ts` stays thin wiring. `config.cwd` is a resolution default only — containment is the job of `fs-sandbox` or a `tools/execute` permission plugin. Cancellation is a best-effort `AbortSignal` checked before and after each asynchronous probe. For watches, the signal cancels initialization; after readiness, the caller must await the returned close function.
  
@@ -12,10 +12,10 @@ index 92d853bf86a714fcfbf8f2040fc604f191270973..6dcbc0a6473cc67da029a396fa99325d
  
  -----
 diff --git a/packages/fs/fs-local/README.zh.md b/packages/fs/fs-local/README.zh.md
-index e493ede1bc63cddd76a3357266130ad69f4db589..c7c038191770d9e6706d84809e7f4770509d0d4c 100644
+index d1abde684192ab76f0a067f0a88f44db4fb45f27..8421422cafc9047160e06f29594ba22e2b03aa82 100644
 --- a/packages/fs/fs-local/README.zh.md
 +++ b/packages/fs/fs-local/README.zh.md
-@@ -94,6 +94,8 @@ Chokidar 通过 OS 事件观察单个文件或目录的直接子项，不使用
+@@ -96,6 +96,8 @@ Chokidar 通过 OS 事件观察单个文件或目录的直接子项，不使用
  
  原始 I/O 不依赖 Cordis，在 `src/fsio.ts` 中独立单元测试；`src/index.ts` 保持为轻量接线。`config.cwd` 只是解析默认值——约束是 `fs-sandbox` 或 `tools/execute` 权限插件的工作。取消是尽力而为的 `AbortSignal`，在每次异步探测前后检查。对于监听，signal 取消初始化；就绪后，调用方必须等待返回的关闭函数完成。
  
@@ -25,42 +25,44 @@ index e493ede1bc63cddd76a3357266130ad69f4db589..c7c038191770d9e6706d84809e7f4770
  
  -----
 diff --git a/packages/fs/fs-local/src/fsio.ts b/packages/fs/fs-local/src/fsio.ts
-index a9d97fd6ac2402de6c38712df13a47b348db5350..f949c73c6178ab7cf2f7bdf395989d478ca622fe 100644
+index c6959128a48fd83b5fe87a1817482d08f895aff0..aa29b59ffffe2f391a86cc91107d21a9be5e83f5 100644
 --- a/packages/fs/fs-local/src/fsio.ts
 +++ b/packages/fs/fs-local/src/fsio.ts
-@@ -584,6 +584,8 @@ async function throwGuardedCreateFailure(
-  * @param createIfAbsent - when provided, publish with a hard-link no-replace
-  * primitive; a concurrent creator's file is preserved and this write is
-  * rejected with `FS_NOT_OBSERVED` using the supplied display path.
+@@ -600,6 +600,8 @@ function writeIoError(path: string, error: unknown): unknown {
+  * file is preserved and this write is rejected with `FS_NOT_OBSERVED`; `existingDestination`
+  * states whether Windows must preserve destination security and defaults to mode presence,
+  * while moves pass destination presence separately from the source mode.
 + * @param beforePublish - async deployment guard after staging; rejection preserves the target.
 + * @param createParents - permit recursive parent creation; false delegates ownership to the caller.
   */
  export async function writeFileAtomic(
    absolutePath: string,
-@@ -592,10 +594,12 @@ export async function writeFileAtomic(
+@@ -608,12 +610,14 @@ export async function writeFileAtomic(
    signal: AbortSignal | undefined,
    internals: FsIoInternals = {},
-   createIfAbsent?: { displayPath: string },
+   options: { displayPath?: string; createIfAbsent?: boolean; existingDestination?: boolean } = {},
 +  beforePublish?: () => Promise<void>,
 +  createParents = true,
  ): Promise<void> {
+   const displayPath = options.displayPath ?? absolutePath
+   const existingDestination = options.existingDestination ?? mode !== undefined
    throwIfAborted(signal, 'write')
    const directory = dirname(absolutePath)
--  await mkdir(directory, { recursive: true })
-+  if (createParents) await mkdir(directory, { recursive: true })
+-  try { await mkdir(directory, { recursive: true }) } catch (error) { throw writeIoError(displayPath, error) }
++  try { if (createParents) await mkdir(directory, { recursive: true }) } catch (error) { throw writeIoError(displayPath, error) }
  
    throwIfAborted(signal, 'write')
    const stagingDirName = internals.tempDirName?.(absolutePath) ?? `.${basename(absolutePath)}.${process.pid}.${randomUUID()}.tmpdir`
-@@ -629,6 +633,8 @@ export async function writeFileAtomic(
+@@ -647,6 +651,8 @@ export async function writeFileAtomic(
      await handle.close()
      handle = undefined
  
 +    throwIfAborted(signal, 'write')
 +    await beforePublish?.()
      throwIfAborted(signal, 'write')
-     if (createIfAbsent !== undefined) {
+     if (options.createIfAbsent) {
        try {
-@@ -834,3 +840,22 @@ export function applyLiteralEdit(
+@@ -868,3 +874,22 @@ export function applyLiteralEdit(
  }
  
  export { normalizeLineEndings, restoreLineEndings }
@@ -84,18 +86,18 @@ index a9d97fd6ac2402de6c38712df13a47b348db5350..f949c73c6178ab7cf2f7bdf395989d47
 +  return { content: restoreLineEndings(result.content, detectLineEndings(decoded)), replacements: result.replacements }
 +}
 diff --git a/packages/fs/fs-local/src/index.ts b/packages/fs/fs-local/src/index.ts
-index 17033e512ba83eff50327419610f2aff568cb872..2cf705f4419addc3a944c67a388f40068621f749 100644
+index e9ee2b8395a85c802205867558c5bcd6e45f81d8..60a0c5649b4db50ebb7f63b9f84f857b0e3cd281 100644
 --- a/packages/fs/fs-local/src/index.ts
 +++ b/packages/fs/fs-local/src/index.ts
-@@ -40,6 +40,7 @@ import {
+@@ -46,6 +46,7 @@ import {
    writeFileAtomic,
  } from './fsio.ts'
- import type { FsIoInternals } from './fsio.ts'
+ import type { FsIoInternals, PathInfo } from './fsio.ts'
 +export { prepareTextEdit } from './fsio.ts'
  
  /** Configuration for the local filesystem backend. */
  export interface Config {
-@@ -50,6 +51,8 @@ export interface Config {
+@@ -56,6 +57,8 @@ export interface Config {
     * runtime's safe allocation/decode maximum. Defaults to 10 MiB.
     */
    diffBasisMaxBytes?: number
@@ -104,7 +106,7 @@ index 17033e512ba83eff50327419610f2aff568cb872..2cf705f4419addc3a944c67a388f4006
  }
  
  type ResolvedConfig = Required<Config>
-@@ -92,6 +95,7 @@ export class LocalFileSystem extends FileSystem {
+@@ -98,6 +101,7 @@ export class LocalFileSystem extends FileSystem {
    static Config: z<Config> = z.object({
      cwd: z.string().default(process.cwd()),
      diffBasisMaxBytes: z.number().default(DEFAULT_DIFF_BASIS_MAX_BYTES),
@@ -112,7 +114,7 @@ index 17033e512ba83eff50327419610f2aff568cb872..2cf705f4419addc3a944c67a388f4006
    })
  
    /** Validated config (schemastery applied the defaults before construction). */
-@@ -199,6 +203,11 @@ export class LocalFileSystem extends FileSystem {
+@@ -213,6 +217,11 @@ export class LocalFileSystem extends FileSystem {
      }))
    }
  
@@ -124,24 +126,23 @@ index 17033e512ba83eff50327419610f2aff568cb872..2cf705f4419addc3a944c67a388f4006
    override async writeText(
      target: FsTarget,
      content: string,
-@@ -240,6 +249,8 @@ export class LocalFileSystem extends FileSystem {
-         signal,
-         this.internals,
-         expected?.kind === 'createIfAbsent' ? { displayPath: target.displayPath } : undefined,
-+        () => this.beforePublish(target, signal),
-+        this.config.createParents,
-       )
+@@ -233,7 +242,8 @@ export class LocalFileSystem extends FileSystem {
+         ? await readTextForDiff(target.targetKey, this.config.diffBasisMaxBytes, signal)
+         : null
+       await writeFileAtomic(target.targetKey, content, existing?.mode, signal, this.internals,
+-        { displayPath: target.displayPath, createIfAbsent: expected?.kind === 'createIfAbsent' })
++        { displayPath: target.displayPath, createIfAbsent: expected?.kind === 'createIfAbsent' },
++        () => this.beforePublish(target, signal), this.config.createParents)
        const after = await probe(target.targetKey)
        return {
-@@ -277,7 +288,10 @@ export class LocalFileSystem extends FileSystem {
+         operation: existing ? 'update' : 'create',
+@@ -270,7 +280,8 @@ export class LocalFileSystem extends FileSystem {
        const original = await readForEdit(target.targetKey, target.displayPath, signal)
        const edited = applyLiteralEdit(original.content, edit.oldString, edit.newString, edit.replaceAll, target.displayPath)
        const content = restoreLineEndings(edited.content, original.lineEndings)
--      await writeFileAtomic(target.targetKey, content, existing.mode, signal, this.internals)
-+      await writeFileAtomic(
-+        target.targetKey, content, existing.mode, signal, this.internals, undefined,
-+        () => this.beforePublish(target, signal), this.config.createParents,
-+      )
+-      await writeFileAtomic(target.targetKey, content, existing.mode, signal, this.internals, { displayPath: target.displayPath })
++      await writeFileAtomic(target.targetKey, content, existing.mode, signal, this.internals, { displayPath: target.displayPath },
++        () => this.beforePublish(target, signal), this.config.createParents)
  
        const after = await probe(target.targetKey)
        return {
@@ -212,12 +213,12 @@ index 0000000000000000000000000000000000000000..09f51e57f2e2c15ebe943ab3bf99041b
 +  } finally { await ctx.fiber.dispose() }
 +})
 diff --git a/packages/fs/tool-fs/README.md b/packages/fs/tool-fs/README.md
-index e8a5c2b88f63518fac979fa2a0c6a3467f1b5267..e8065f9a2b3b69bf6ca64f4ece99f91621c49e76 100644
+index 93985eeb21557c6aae3c5738d5ca3bcddcc98050..1c604e683bd14c358202a4b7ce0e70ce6f32364e 100644
 --- a/packages/fs/tool-fs/README.md
 +++ b/packages/fs/tool-fs/README.md
-@@ -117,6 +117,8 @@ All four tools share one flow shape: resolve the path with the calling session's
+@@ -136,6 +136,8 @@ Patch preflight reads never emit `fs/observed`. The first preflight operation on
  
- `fs/observed` fires after the operation succeeded via a plain `ctx.emit`; a listener is contractually a synchronous, side-effect-only recorder, so async or fallible observation does not belong on this event. `read` opts into concurrent scheduling because its only mutation is the synchronous version recorder; recorder races fail closed when a later `write` or `edit` re-checks the version under its target lock, and both mutation tools remain exclusive.
+ After a mutation rejects with `FS_IO_ERROR`, the executor compares each affected target's version with a fresh `stat`. Unchanged targets mean a known failure; a changed target or failed comparison means `unknown`, which records no observation or change. `FS_ABORTED` is always `unknown`: a cancelled remote request rejects while the provider may still be writing. Execution stops at the first failed or unknown commit, or before an operation whose signal is aborted.
  
 +The public file-tool factories return stock definitions without registering them. A deployment can register those definitions inside its permission scope through `ctx.tools`, preserving stock parsing, output and presentation. Factory use does not install prompt guidance; the composing plugin owns that contribution.
 +
@@ -225,12 +226,12 @@ index e8a5c2b88f63518fac979fa2a0c6a3467f1b5267..e8065f9a2b3b69bf6ca64f4ece99f916
  
  -----
 diff --git a/packages/fs/tool-fs/README.zh.md b/packages/fs/tool-fs/README.zh.md
-index 81bb490de1128892ade585a7324cd43759679bbc..402d27645aaaae6e21fa9f04973d09393dca047f 100644
+index ec28bf145c2049e60c1fa24514179861fb42e734..7f3fcc923771c03509e1d821e5ff89a6e15499c3 100644
 --- a/packages/fs/tool-fs/README.zh.md
 +++ b/packages/fs/tool-fs/README.zh.md
-@@ -117,6 +117,8 @@ kind: "package-reference"
+@@ -136,6 +136,8 @@ kind: "package-reference"
  
- `fs/observed` 在操作成功之后通过普通 `ctx.emit` 发出；监听器的约定是同步且只有副作用的记录器，因此异步或可能失败的观察不属于该事件。`read` 允许并发调度，因为它唯一改变状态的操作是同步记录版本；稍后的 `write` 或 `edit` 会在目标锁内重新检查版本，因此记录器竞态会安全地失败，两个变更工具仍保持互斥。
+ 变更以 `FS_IO_ERROR` 拒绝后，执行器使用新的 `stat` 比较每个受影响目标的版本。全部未变表示已知失败；任何目标已变或比较失败均为 `unknown`，不记录观察或变化。`FS_ABORTED` 一律为 `unknown`：被取消的远端请求在提供方可能仍在写入时就已拒绝。执行在首个失败或未知提交后停止，或在信号已取消的操作开始前停止。
  
 +公开文件工具工厂返回原生定义，不执行注册。部署侧可以在权限作用域内通过 `ctx.tools` 注册这些定义，保留原生解析、输出和展示。使用工厂不会安装提示词说明；该贡献项由组合插件拥有。
 +
@@ -238,13 +239,13 @@ index 81bb490de1128892ade585a7324cd43759679bbc..402d27645aaaae6e21fa9f04973d0939
  
  -----
 diff --git a/packages/fs/tool-fs/src/edit.ts b/packages/fs/tool-fs/src/edit.ts
-index 2dd594a37d8dd1da14ea3dc930b4e2869b63e6d2..6c6c9b41b52e2cf827aeb86eff3613c30f88d045 100644
+index 8de03306ca83fa1d3c2ab97f06839a47a4e7d274..a3d63b100ddb20ce18ef3b038017eaa2e18a24e0 100644
 --- a/packages/fs/tool-fs/src/edit.ts
 +++ b/packages/fs/tool-fs/src/edit.ts
 @@ -7,13 +7,14 @@
  
  import type { Context } from '@deepseek-ai/cordis'
- import { defineTool } from '@deepseek-ai/dsh-tools'
+ import { ToolArgsError, defineTool } from '@deepseek-ai/dsh-tools'
 +import type { ToolDefinition } from '@deepseek-ai/dsh-tools'
  import type { DiffCallView, DiffResultView, ToolResult } from '@deepseek-ai/dsh-tools'
  import type {} from '@deepseek-ai/dsh-fs'
@@ -258,7 +259,7 @@ index 2dd594a37d8dd1da14ea3dc930b4e2869b63e6d2..6c6c9b41b52e2cf827aeb86eff3613c3
  /** Validated `edit` arguments after defaulting. */
  interface EditInput {
 @@ -82,7 +83,17 @@ export function applyEditTool(ctx: Context, sandbox: FsSandboxController): void
-       : 'Read a file before editing it (the default fs-observation-policy requires it), unless you just created or edited it in this session.',
+       : 'Read a file before editing it unless you just created or edited it in this session.',
    })
  
 -  ctx.tools.register(defineTool({
@@ -284,11 +285,11 @@ index 2dd594a37d8dd1da14ea3dc930b4e2869b63e6d2..6c6c9b41b52e2cf827aeb86eff3613c3
 +  })
  }
 diff --git a/packages/fs/tool-fs/src/index.ts b/packages/fs/tool-fs/src/index.ts
-index 5c7a78d01b64cc34ea54d1dd87c3ac0b69205a1a..11a687599edb635a2ad3e1d00f9473e892325af1 100644
+index 41e3be251cf9e55ad5b4bc1a81f0717a795fe04f..c6852b276159a3cdeb6765aff4c4b5efb230707e 100644
 --- a/packages/fs/tool-fs/src/index.ts
 +++ b/packages/fs/tool-fs/src/index.ts
-@@ -96,3 +96,10 @@ export function apply(ctx: Context, config: Config): void {
-     if (resolved.edit) applyEditTool(ctx, sandbox)
+@@ -101,3 +101,10 @@ export function apply(ctx: Context, config: Config): void {
+     if (resolved.applyPatch) applyApplyPatchTool(ctx, sandbox)
    }
  }
 +
@@ -299,18 +300,18 @@ index 5c7a78d01b64cc34ea54d1dd87c3ac0b69205a1a..11a687599edb635a2ad3e1d00f9473e8
 +export { createWriteTool } from './write.ts'
 +export { createEditTool } from './edit.ts'
 diff --git a/packages/fs/tool-fs/src/read-image.ts b/packages/fs/tool-fs/src/read-image.ts
-index 4a452e21c44f7253465e13f5e96c9ccbe7dd4ccc..fc6cd22ecdb23ff813a0d8f63ed91aeb9e2134a6 100644
+index be422b38aa3d849a4c299a10b3b1ac43f4cb0f1c..01cd0005e6daa55099112567417cf6f217699452 100644
 --- a/packages/fs/tool-fs/src/read-image.ts
 +++ b/packages/fs/tool-fs/src/read-image.ts
 @@ -17,6 +17,7 @@ import { AttachmentError, AttachmentId } from '@deepseek-ai/dsh-attachment'
  import type { AttachmentStore, ImageAttachmentRef, ImageMediaType } from '@deepseek-ai/dsh-attachment'
  import type { ContentBlock } from '@deepseek-ai/dsh-llm'
- import { defineTool } from '@deepseek-ai/dsh-tools'
+ import { defineTool, ToolArgsError, ToolContextUnavailableError } from '@deepseek-ai/dsh-tools'
 +import type { ToolDefinition } from '@deepseek-ai/dsh-tools'
  import type { GenericCallView, ToolExecution } from '@deepseek-ai/dsh-tools'
  import type {} from '@deepseek-ai/dsh-fs'
- import { resolveRegularReadTarget } from './read-target.ts'
-@@ -207,7 +208,16 @@ function imageReadContent(value: ImageReadValue): ContentBlock[] {
+ import { assertNever } from '@deepseek-ai/dsh-util-values'
+@@ -284,7 +285,16 @@ function saveFailureDetail(error: AttachmentError, attachments: AttachmentStore,
   *   the optional `attachments`/`llm` services.
   */
  export function applyReadImageTool(ctx: Context): void {
@@ -328,7 +329,7 @@ index 4a452e21c44f7253465e13f5e96c9ccbe7dd4ccc..fc6cd22ecdb23ff813a0d8f63ed91aeb
      name: 'read_image',
      description: 'Read a PNG/JPEG/WebP/GIF file and return the image itself. '
        + 'Large images are downscaled automatically; do not install image libraries or create thumbnails to inspect an image.',
-@@ -346,5 +356,5 @@ export function applyReadImageTool(ctx: Context): void {
+@@ -387,5 +397,5 @@ export function applyReadImageTool(ctx: Context): void {
          locations: [{ path: args.file_path }],
        }
      },
@@ -336,19 +337,19 @@ index 4a452e21c44f7253465e13f5e96c9ccbe7dd4ccc..fc6cd22ecdb23ff813a0d8f63ed91aeb
 +  })
  }
 diff --git a/packages/fs/tool-fs/src/read.ts b/packages/fs/tool-fs/src/read.ts
-index a5a747c77669f71797ff17e83034ff8c912b1068..2e6532596ede7ce24349a3d3c4158581bfe33520 100644
+index fcd42c3e071db237b89bbfe94e7cca3aed4d4f2a..e3e57ba84c963238f4da6da31638099e0e9c805f 100644
 --- a/packages/fs/tool-fs/src/read.ts
 +++ b/packages/fs/tool-fs/src/read.ts
 @@ -6,6 +6,7 @@
  
  import type { Context } from '@deepseek-ai/cordis'
- import { defineTool } from '@deepseek-ai/dsh-tools'
+ import { ToolArgsError, defineTool } from '@deepseek-ai/dsh-tools'
 +import type { ToolDefinition } from '@deepseek-ai/dsh-tools'
  import type { GenericCallView, ReadResultView, ToolResult } from '@deepseek-ai/dsh-tools'
  import type {} from '@deepseek-ai/dsh-fs'
  import { buildWindow, formatReadOutput, langFromPath, readMetaFromMeta } from './read-render.ts'
 @@ -74,7 +75,17 @@ export function applyReadTool(ctx: Context, caps: ReadToolCaps): void {
-       : 'Use the read tool — not shell commands like cat — to inspect text files. Use offset and limit to continue reading large files.',
+       : 'Use the read tool — not shell commands like cat, sed, head, or tail — to inspect text files. Use offset and limit to read a line range or continue a large file.',
    })
  
 -  ctx.tools.register(defineTool({
@@ -374,12 +375,12 @@ index a5a747c77669f71797ff17e83034ff8c912b1068..2e6532596ede7ce24349a3d3c4158581
 +  })
  }
 diff --git a/packages/fs/tool-fs/src/sandbox.ts b/packages/fs/tool-fs/src/sandbox.ts
-index 36a6767506bcb09f6e3c5f89407d61016b9437b7..711c1bc8f9511790f56ff562eb401059e2f4ee5c 100644
+index 08b776fd927208ba0873cc0b8189fff781703c50..df09f9906ce649f726f3aa200d89ba8632227783 100644
 --- a/packages/fs/tool-fs/src/sandbox.ts
 +++ b/packages/fs/tool-fs/src/sandbox.ts
-@@ -122,10 +122,10 @@ export class FsSandboxController {
-    * @returns the error to throw — the marker `FsError` for a sandbox denial, else the original.
+@@ -136,10 +136,10 @@ export class FsSandboxController {
     */
+   mapError(error: unknown, policy: SandboxExecutionPolicy | undefined): unknown
    mapError(error: unknown, policy: SandboxExecutionPolicy | undefined): unknown {
 -    if (!(error instanceof FsError) || error.code !== 'FS_SANDBOX_DENIED') return error
 +    if (!(error instanceof FsError) || error.code !== 'FS_SANDBOX_DENIED' || policy === undefined) return error
@@ -391,13 +392,13 @@ index 36a6767506bcb09f6e3c5f89407d61016b9437b7..711c1bc8f9511790f56ff562eb401059
    }
  }
 diff --git a/packages/fs/tool-fs/src/write.ts b/packages/fs/tool-fs/src/write.ts
-index 1068cd9644caebc8ca41cf6fbcf907096599630b..d6a550aa4c0c11bbb0f1a7151bb275b15783227c 100644
+index 37d1263d208f2e1daf18da9f274ce164b9308c24..cfd86795c53ab3417871143c62ae3fec14197db6 100644
 --- a/packages/fs/tool-fs/src/write.ts
 +++ b/packages/fs/tool-fs/src/write.ts
 @@ -7,6 +7,7 @@
  
  import type { Context } from '@deepseek-ai/cordis'
- import { defineTool } from '@deepseek-ai/dsh-tools'
+ import { ToolArgsError, defineTool } from '@deepseek-ai/dsh-tools'
 +import type { ToolDefinition } from '@deepseek-ai/dsh-tools'
  import type { DiffCallView, DiffResultView, ToolResult } from '@deepseek-ai/dsh-tools'
  import type { FsWriteOutcome } from '@deepseek-ai/dsh-fs'

@@ -107,7 +107,7 @@ describe("patched DSH artifact authority", () => {
     expect(first.externalDependencyAuthority.dshBaselineSha256).toMatch(/^[a-f0-9]{64}$/u);
     expect(first.externalDependencyAuthority.packageLockSha256).toMatch(/^[a-f0-9]{64}$/u);
     expect(PATCHED_DSH_ACCEPTED_EXTERNAL_PACKAGES).toContain("@deepseek-ai/cordis");
-    expect(PATCHED_DSH_COMPILE_FIXTURES).toHaveLength(2);
+    expect(PATCHED_DSH_COMPILE_FIXTURES).toHaveLength(3);
     expect(plan.packages).toHaveLength(PATCHED_DSH_ARTIFACT_PACKAGE_COUNT);
     expect(plan.packages.filter(({ direct }) => direct).map(({ name }) => name)).toEqual(plan.rootPackages);
   });
@@ -255,6 +255,7 @@ describe("patched DSH package staging and packed evidence", () => {
     expect(manifest.authority.externalDependencyAuthority).toEqual(plan.externalDependencyAuthority);
     expect(manifest.compileFixtures).toEqual([
       "packages/product-profile/src/dsh-public-surface.compile.ts",
+      "specs/dsh/fixtures/session-projection.compile.ts.txt",
       "specs/dsh/fixtures/patched-dsh-seams.compile.ts.txt",
     ]);
     expect(() => buildPatchedDshArtifactManifest(plan, evidence.slice(1), consumer)).toThrow(

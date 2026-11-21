@@ -31,10 +31,9 @@ import * as SubagentForkInProcess from "@deepseek-ai/dsh-subagent-fork-in-proces
 import * as SubagentSpawnInProcess from "@deepseek-ai/dsh-subagent-spawn-in-process";
 import * as ToolSubagent from "@deepseek-ai/dsh-tool-subagent";
 import * as ToolSubagentControl from "@deepseek-ai/dsh-tool-subagent-control";
-import * as ToolSubagentList from "@deepseek-ai/dsh-tool-subagent-control/list-agents";
-import { coldPermissionHistory, installColdPermissionHistory } from "./cold-permission-history.js";
+import { installColdPermissionHistory } from "./cold-permission-history.js";
 import { installNativeRootContext, nativeChildAuthority, installNativeChildAuthorityProjection } from "./native-child-authority.js";
-import { isNativeContinuableChild, notifyNativeSharedTask } from "./native-task-notification.js";
+import { resolveNativeTaskRecipient, notifyNativeSharedTask } from "./native-task-notification.js";
 
 import { SandboxBashExecutor } from "@deepseek-ai/dsh-bash-sandbox";
 import { SandboxPwshExecutor } from "@deepseek-ai/dsh-pwsh-sandbox";
@@ -49,7 +48,8 @@ import { TokenMeter } from "@deepseek-ai/dsh-token-meter";
 import { ApprovalService, setApprovalPolicy } from "@deepseek-ai/dsh-user-approval";
 import { UserQuestionService } from "@deepseek-ai/dsh-user-questions";
 import { WebRuntime } from "@deepseek-ai/dsh-web";
-import type { Config as ToolRuntimeConfig } from "@deepseek-ai/dsh-tools";
+import * as NativeExecutor from "@deepseek-ai/dsh-tool-executor-native";
+import * as PtcExecutor from "@deepseek-ai/dsh-tool-executor-ptc";
 import { isProxy } from "node:util/types";
 
 import {
@@ -202,14 +202,6 @@ import {
   RUNTIME_OPERATING_CONTRACT_ORDER,
 } from "./system-context.js";
 
-// The published stats entry exposes its client view but omits the internal
-// fold-state augmentation from its declaration graph. Keep that state opaque.
-declare module "@deepseek-ai/dsh-session-projection/types" {
-  interface SessionProjectionStateMap {
-    sessionStats: unknown;
-  }
-}
-
 export type { HostBackedInteractionProviderConfig } from "./host-interaction.js";
 
 export const DSH_ROOT_SERVICE_ORDER = Object.freeze([
@@ -241,7 +233,7 @@ export interface DshRootCompositionOptions {
   readonly operationBirthAuthority?: OperationBirthAuthority;
   readonly providers?: readonly string[];
   readonly systemPrompt?: Readonly<SystemPromptConfig>;
-  readonly tools?: Readonly<ToolRuntimeConfig>;
+  readonly tools?: Readonly<{ mode?: "native" | "ptc"; maxParallelSubCalls?: number }>;
 }
 
 export interface DshRootCompositionSnapshot {
@@ -331,7 +323,7 @@ interface NormalizedDshRootCompositionOptions {
   readonly operationBirthAuthority: OperationBirthAuthority;
   readonly providers: readonly string[];
   readonly systemPrompt: Readonly<SystemPromptConfig>;
-  readonly tools: Readonly<ToolRuntimeConfig>;
+  readonly tools: Readonly<{ mode?: "native" | "ptc"; maxParallelSubCalls?: number }>;
 }
 
 const exactProviders = (providers: readonly string[]): readonly string[] => {
@@ -1354,7 +1346,7 @@ export const installCanonicalToolPlane = async (
       return new SubagentRuntime(ctx, {
         maxDepth: { get: () => authority.hostModelAuthority?.collaborationConfig()?.maxDepth ?? 2 },
         maxActiveSubagents: { get: () => authority.hostModelAuthority?.collaborationConfig()?.maxActiveChildren ?? 32 },
-      });
+      }, (treeRoot, child) => root.productSession.prepareChildPublication(authority.childPublicationAuthority, child, treeRoot));
     };
     // Constructing the service with live Host config still requires its native
     // dependency scope; service availability alone does not grant plugin access.
@@ -1365,17 +1357,18 @@ export const installCanonicalToolPlane = async (
     fibers.push(await root.plugin(SkillRegistry));
     fibers.push(await root.plugin(ApprovalService, { policy: "ask" }));
 
-    const stopProjection = installNativeChildAuthorityProjection(root);
-    fibers.push({ dispose: () => { stopProjection(); return Promise.resolve(); } });
-    const stopChildPolicy = root.on("agent/created", ({ agent, source }) => {
+    const stopProjection = await installNativeChildAuthorityProjection(root);
+    fibers.push({ dispose: stopProjection });
+    const stopChildPolicy = root.on("agent/created", async ({ agent, source }) => {
       if (agent.session.header.origin !== "subagent" || agent.session.header.parentSession === undefined) return undefined;
       const parent = root.agents.get(agent.session.header.parentSession);
-      if (parent === undefined) throw new Error("native subagent lacks its live parent policy owner");
-      const approval = root.approval.overrideOf(parent.session) ?? "ask";
+      const policyOwner = parent ?? root.productSession.requireAgent();
+      const approval = root.approval.overrideOf(policyOwner.session) ?? "ask";
       if (root.approval.overrideOf(agent.session) !== approval) setApprovalPolicy(agent.session, approval);
-      const sandbox = root.sandboxPolicy.resolve({ session: parent.session }).mode;
+      const sandbox = root.sandboxPolicy.resolve({ session: policyOwner.session }).mode;
       if (root.sandboxPolicy.overrideOf(agent.session) !== sandbox) setSandboxMode(agent.session, sandbox);
       if (source === "startup") nativeChildAuthority(root).captureAtCreation(agent);
+      else await nativeChildAuthority(root).restoreCreationOperation(agent);
       return undefined;
     });
     fibers.push({ dispose: () => { stopChildPolicy(); return Promise.resolve(); } });
@@ -1475,18 +1468,23 @@ export const installCanonicalToolPlane = async (
       if (policy === undefined) return next();
       const context = root.productTools.resolveExternal(exec, exec.name);
       root.productPlan.assertExternalTool(context, exec.name);
-      const targetAgent = exec.arguments !== null && typeof exec.arguments === "object"
-        ? Reflect.get(exec.arguments, "agent_id") as unknown : undefined;
-      if (exec.name === "interrupt_agent" && typeof targetAgent === "string"
-        && root.agents.get(SessionId(targetAgent)) === undefined) {
-        const children = await root.subagents.listDescendants(root.productSession.requireAgent().id, exec.signal);
-        if (!children.some((child) => String(child.id) === targetAgent)) {
-          throw new ProductToolError("agent_not_found", `Agent does not exist: ${targetAgent}. Use list_agents to select a continuable Agent.`);
+      const address = (exec.name === "send_message" || exec.name === "interrupt_agent")
+        && exec.arguments !== null && typeof exec.arguments === "object"
+        ? Reflect.get(exec.arguments, "agent") as unknown : undefined;
+      const targetAgent = typeof address === "string" && exec.agent !== undefined
+        ? await root.subagents.resolveName(exec.agent, address, exec.signal) : exec.agent?.id;
+      // RC.5 returns an unresolved single name as a possible raw Session ID.
+      // A committed native name is immutable. Never approve a name that could
+      // first acquire its recipient while the Host is displaying the request.
+      if (typeof address === "string" && address === targetAgent && /^[a-z][a-z0-9-]{0,31}$/u.test(address)) {
+        const members = await root.subagents.listDescendants(root.productSession.requireAgent().id, exec.signal);
+        if (!members.some((member) => member.kind === "child" && member.id === targetAgent && member.path === address)) {
+          throw new ProductToolError("permission_denied", "Agent name is unresolved. Use list_agents to find its current address.");
         }
       }
       const decision = await root.productPermission.authorize(context, {
         permissionClass: policy.permissionClass,
-        target: `${exec.name}:${typeof targetAgent === "string" ? targetAgent : String(exec.agent?.id)}`,
+        target: `${exec.name}:${String(targetAgent)}`,
         tool: policy.tool,
       });
       if (decision !== "allow") throw new ProductToolError("permission_denied", `${exec.name} permission was denied`);
@@ -1586,7 +1584,7 @@ export const installCanonicalToolPlane = async (
       throw new Error("product plan service did not register its composition controller");
     }
     fibers.push(await root.plugin(ProductTaskGraphService, {
-      isKnownCollaborator: isNativeContinuableChild,
+      resolveCollaborator: resolveNativeTaskRecipient,
       ...({
         notifySharedTask: (primary: Agent, childId: string, taskId: string, signal: AbortSignal) =>
           notifyNativeSharedTask(root, primary, childId, taskId, signal),
@@ -1663,7 +1661,7 @@ export const installCanonicalToolPlane = async (
     const shellEnvFiber = await root.plugin(ShellEnv, { dshHome: normalized.temporaryRoot });
     fibers.push(shellEnvFiber);
     authority.configureShellHome = async (runtimeHome) => {
-      shellEnvFiber.update({ dshHome: runtimeHome });
+      await shellEnvFiber.update({ dshHome: runtimeHome });
       await shellEnvFiber.await();
       root.shellEnv.register({
         name: "myagents-platform",
@@ -1679,7 +1677,7 @@ export const installCanonicalToolPlane = async (
       name: "runtime:agent-identity",
       order: 92,
       interpolate: false,
-      text: "Your Task personal list belongs to you. Shared tasks are visible only when owned by or offered to you; use TaskList to read them. Native Agent controls use child IDs returned by those tools. Product Agent and Session identity is supplied by the Host.",
+      text: "Your Task personal list belongs to you. Shared tasks are visible only when owned by or offered to you; use TaskList to read them. Use the agent names shown by list_agents for native controls and shared task assignments. Product Agent and Session identity is supplied by the Host.",
     });
     root.systemPrompt.context({
       name: "runtime:shell",
@@ -1703,7 +1701,6 @@ export const installCanonicalToolPlane = async (
       provider: "native-fork", toolName: "fork_agent",
     }));
     fibers.push(await root.plugin(ToolSubagentControl));
-    fibers.push(await root.plugin(ToolSubagentList));
 
     fibers.push(await root.plugin(CanonicalFileTools, {
       attachments: Object.freeze({
@@ -2269,8 +2266,8 @@ export const composeDshRootServices = async (
       persistedReadConcurrency: 4,
     });
     await root.plugin(await loadSessionProjectionRegistry());
-    installProductContextProjection(root);
-    installColdPermissionHistory(root);
+    await installProductContextProjection(root);
+    const coldPermissionHistory = await installColdPermissionHistory(root);
     await root.plugin(AgentRegistry);
     await root.plugin(SessionStats);
     await root.plugin(SessionTurnOutline);
@@ -2289,7 +2286,12 @@ export const composeDshRootServices = async (
       order: COMPACTION_CONTINUITY_ORDER,
       text: COMPACTION_CONTINUITY,
     });
-    await root.plugin(ShellPresentationToolRuntime, tools);
+    await root.plugin(ShellPresentationToolRuntime);
+    if (tools.mode === "ptc") {
+      await root.plugin(PtcExecutor, tools.maxParallelSubCalls === undefined ? {} : { maxParallelSubCalls: tools.maxParallelSubCalls });
+    } else {
+      await root.plugin(NativeExecutor);
+    }
     if (adapter !== undefined) await root.plugin(adapterPlugin(providers, adapter));
     await root.plugin(TokenMeter);
     await root.plugin(ToolResultPruner);
@@ -2592,7 +2594,7 @@ export const composeDshRootServices = async (
         if (!quiescent && !nativePolicyMatches) {
           throw new ProtocolError("primary_session_configuration_stale", "pending operations require their persisted permission configuration", true);
         }
-        const history = coldPermissionHistory(root, agent.session);
+        const history = coldPermissionHistory.stateOf(agent.session);
         assertRecoverableNativePermissionPolicy(history.nativePolicyTail, nativeSandbox, nativeApproval);
         try {
           await permission.resumeConfiguration(agent, Object.freeze({
@@ -2615,7 +2617,7 @@ export const composeDshRootServices = async (
         if (!nativePolicyMatches) {
           // The durable permission transition can precede the native setters
           // across a crash. Reconcile only at a settled operation boundary,
-          // whose complete setup suffix the DSH factory persists before publication.
+          // whose setup changes the primary backend flushes before Agent publication.
           setSandboxMode(agent.session, sandboxModeFor(request.params.permissionMode));
           setApprovalPolicy(agent.session, approvalPolicyFor(request.params.permissionMode));
         }
@@ -2633,7 +2635,7 @@ export const composeDshRootServices = async (
           return root.productComponents.captureOperationBirth(params, birth);
         },
       }),
-      waitOwnedWork: (agent) => root.subagents.waitForChildren(agent),
+      waitOwnedWork: (agent) => root.subagents.waitForTreeWork(agent),
       drainOwnedWork: (agent) => root.subagents.drainDescendants([agent]),
       inputAuthority: Object.freeze({
         prepare: async (
