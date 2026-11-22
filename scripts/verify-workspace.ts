@@ -2,7 +2,7 @@ import { readFile, readdir, realpath } from "node:fs/promises";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
-import { evaluateToolchain } from "./toolchain-policy.mjs";
+import { evaluateToolchain, requiredNodeVersion } from "./toolchain-policy.mjs";
 
 type JsonObject = Record<string, unknown>;
 
@@ -352,7 +352,10 @@ for (const [dependency, version] of expectedDevelopmentDependencies) {
     `${dependency} must remain exactly pinned to ${version}`,
   );
 }
-assert((await readFile(resolve(repositoryRoot, ".nvmrc"), "utf8")).trim() === "24.15.0", ".nvmrc must select the minimum development Node");
+assert(
+  (await readFile(resolve(repositoryRoot, ".nvmrc"), "utf8")).trim() === requiredNodeVersion.slice(1),
+  ".nvmrc must select the Runtime artifact build version",
+);
 
 const npmrc = await readFile(resolve(repositoryRoot, ".npmrc"), "utf8");
 for (const setting of ["engine-strict=true", "save-exact=true"]) {
