@@ -146,6 +146,7 @@ const mounted = async (options: MountedOptions = {}) => {
     workspace: Object.freeze({
       canonicalRoot: workspace,
       identity: "workspace-v1",
+      additionalRoots: Object.freeze([join(root, "related")]),
     }),
   });
   const session = context.sessions.create(SessionId("interaction-plan-session"));

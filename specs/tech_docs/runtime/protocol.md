@@ -2,7 +2,7 @@
 type: protocol-specification
 status: implemented
 module: runtime-protocol
-version: 6.2.0
+version: 6.3.0
 updated: 2026-10-02
 ---
 
@@ -12,7 +12,7 @@ updated: 2026-10-02
 
 This guide explains the intent and ownership of the native Host ↔ MyAgents-dsh contract. `packages/protocol/src/contract-source.ts` owns exact wire shapes; generated schemas, types, fixtures and metadata are its deterministic projections. This guide does not define a second schema or implementation status source.
 
-The current source protocol `6.2.0` transports native V4
+The current source protocol `6.3.0` transports native V4
 Session history and separates live assistant observations from durable assistant messages.
 An `assistant_stream` start opens a generation/primary-Agent-scoped stream; text/reasoning deltas
 carry that stream identity and native frame position. The end names either an abandoned attempt
@@ -30,7 +30,7 @@ The model profile can explicitly declare native `in-history` system-prompt updat
 
 ### 1.1 Compatibility versioning
 
-The active source implements exactly `6.2.0`. Initialization accepts a Host range only when it
+The active source implements exactly `6.3.0`. Initialization accepts a Host range only when it
 contains this version; it does not emulate a predecessor. The changed native history and required
 stream identity fields require matching generated Host contracts. The TypeBox source, generated
 digests and executable tests own exact wire shapes; a version increment is not artifact acceptance.
@@ -132,7 +132,7 @@ Initialize supplies a protocol range, Host/toolchain identity, Product Session I
 
 The execution environment freezes:
 
-- canonical workspace identity and allowed read/write roots;
+- canonical primary workspace identity and optional `workspace.additionalRoots` for the Session's workspace-write policy;
 - sealed executable references and command allowlist;
 - inherited environment key allowlist;
 - network mode and policy reference;
@@ -141,6 +141,8 @@ The execution environment freezes:
 - attachment staging root and optional plan directory.
 
 Secret values MUST be represented only by reverse-port references.
+
+On macOS and Linux the Host sends the whole additional-root set at initialize for each Runtime generation, including resume and fork recovery. The Runtime binds the directory list to that generation and registers the exact root or child Session before tool execution. The active permission mode selects whether workspace-write grants apply. The primary directory remains the working directory and the source of project instructions. Windows refuses nonempty `additionalRoots` until native Shell permission and cleanup can be applied together.
 
 ### 6.2 `initialize` result
 

@@ -13,9 +13,9 @@ declare module "@deepseek-ai/dsh-session/types" {
 import assert from "node:assert/strict";
 import { z } from "zod";
 import { createHash } from "node:crypto";
-import { writeSync } from "node:fs";
+import { rmSync, writeSync } from "node:fs";
 import { chmod, copyFile, glob, mkdir, mkdtemp, readFile, readdir, realpath, rm, unlink, writeFile } from "node:fs/promises";
-import { tmpdir } from "node:os";
+import { tmpdir, userInfo } from "node:os";
 import { join, sep } from "node:path";
 import { PassThrough } from "node:stream";
 import { setImmediate as yieldImmediate, setTimeout as delay } from "node:timers/promises";
@@ -346,6 +346,18 @@ const fixtureHostPlatform = fixturePlatformTarget.startsWith("darwin") ? "darwin
 const fixtureHostArch = fixturePlatformTarget === "darwin-arm64" ? "arm64" : "x64";
 const fixtureRoot = await realpath(await mkdtemp(join(tmpdir(), "myagents-dsh-w2-a2-artifact-")));
 const fixtureWorkspace = join(fixtureRoot, "workspace");
+const fixtureGrantTestRoot = process.platform === "win32"
+  ? undefined
+  // The artifact gate deliberately sets HOME inside os.tmpdir(), which the
+  // native workspace-write sandbox already grants. Use an isolated scratch
+  // directory under the account's home to prove this grant is necessary.
+  : await realpath(await mkdtemp(join(userInfo().homedir, ".myagents-dsh-sandbox-fixture-")));
+if (fixtureGrantTestRoot) {
+  process.once("exit", () => rmSync(fixtureGrantTestRoot, { recursive: true, force: true }));
+}
+const fixtureRelatedWorkspace = join(fixtureGrantTestRoot ?? fixtureRoot, "related-workspace");
+const fixtureUnconfiguredWorkspace = join(fixtureGrantTestRoot ?? fixtureRoot, "unconfigured-workspace");
+const fixtureRelatedRoots = fixtureGrantTestRoot === undefined ? [] : [fixtureRelatedWorkspace];
 const jobReleasePath = join(fixtureWorkspace, ".artifact-job-release");
 const shellLiteral = (value: string): string => process.platform === "win32"
   ? `'${value.replaceAll("'", "''")}'`
@@ -389,6 +401,8 @@ const fixturePlanPath = join(
 );
 await Promise.all([
   mkdir(fixtureWorkspace, { recursive: true }),
+  mkdir(fixtureRelatedWorkspace, { recursive: true }),
+  mkdir(fixtureUnconfiguredWorkspace, { recursive: true }),
   mkdir(fixtureRuntimeHome),
   mkdir(fixtureForkRuntimeHome),
   mkdir(fixtureAbortedForkRuntimeHome),
@@ -810,6 +824,14 @@ adapter.enqueue({
     { id: "artifact-grep-call", name: "grep", arguments: JSON.stringify({ pattern: "governed" }) },
     { id: "artifact-ls-call", name: "ls", arguments: JSON.stringify({}) },
     { id: "artifact-bash-call", name: fixtureShellTool, arguments: JSON.stringify({ description: "Artifact Shell check", command: process.platform === "win32" ? "[Console]::Out.Write('artifact-bash')" : "printf artifact-bash" }) },
+    ...fixtureRelatedRoots.map(() => ({
+      id: "artifact-bash-related-root",
+      name: fixtureShellTool,
+      arguments: JSON.stringify({
+        description: "Artifact Shell check",
+        command: `printf allowed > ${shellLiteral(join(fixtureRelatedWorkspace, "written"))} && if printf unexpected > ${shellLiteral(join(fixtureUnconfiguredWorkspace, "written"))}; then exit 32; fi`,
+      }),
+    })),
     {
       id: "artifact-foreground-spill-call",
       name: fixtureShellTool,
@@ -1660,6 +1682,7 @@ const initializeRequest: InitializeParams = {
     workspace: {
       identity: "artifact-workspace",
       canonicalRoot: fixtureWorkspace,
+      ...(fixtureRelatedRoots.length > 0 ? { additionalRoots: fixtureRelatedRoots } : {}),
     },
     executables: {
       bundledNodeRef: "bundled-node",
@@ -2606,6 +2629,7 @@ assert.equal(exitedHostPlan.state, "applied");
 assert.equal(exitedHostPlan.mode, "normal");
 
 let primaryAgent = composition.context.productSession.requireAgent();
+assert.deepEqual(composition.context.sandboxPolicy.resolve({ session: primaryAgent.session }).additionalWritableRoots ?? [], fixtureRelatedRoots);
 const primaryPrompt = await composition.context.systemPrompt.assemble(assembleContextFor(primaryAgent));
 assert.equal(
   primaryPrompt.sections.find(({ name }) => name === PERSONA_PREFIX_SECTION)?.text,
@@ -3195,6 +3219,7 @@ const processSearchCallIds = [
   "artifact-foreground-spill-call",
   "artifact-background-bash-call",
   "artifact-background-flood-call",
+  ...fixtureRelatedRoots.map(() => "artifact-bash-related-root"),
 ];
 const processSearchResults = primaryAgent.session.snapshotEvents().filter((event) =>
   event.type === "tool/result" && processSearchCallIds.includes(String(event.data.message.source.callId)));
@@ -3252,6 +3277,11 @@ const shellMeta = (callId: string): Record<string, unknown> => {
   return event.data.meta;
 };
 assert.deepEqual(shellMeta("artifact-bash-call"), { cwd: fixtureWorkspace, exitCode: 0, status: "completed" });
+if (fixtureGrantTestRoot) {
+  assert.equal(shellMeta("artifact-bash-related-root").exitCode, 0);
+  assert.equal(await readFile(join(fixtureRelatedWorkspace, "written"), "utf8"), "allowed");
+  await assert.rejects(readFile(join(fixtureUnconfiguredWorkspace, "written")), { code: "ENOENT" });
+}
 const backgroundRecord = { jobId: shellMeta("artifact-background-bash-call").jobId };
 const backgroundFloodRecord = { jobId: shellMeta("artifact-background-flood-call").jobId };
 assert.equal(typeof backgroundRecord.jobId, "string");
@@ -4261,6 +4291,7 @@ assert.equal(resumedPrimary.effectiveConfigRevision, "artifact-config-v1");
 assert.deepEqual(resumedPrimary.toolCatalog, validatedArtifactToolCatalog);
 assert.deepEqual(resumedPrimary.extensionCatalog, resumedComposition.context.productComponents.catalog());
 const resumedAgent = resumedComposition.context.productSession.requireAgent();
+assert.deepEqual(resumedComposition.context.sandboxPolicy.resolve({ session: resumedAgent.session }).additionalWritableRoots ?? [], fixtureRelatedRoots);
 const resumedPrompt = await resumedComposition.context.systemPrompt.assemble(assembleContextFor(resumedAgent));
 assert.equal(
   resumedPrompt.sections.find(({ name }) => name === PERSONA_PREFIX_SECTION)?.text,
