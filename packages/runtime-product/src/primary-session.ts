@@ -98,6 +98,7 @@ export interface ProductExecutionEnvironment {
   readonly workspace: Readonly<{
     readonly canonicalRoot: string;
     readonly identity: string;
+    readonly additionalRoots?: readonly string[];
   }>;
 }
 
@@ -421,7 +422,7 @@ export const validateProductExecutionEnvironment = (
   const workspace = exactOwnDataObject(
     environment.workspace,
     ["canonicalRoot", "identity"],
-    [],
+    ["additionalRoots"],
     "execution environment workspace",
   );
   const normalize = (path: string): string => adapter.normalizeAbsolutePath(path);
@@ -485,12 +486,42 @@ export const validateProductExecutionEnvironment = (
     ? normalize(workspace.canonicalRoot)
     : "";
   if (canonicalRoot !== workspace.canonicalRoot) throw new TypeError("workspace root must be canonical");
+  const additionalRoots: string[] = [];
+  if (workspace.additionalRoots !== undefined) {
+    if (!Array.isArray(workspace.additionalRoots) || utilTypes.isProxy(workspace.additionalRoots)) {
+      throw new TypeError("workspace additional roots must be an array of paths");
+    }
+    const descriptors = Object.getOwnPropertyDescriptors(workspace.additionalRoots);
+    if (Reflect.ownKeys(descriptors).length !== workspace.additionalRoots.length + 1) {
+      throw new TypeError("workspace additional roots must be a dense own-data array");
+    }
+    if (platformTarget === "win32-x64" && workspace.additionalRoots.length > 0) {
+      throw new ProtocolError("protocol_environment_mismatch", "Windows DSH does not support additional roots for confined Shell execution");
+    }
+    const seen = new Set([canonicalRoot.replace(/\/$/, "")]);
+    for (let index = 0; index < workspace.additionalRoots.length; index += 1) {
+      const descriptor = descriptors[String(index)];
+      if (descriptor === undefined || !descriptor.enumerable || !("value" in descriptor)) {
+        throw new TypeError("workspace additional roots must be a dense own-data array");
+      }
+      const path = descriptor.value as unknown;
+      if (typeof path !== "string" || path.length > 8_192 || path.includes("\0") || normalize(path) !== path
+        || (path.length > 1 && path.endsWith("/")) || seen.has(path.replace(/\/$/, ""))) {
+        throw new TypeError("workspace additional roots must be canonical and distinct from every other root");
+      }
+      seen.add(path.replace(/\/$/, ""));
+      additionalRoots.push(path);
+    }
+  }
   const runtimeHome = typeof environment.runtimeHome === "string" ? normalize(environment.runtimeHome) : "";
   const attachmentStagingRoot = typeof environment.attachmentStagingRoot === "string"
     ? normalize(environment.attachmentStagingRoot)
     : "";
   if (runtimeHome !== environment.runtimeHome || attachmentStagingRoot !== environment.attachmentStagingRoot) {
     throw new TypeError("execution environment owned roots must be canonical");
+  }
+  for (const path of additionalRoots) {
+    adapter.normalizeExplicitRoots({ runtimeHome, attachmentStaging: attachmentStagingRoot, temporary: path });
   }
   return Object.freeze({
     attachmentStagingRoot,
@@ -529,6 +560,7 @@ export const validateProductExecutionEnvironment = (
     workspace: Object.freeze({
       canonicalRoot,
       identity: boundedIdentifier(workspace.identity, "execution environment workspace identity"),
+      ...(additionalRoots.length > 0 ? { additionalRoots: Object.freeze(additionalRoots) } : {}),
     }),
   });
 };

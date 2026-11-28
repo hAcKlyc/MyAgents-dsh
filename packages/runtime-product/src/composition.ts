@@ -602,6 +602,17 @@ const sandboxModeFor = (mode: DshPermissionMode): "workspace-write" | "danger-fu
 const approvalPolicyFor = (mode: DshPermissionMode): "ask" | "never" =>
   mode === "approval-required" ? "ask" : "never";
 
+function registerSessionWorkspaceRoots(root: Context, session: Session): void {
+  const roots = root.productSession.requireExecutionEnvironment().workspace.additionalRoots;
+  if (!roots?.length) return;
+  const releases = roots.map(path => root.sandboxPolicy.registerWritableRoot(session, path));
+  const stop = root.on("session/disposed", disposed => {
+    if (disposed !== session) return;
+    stop();
+    for (const release of releases) release();
+  });
+}
+
 const assertRecoverableNativePermissionPolicy = (
   policyTail: readonly SessionEvent[],
   sandbox: ReturnType<SandboxPolicyService["overrideOf"]>,
@@ -1367,6 +1378,7 @@ export const installCanonicalToolPlane = async (
       if (root.approval.overrideOf(agent.session) !== approval) setApprovalPolicy(agent.session, approval);
       const sandbox = root.sandboxPolicy.resolve({ session: policyOwner.session }).mode;
       if (root.sandboxPolicy.overrideOf(agent.session) !== sandbox) setSandboxMode(agent.session, sandbox);
+      registerSessionWorkspaceRoots(root, agent.session);
       if (source === "startup") nativeChildAuthority(root).captureAtCreation(agent);
       else await nativeChildAuthority(root).restoreCreationOperation(agent);
       return undefined;
@@ -2547,6 +2559,7 @@ export const composeDshRootServices = async (
         }));
         setSandboxMode(agent.session, sandboxModeFor(request.params.permissionMode));
         setApprovalPolicy(agent.session, approvalPolicyFor(request.params.permissionMode));
+        registerSessionWorkspaceRoots(root, agent.session);
         authority.canonicalPermissionMode = request.params.permissionMode;
         authority.canonicalAutoAllowTools = Object.freeze([...autoAllowTools]);
         authority.hostInteractionRevision = request.params.interactionScenario;
@@ -2621,6 +2634,7 @@ export const composeDshRootServices = async (
           setSandboxMode(agent.session, sandboxModeFor(request.params.permissionMode));
           setApprovalPolicy(agent.session, approvalPolicyFor(request.params.permissionMode));
         }
+        registerSessionWorkspaceRoots(root, agent.session);
         authority.canonicalPermissionMode = request.params.permissionMode;
         authority.canonicalAutoAllowTools = Object.freeze([...autoAllowTools]);
         authority.hostInteractionRevision = request.params.interactionScenario;

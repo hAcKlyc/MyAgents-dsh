@@ -192,7 +192,7 @@ const planStorageRoot = (value: unknown): string => {
     "attachmentStagingRoot", "checkpoint", "digest", "environment", "executables", "network",
     "platformTarget", "process", "revision", "runtimeHome", "workspace",
   ], [], "plan execution environment");
-  const workspace = exactDataObject(environment.workspace, ["canonicalRoot", "identity"], [], "plan workspace");
+  const workspace = exactDataObject(environment.workspace, ["canonicalRoot", "identity"], ["additionalRoots"], "plan workspace");
   if (typeof workspace.canonicalRoot !== "string" || workspace.canonicalRoot.length === 0
     || workspace.canonicalRoot.length > 8_192 || workspace.canonicalRoot.includes("\0")) {
     throw new TypeError("plan workspace root is invalid");

@@ -12,7 +12,7 @@ export { ToolCatalogSchema } from "./tool-catalog.js";
 export { RUNTIME_VERSION } from "./runtime-version.generated.js";
 export type { CanonicalToolName } from "../generated/canonical-tools.generated.js";
 
-export const PROTOCOL_VERSION = "6.2.0" as const;
+export const PROTOCOL_VERSION = "6.3.0" as const;
 export const DSH_ENGINE_VERSION = "0.2.2-rc.5.myagents.9c2670d3bce5.87972f9c8ecd" as const;
 export const SESSION_FORMAT = "dsh-session-events-v2" as const;
 export const DEEPSEEK_WEB_SEARCH_ADAPTER_ID = "deepseek-official-native-web-search" as const;
@@ -94,6 +94,7 @@ export const ExecutionEnvironmentProfileSchema = strictObject({
   workspace: strictObject({
     identity: identifier,
     canonicalRoot: absolutePath,
+    additionalRoots: Type.Optional(Type.Array(absolutePath, { uniqueItems: true })),
   }),
   executables: strictObject({
     bundledNodeRef: identifier,

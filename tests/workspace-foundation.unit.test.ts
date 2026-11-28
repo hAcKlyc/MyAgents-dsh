@@ -2,7 +2,7 @@ import { readFile, readdir } from "node:fs/promises";
 import { resolve } from "node:path";
 import { describe, expect, it } from "vitest";
 
-import { evaluateArtifactToolchain, evaluateToolchain } from "../scripts/toolchain-policy.mjs";
+import { evaluateArtifactToolchain, evaluateToolchain, requiredNodeVersion } from "../scripts/toolchain-policy.mjs";
 
 const repositoryRoot = resolve(import.meta.dirname, "..");
 
@@ -20,7 +20,8 @@ describe("workspace foundation", () => {
         packageManager: { name: "npm", version: "11.19.0", onFail: "error" },
       },
     });
-    await expect(readFile(resolve(repositoryRoot, ".nvmrc"), "utf8")).resolves.toBe("24.15.0\n");
+    const nvmNodeVersion = await readFile(resolve(repositoryRoot, ".nvmrc"), "utf8");
+    expect(nvmNodeVersion.trim()).toBe(requiredNodeVersion.slice(1));
   });
 
   it("rejects unsupported development versions before installation", () => {

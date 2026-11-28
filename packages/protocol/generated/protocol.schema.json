@@ -6869,6 +6869,16 @@
               "workspace": {
                 "additionalProperties": false,
                 "properties": {
+                  "additionalRoots": {
+                    "items": {
+                      "maxLength": 8192,
+                      "minLength": 1,
+                      "pattern": "^(?:/|[A-Za-z]:[\\\\/]|\\\\\\\\(?:\\?\\\\|[^\\\\/]+[\\\\/][^\\\\/]+))[^\\u0000-\\u001F\\u007F]*$",
+                      "type": "string"
+                    },
+                    "type": "array",
+                    "uniqueItems": true
+                  },
                   "canonicalRoot": {
                     "maxLength": 8192,
                     "minLength": 1,
@@ -7150,7 +7160,7 @@
             "type": "string"
           },
           "protocolVersion": {
-            "const": "6.2.0",
+            "const": "6.3.0",
             "type": "string"
           },
           "runtimeCapabilities": {
@@ -8041,7 +8051,7 @@
                 "type": "string"
               },
               "distributionVersion": {
-                "const": "0.1.24",
+                "const": "0.1.25",
                 "type": "string"
               },
               "name": {
@@ -8068,7 +8078,7 @@
             "type": "string"
           },
           "runtimeVersion": {
-            "const": "0.1.24",
+            "const": "0.1.25",
             "type": "string"
           },
           "schemaSha256": {
@@ -23566,6 +23576,6 @@
       }
     }
   },
-  "protocolVersion": "6.2.0",
+  "protocolVersion": "6.3.0",
   "title": "MyAgents DSH native RPC"
 }

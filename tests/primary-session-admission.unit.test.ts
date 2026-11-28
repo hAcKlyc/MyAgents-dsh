@@ -853,6 +853,23 @@ describe("one-primary-session admission", () => {
         identity: "fixture-workspace",
       },
     };
+    const roots = ["/fixture/library", "/fixture/docs"];
+    const additional = (additionalRoots: unknown) => validateProductExecutionEnvironment({
+      ...posixEnvironment,
+      workspace: { ...posixEnvironment.workspace, additionalRoots },
+    }).workspace.additionalRoots;
+    const captured = additional(roots);
+    roots.reverse();
+    expect(captured).toEqual(["/fixture/library", "/fixture/docs"]);
+    expect(Object.isFrozen(captured)).toBe(true);
+    expect(() => additional(["/fixture/workspace"])).toThrow("distinct");
+    expect(() => additional(["/fixture/docs", "/fixture/docs"])).toThrow("distinct");
+    for (const conflicting of ["/fixture", "/fixture/runtime", "/fixture/attachments/nested"]) {
+      expect(() => additional([conflicting])).toThrow(/overlap|disjoint/u);
+    }
+    const accessor = ["/fixture/docs"];
+    Object.defineProperty(accessor, "0", { get: () => { throw new Error("getter executed"); } });
+    expect(() => additional(accessor)).toThrow("own-data array");
     expect(validateProductExecutionEnvironment({
       ...posixEnvironment,
       network: { mode: "host-policy", policyRef: "network-policy-v1" },

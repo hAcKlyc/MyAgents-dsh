@@ -172,11 +172,11 @@ A Host-initiated exit is itself the explicit user/product decision and does not 
 | 工作区自主 | `workspace-autonomous` | `workspace-write`, escalation denied |
 | 完全自主 | `full-autonomous` | `danger-full-access` |
 
-MyAgents owns the desired Session mode and UI. DSH compiles it into the ordinary approval policy and per-call upstream sandbox policy, then reports the effective mode. MyAgents does not maintain a read/write root list or a second path blacklist.
+MyAgents owns the desired Session mode, frozen workspace directory list and UI. The Runtime registers the additional canonical directories through native `SandboxPolicyService` for each live root or child Session and releases the registrations on Session disposal. DSH owns per-call enforcement and reports the effective mode.
 
 ## 8. Security and platform boundary
 
-The integrated Runtime uses the upstream filesystem sandbox for native Write/Edit and the platform Shell sandbox for Bash/PowerShell and their child processes. `workspace-write` allows workspace writes plus the platform sandbox's temp roots; all modes allow local-user reads outside the workspace. If the platform sandbox is unavailable, restricted Shell commands fail rather than running without a sandbox. `danger-full-access` removes the product write boundary but does not elevate OS permissions. MCP/Host tools and internal CLI effects remain outside this local sandbox boundary.
+The integrated Runtime uses the upstream filesystem sandbox for native Write/Edit and the platform Shell sandbox for Bash/PowerShell and their child processes. `workspace-write` allows writes in the primary workspace and platform sandbox's temp roots, with additional workspace directories on macOS and Linux. Windows requires safe cleanup for ACL grants on persistent directories before the Runtime accepts additional roots. All modes allow local-user reads outside the workspace. If the platform sandbox is unavailable, restricted Shell commands fail rather than running without a sandbox. `danger-full-access` removes the product write boundary but does not elevate OS permissions. MCP/Host tools and internal CLI effects remain outside this local sandbox boundary.
 
 A platform's release claim requires its own native campaign against the exact Runtime artifact; another platform's evidence cannot substitute for it.
 
